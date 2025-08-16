@@ -1,0 +1,17 @@
+# Archivos de Python generados
+__pycache__/
+*.pyc
+*.spec
+build/
+dist/
+
+# Archivos de log
+*.log
+
+# Archivos específicos del proyecto que no deben subirse
+gemini.md
+compile.bat
+certificado.pfx
+
+# Archivos multimedia grandes (si no quieres subirlos a Git)
+# app_media/
