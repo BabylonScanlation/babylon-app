@@ -11,6 +11,9 @@ import time
 import webbrowser
 import traceback
 
+# bibliotecas no nativas
+from PIL import Image
+
 # módulos (no tocar)
 from app_tools import gemini, mistral, translatorz
 from app_tools.haruneko import DownloadThread, HaruNekoManager
@@ -45,6 +48,17 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+def resize_image(image_path, width, height):
+    """Redimensiona una imagen a las dimensiones especificadas sin perder calidad."""
+    try:
+        with Image.open(image_path) as img:
+            img = img.resize((width, height), Image.LANCZOS)
+            img.save(image_path)
+            print(f"Imagen {image_path} redimensionada a {width}x{height}")
+    except Exception as e:
+        print(f"Error al redimensionar la imagen {image_path}: {e}")
 
 
 # pylint: disable=too-few-public-methods

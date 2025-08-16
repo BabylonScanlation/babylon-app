@@ -33,7 +33,7 @@ from PyQt5.QtWidgets import (
 
 # módulos (no borrar)
 from project_manager import ProjectManager
-from tools import ToolsManager
+from tools import ToolsManager, resize_image
 from config import Config, resource_path, global_exception_handler
 from options_menu import OptionsMenu
 
@@ -85,6 +85,7 @@ class App(QMainWindow):
         self.temp_files = []
         self.audio_player = None
         self._setup_main_window()
+        resize_image(Config.LOGO_PATH, 336, 99)
         self._load_fonts()
         self._create_layout()
         self._setup_audio()
