@@ -33,7 +33,7 @@ client = genai.Client(api_key=Config.GEMINI_API_KEY)
 def load_prompt():
     """Carga el prompt desde el archivo configurado en Config.PROMPT_PATH."""
     try:
-        with open(Config.PROMPT_PATH, "r", encoding="utf-8") as f:
+        with open(Config.AI_PROMPT, "r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         logging.error(f"Error cargando el prompt: {str(e)}")
