@@ -351,12 +351,19 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
         "Gemini": lambda t: gemini_translate(t, target_lang),
         "Mistral": lambda t: mistral_translate(t, target_lang),
         # Traductores estándar
-        "Papago": lambda t: _ensure_string_result(ts.translate_text(
-            t,
-            translator="papago",
-            from_language=detectar_idioma(t),
-            to_language=obtener_codigo("papago", target_lang),
-        )),
+        "Papago": lambda t: (
+            lambda:
+                try:
+                    return _ensure_string_result(ts.translate_text(
+                        t,
+                        translator="papago",
+                        from_language=detectar_idioma(t),
+                        to_language=obtener_codigo("papago", target_lang),
+                    ))
+                except Exception:
+                    return "\033[91mPapago no está operativo por el momento y se está intentando implementar una solución.\033[0m"
+            )()
+        ),
         "Google": lambda t: _ensure_string_result(ts.translate_text(
             t,
             translator="google",
