@@ -67,7 +67,6 @@ class GeminiProcessor:
                 contents=[prompt, image]
             )
             ai_end_time = time.time()
-            print(f"Tiempo de procesamiento de IA para {file_path}: {ai_end_time - ai_start_time:.4f} segundos")
 
             # Extraer y guardar contenido
             translations = []
@@ -137,11 +136,15 @@ class GeminiProcessor:
             # Crear archivo combinado desde los archivos individuales
             result = combine_texts(chapter_output_dir, combined_content, os.path.basename(chapter_path))
             end_time = time.time()
-            print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {end_time - start_time:.4f} segundos")
+            total_time = end_time - start_time
+            if total_time > 15:
+                print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {total_time:.4f} segundos")
             return result
         
         end_time = time.time()
-        print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {end_time - start_time:.4f} segundos")
+        total_time = end_time - start_time
+        if total_time > 15:
+            print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {total_time:.4f} segundos")
         return False
 
     def process_input_path(self, input_path, output_dir, cancel_event=None, input_base=None):
