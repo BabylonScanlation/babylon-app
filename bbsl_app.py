@@ -217,7 +217,6 @@ class App(QMainWindow):
                         self.cap.release()
                     self._setup_opencv_video() # Attempt full re-setup
         except (IOError, cv2.error) as e:
-            print(f"Error during video frame update: {e}") # For debugging
             self.timer.stop()
             if self.cap is not None:
                 self.cap.release()
