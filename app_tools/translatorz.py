@@ -6,7 +6,6 @@ import deepl
 import translators as ts
 import time
 from mistralai import Mistral
-from mistralai.models.chat_completion import ChatMessage, UserMessage # type: ignore
 
 # Configuración de APIs
 DEEPL_API_KEY = "834394f4-4a24-4890-a843-25701bf54ee8:fx"
@@ -270,7 +269,7 @@ def mistral_translate(text: str, target_language: str) -> str:
     )
     response = mistral_client.chat.complete(
         model=mistral_model,
-        messages=[UserMessage(role="user", content=prompt)],
+        messages=[{"role": "user", "content": prompt}], # type: ignore[arg-type]
         temperature=0.3,
     )
     content = response.choices[0].message.content
