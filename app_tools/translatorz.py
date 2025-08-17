@@ -6,6 +6,7 @@ import deepl
 import translators as ts
 import time
 from mistralai import Mistral
+from mistralai.models.chat_completion import ChatMessage, UserMessage # type: ignore
 
 # Configuración de APIs
 DEEPL_API_KEY = "834394f4-4a24-4890-a843-25701bf54ee8:fx"
@@ -269,10 +270,20 @@ def mistral_translate(text: str, target_language: str) -> str:
     )
     response = mistral_client.chat.complete(
         model=mistral_model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[UserMessage(role="user", content=prompt)],
         temperature=0.3,
     )
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if isinstance(content, str):
+        return content
+    elif isinstance(content, list):
+        extracted_text = []
+        for chunk in content:
+            if hasattr(chunk, 'text') and isinstance(chunk.text, str): # type: ignore[union-attr]
+                extracted_text.append(chunk.text)
+        return "".join(extracted_text)
+    else:
+        return "" # Return empty string for unexpected types
 
 def _check_baidu_compatibility(error_message: str) -> str | None:
     if "The function baidu() has been not certified yet" in error_message:
@@ -287,7 +298,7 @@ def _check_yandex_compatibility(target_lang: str) -> str | None:
 def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str, delay: int = 1) -> str:
     while True:
         try:
-            raw_result = ts.translate_text(
+            raw_result = _ensure_string_result(ts.translate_text(
                 text,
                 translator="baidu",
                 from_language=(
@@ -296,8 +307,8 @@ def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str,
                     else "auto"
                 ),
                 to_language=obtener_codigo("baidu", target_lang),
-            )
-            processed_result = str(raw_result) if isinstance(raw_result, tuple) else raw_result
+            ))
+            processed_result = str(raw_result)
 
             # Check for the specific "not certified" error
             specific_baidu_error = _check_baidu_compatibility(processed_result)
@@ -320,16 +331,16 @@ def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str,
             continue
 
 def _ensure_string_result(result) -> str:
+    if isinstance(result, str):
+        return result
     if isinstance(result, tuple):
-        # Prioritize non-empty strings within the tuple
         for item in result:
             if isinstance(item, str) and item.strip():
                 return item
-        # If no clear string found, try to get the last element if it's a string
         if len(result) > 0 and isinstance(result[-1], str):
             return result[-1]
-        return str(result) # Fallback to string conversion of the whole tuple
-    return result
+    # Fallback for None or other unexpected types
+    return str(result) if result is not None else "" # Ensure it's always a string
 
 def _translate_papago_safe(text: str, source_lang: str, target_lang: str) -> str:
     try:

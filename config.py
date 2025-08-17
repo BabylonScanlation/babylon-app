@@ -32,7 +32,7 @@ class Config:
     """Configuración general de la aplicación y rutas de recursos."""
 
     USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
-    HARUNEKO_DIR = os.path.join(os.getenv('APPDATA'), 'HaruNeko')
+    HARUNEKO_DIR = os.path.join(os.getenv('APPDATA') or '', 'HaruNeko')
     TOOLS_DATA_DIR = resource_path(os.path.join("BBSL", "herramientas_datos"))
     GENERAL_TOOLS_FOLDER = resource_path(os.path.join("BBSL", "herramientas"))
     WINDOW_TITLE = "Babylon Scanlation"

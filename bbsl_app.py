@@ -17,7 +17,7 @@ import time
 
 # pylint: disable=no-name-in-module
 from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from PyQt5.QtGui import QFont, QFontDatabase, QIcon, QImage, QPixmap
+from PyQt5.QtGui import QFont, QFontDatabase, QIcon, QImage, QPixmap, QCursor
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer, QMediaPlaylist
 from PyQt5.QtWidgets import (
     QApplication,
@@ -50,7 +50,7 @@ class ClickableThumbnail(QLabel):  # pylint: disable=too-few-public-methods
     def __init__(self, video_id: str, parent=None):
         super().__init__(parent)
         self.video_id = video_id
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(QCursor(Qt.PointingHandCursor)) # type: ignore[attr-defined]
 
     def mousePressEvent(self, event):  # pylint: disable=invalid-name
         """Maneja el clic y emite la señal."""
@@ -763,7 +763,7 @@ if __name__ == "__main__":
 
     # Define lock file path
     LOCK_FILE_NAME = "babylon_app.lock"
-    LOCK_FILE_PATH = os.path.join(os.getenv("TEMP"), LOCK_FILE_NAME)
+    LOCK_FILE_PATH = os.path.join(os.getenv("TEMP") or '', LOCK_FILE_NAME)
 
     def is_process_running(pid):
         """Checks if a process with the given PID is currently running."""
