@@ -89,7 +89,8 @@ class App(QMainWindow):
 
         if not self._check_single_instance():
             QMessageBox.warning(None, "Babylon Scanlation", "Otra instancia de la aplicación ya está en ejecución.")
-            sys.exit(0) # Exit if another instance is running
+            QApplication.quit()
+            sys.exit(0) # Fallback exit
 
         self.menu_container = None
         self.content_container = None
