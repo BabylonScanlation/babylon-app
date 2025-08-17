@@ -128,13 +128,19 @@ MAPEO_GENERAL = {
 def obtener_codigo(traductor: str, lang_code: str) -> str:
     """Obtiene el código de idioma específico para cada traductor"""
     
-    if lang_code == "auto": 
+    if lang_code == "auto":
+        
         return "auto"
-
     traductor = traductor.lower()
     base_code = lang_code.split("_")[0]
+    
+    
+    
+    
     lang_map = MAPEO_GENERAL.get(lang_code, MAPEO_GENERAL.get(base_code, {}))
+    
     result = lang_map.get(traductor, lang_map.get("default", lang_code))
+    
     return result
 
 def detectar_idioma(texto: str) -> str:
@@ -230,7 +236,6 @@ def _check_yandex_compatibility(target_lang: str) -> str | None:
 
 def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str, delay: int = 1) -> str:
     while True:
-        processed_result = ""
         try:
             raw_result = _ensure_string_result(ts.translate_text(
                 text,
@@ -244,9 +249,7 @@ def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str,
             ))
             processed_result = str(raw_result)
         except Exception as e:
-            print(f"Error during Baidu translation: {e}") # Added for debugging, can be removed later
-            time.sleep(delay)
-            continue
+            pass
 
             # Check for the specific "not certified" error
             specific_baidu_error = _check_baidu_compatibility(processed_result)
