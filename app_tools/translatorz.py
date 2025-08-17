@@ -131,14 +131,10 @@ def obtener_codigo(traductor: str, lang_code: str) -> str:
     if lang_code == "auto":
         
         return "auto"
+    
     traductor = traductor.lower()
     base_code = lang_code.split("_")[0]
-    
-    
-    
-    
     lang_map = MAPEO_GENERAL.get(lang_code, MAPEO_GENERAL.get(base_code, {}))
-    
     result = lang_map.get(traductor, lang_map.get("default", lang_code))
     
     return result
