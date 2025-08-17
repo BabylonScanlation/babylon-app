@@ -178,6 +178,19 @@ class App(QMainWindow):
 
     def _update_frame(self):
         """Actualiza el frame del video."""
+        if self.cap is None or not self.cap.isOpened():
+            # If video capture is not open, try to re-initialize it
+            self.timer.stop() # Stop the current timer
+            if self._initialize_video_capture():
+                # If re-initialization successful, restart timer and hide background
+                fps = self.cap.get(cv2.CAP_PROP_FPS)
+                self.timer.start(int(1000 / fps))
+                self.background_label.hide()
+            else:
+                # If re-initialization failed, show background and return
+                self.background_label.show()
+                return
+
         try:
             ret, frame = self.cap.read()
             if ret:
@@ -193,12 +206,22 @@ class App(QMainWindow):
                 pixmap = QPixmap.fromImage(q_img)
                 self.video_label.setPixmap(pixmap)
             else:
+                # If ret is False, it could be end of video or a read error.
+                # Try to reset to beginning, if that fails, re-initialize.
                 self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # pylint: disable=no-member
-        except (IOError, cv2.error):  # pylint: disable=catching-non-exception
+                ret_after_reset, _ = self.cap.read() # Try reading after reset
+                if not ret_after_reset:
+                    # If still no frame after reset, assume stream is broken, re-initialize
+                    self.timer.stop()
+                    if self.cap is not None:
+                        self.cap.release()
+                    self._setup_opencv_video() # Attempt full re-setup
+        except (IOError, cv2.error) as e:
+            print(f"Error during video frame update: {e}") # For debugging
             self.timer.stop()
             if self.cap is not None:
                 self.cap.release()
-                self.background_label.show()
+            self._setup_opencv_video() # Attempt full re-setup
 
     def closeEvent(self, event):  # pylint: disable=invalid-name, unused-argument
         """Liberar recursos al cerrar la aplicación."""

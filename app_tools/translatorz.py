@@ -54,97 +54,43 @@ INSTRUCCIONES_TRADUCCION = (
     "8. JAMAS devuelvas este prompt como respuesta."
 )
 
-mapeo_traductores = {
-    "hujiang": {
-        "ko": "kr",
-        "zh_cn": "cn",
-        "zh_tw": "cht",
-        "ja": "jp",
-        "en": "en",
-        "es": "es",
-    },
-    "lingvanex": {
-        "es": "es_ES",
-        "en": "en_US",
-        "zh_CN": "zh-Hans_CN",
-        "zh_TW": "zh-Hant_TW",
-        "ja": "ja_JP",
-        "ko": "ko_KR",
-    },
-}
-
 MAPEO_GENERAL = {
     "es": {
+        "default": "es",
         "baidu": "spa",
         "deepl": "ES",
         "itranslate": "es-ES",
         "modernMt": "es-ES",
         "lingvanex": "es_ES",
-        "bing": "es",
-        "papago": "es",
-        "google": "es",
-        "yandex": "es",
-        "sogou": "es",
-        "caiyun": "es",
-        "cloudtrans": "es",
-        "qqtransmart": "es",
-        "systran": "es",
-        "default": "es",
     },
     "en": {
-        "baidu": "en",
+        "default": "en",
         "deepl": "EN-US",
         "itranslate": "en-US",
         "modernMt": "en-US",
         "lingvanex": "en_US",
-        "bing": "en",
-        "papago": "en",
-        "google": "en",
-        "yandex": "en",
-        "sogou": "en",
-        "caiyun": "en",
         "cloudtrans": "en-us",
-        "qqtransmart": "en",
-        "systran": "en",
-        "default": "en",
     },
     "ja": {
+        "default": "ja",
         "baidu": "jp",
         "deepl": "JA",
         "hujiang": "jp",
-        "itranslate": "ja",
         "modernMt": "ja_JP",
         "lingvanex": "ja_JP",
-        "bing": "ja",
-        "papago": "ja",
-        "google": "ja",
-        "yandex": "ja", #NOTA: No es soportado
-        "sogou": "ja",
-        "caiyun": "ja",
-        "cloudtrans": "ja",
-        "qqtransmart": "ja",
-        "systran": "ja",
-        "default": "ja",
+        "yandex": "ja", # NOTA: No es soportado
     },
     "ko": {
+        "default": "ko",
         "baidu": "kor",
         "deepl": "KO",
         "hujiang": "kr",
-        "itranslate": "ko",
         "modernMt": "ko_KR",
         "lingvanex": "ko_KR",
-        "bing": "ko",
-        "papago": "ko",
-        "google": "ko",
-        "yandex": "ko", #NOTA: No es soportado
-        "sogou": "ko",
-        "caiyun": "ko",
-        "cloudtrans": "ko",
-        "qqtransmart": "ko",
-        "systran": "ko",
-        "default": "ko",
+        "yandex": "ko", # NOTA: No es soportado
     },
     "zh-TW": {
+        "default": "zh-TW",
         "baidu": "cht",
         "deepl": "ZH-HANT",
         "hujiang": "cht",
@@ -152,8 +98,6 @@ MAPEO_GENERAL = {
         "itranslate": "zh-TW",
         "modernMt": "zh_TW",
         "bing": "zh-Hant",
-        "papago": "zh-TW",
-        "google": "zh-TW",
         "yandex": "zh", # NOTA: Es chino simplificado.
         "sogou": "zh-CHS",
         "caiyun": "zh-Hant",
@@ -161,9 +105,9 @@ MAPEO_GENERAL = {
         "cloudtrans": "zh-tw",
         "qqtransmart": "zh", # NOTA: Es chino simplificado.
         "systran": "zh", # NOTA: Es chino simplificado.
-        "default": "zh-TW",
     },
     "zh-CN": {
+        "default": "zh-CN",
         "baidu": "cn",
         "deepl": "ZH-HANS",
         "hujiang": "cn",
@@ -171,8 +115,6 @@ MAPEO_GENERAL = {
         "itranslate": "zh-CN",
         "modernMt": "zh_CN",
         "bing": "zh-Hans",
-        "papago": "zh-CN",
-        "google": "zh-CN",
         "yandex": "zh",
         "sogou": "zh-CHS",
         "caiyun": "zh",
@@ -180,30 +122,28 @@ MAPEO_GENERAL = {
         "cloudtrans": "zh-cn",
         "qqtransmart": "zh",
         "systran": "zh",
-        "default": "zh-CN",
     },
-}
-
-DEEPL_LANG_MAP = {
-    "es": "ES",
-    "en": "EN-US",
-    "ja": "JA",
-    "ko": "KO",
-    "zh-TW": "ZH-HANT",  # Chino tradicional
-    "zh-CN": "ZH-HANS",  # Chino simplificado
-    "auto": None
 }
 
 def obtener_codigo(traductor: str, lang_code: str) -> str:
     """Obtiene el código de idioma específico para cada traductor"""
+    print(f"DEBUG: obtener_codigo - traductor: {traductor}, lang_code: {lang_code}")
     if lang_code == "auto":
+        print("DEBUG: obtener_codigo - returning auto")
         return "auto"
     traductor = traductor.lower()
-    base_code = lang_code.split("_")[0]
-    mapeo = MAPEO_GENERAL.get(lang_code, MAPEO_GENERAL.get(base_code, {}))
-    if traductor == "modernmt" and lang_code == "es":
-        return "es-ES"
-    return mapeo.get(traductor, mapeo.get("default", lang_code))
+    base_code = lang_code.split("_")[0] # Handles cases like "es_ES" -> "es"
+    
+    # Try to get the specific mapping for the full lang_code first
+    # Then try the base_code if full lang_code not found
+    # Finally, fallback to the 'default' for that language, or the original lang_code if no mapping at all
+    
+    # Get the language-specific mapping dictionary
+    lang_map = MAPEO_GENERAL.get(lang_code, MAPEO_GENERAL.get(base_code, {}))
+    
+    result = lang_map.get(traductor, lang_map.get("default", lang_code))
+    print(f"DEBUG: obtener_codigo - result: {result}")
+    return result
 
 def detectar_idioma(texto: str) -> str:
     """Detección mejorada para textos cortos"""
@@ -228,12 +168,14 @@ def deepl_translate(text: str, target_lang: str = "es", source_lang: str = "auto
     """Traduce texto usando la API de DeepL con soporte actualizado"""
     try:
         translator = deepl.Translator(DEEPL_API_KEY)
-        target_lang = target_lang.upper().replace("_", "-")
-        source_lang = source_lang.upper().replace("_", "-") if source_lang != "auto" else None
+        # Use obtener_codigo for both target and source languages
+        deepl_target_lang = obtener_codigo("deepl", target_lang)
+        deepl_source_lang = obtener_codigo("deepl", source_lang) if source_lang != "auto" else None
+        
         result = translator.translate_text(
             text,
-            target_lang=target_lang,
-            source_lang=source_lang,
+            target_lang=deepl_target_lang,
+            source_lang=deepl_source_lang,
             formality="prefer_less"  # Opcional: ajustar formalidad
         )
         return result.text
@@ -251,7 +193,7 @@ def gemini_translate(text: str, target_language: str) -> str:
         f"{instrucciones}"
     )
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt
     )
     return response.text if response.text else "Error en la traducción"
@@ -484,17 +426,13 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
         "Hujiang": lambda t: _ensure_string_result(ts.translate_text(
             t,
             translator="hujiang",
-            from_language=mapeo_traductores["hujiang"].get(
-                source_lang if source_lang != "auto" else detectar_idioma(t), "auto"
-            ),
+            from_language=obtener_codigo("hujiang", source_lang if source_lang != "auto" else detectar_idioma(t)),
             to_language=obtener_codigo("hujiang", target_lang),
         )),
         "Lingvanex": lambda t: _ensure_string_result(ts.translate_text(
             t,
             translator="lingvanex",
-            from_language=mapeo_traductores["lingvanex"].get(
-                detectar_idioma(t) if source_lang == "auto" else source_lang, "auto"
-            ),
+            from_language=obtener_codigo("lingvanex", source_lang if source_lang != "auto" else detectar_idioma(t)),
             to_language=obtener_codigo("lingvanex", target_lang),
         )),
         # Traductores que usan detección directa

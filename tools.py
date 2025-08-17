@@ -127,6 +127,7 @@ class ToolsManager(QObject):
 
     def __init__(self, app):
         super().__init__()
+        print("DEBUG: ToolsManager.__init__ called")
         self.app = app
         self.processing_finished.connect(self._show_completion_message)
         self.utilities_area = None
@@ -154,6 +155,7 @@ class ToolsManager(QObject):
 
     def create_utilities_area(self):
         """Crea el área de herramientas."""
+        print("DEBUG: ToolsManager.create_utilities_area called")
         scroll_area = self._create_scroll_area("utilities")
         self.image_to_category = {
             0: "ocr",
@@ -178,6 +180,7 @@ class ToolsManager(QObject):
         return self.utilities_area
 
     def show_tool_details(self, category):
+        print(f"DEBUG: ToolsManager.show_tool_details called with category: {category}")
         """Muestra los detalles de las herramientas específicas para una categoría."""
         if self.toggle_ai_button:
             self.toggle_ai_button.hide()
