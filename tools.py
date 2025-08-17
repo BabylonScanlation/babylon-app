@@ -15,7 +15,8 @@ import traceback
 from PIL import Image
 
 # módulos (no tocar)
-from app_tools import gemini, mistral, translatorz
+from app_tools import mistral, translatorz
+from app_tools.gemini import GeminiProcessor
 from app_tools.haruneko import DownloadThread, HaruNekoManager
 from config import Config
 
@@ -142,6 +143,7 @@ class ToolsManager(QObject):
         self.download_state = "idle"
         self.processing_thread = None
         self.active_threads = []
+        self.gemini_processor = GeminiProcessor()
         self.haruneko_installed = False
         self.haruneko_version = None
         self.install_button = None
@@ -1379,7 +1381,7 @@ class ToolsManager(QObject):
                     "Las rutas de entrada y salida deben estar configuradas."
                 )
             self.cancel_event = threading.Event()
-            self.processing_thread = gemini.start_processing_in_background(
+            self.processing_thread = self.gemini_processor.start_processing_in_background(
                 self.input_path,
                 self.output_directory,
                 self.cancel_event,
