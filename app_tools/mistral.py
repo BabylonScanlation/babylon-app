@@ -89,6 +89,7 @@ class MistralProcessor:
                 },
             )
             ai_end_time = time.time()
+            print(f"Tiempo de procesamiento de IA para {file_path}: {ai_end_time - ai_start_time:.4f} segundos")
 
             if response.status_code == 200:
                 result_text = response.json()["choices"][0]["message"]["content"]
@@ -178,24 +179,18 @@ def process_input_path(input_path, output_dir, cancel_event=None, input_base=Non
         # Verificar si se canceló el proceso antes de combinar textos
         if cancel_event and cancel_event.is_set():
             end_time = time.time()
-            total_time = end_time - start_time
-            if total_time > 15:
-                print(f"Tiempo total de procesamiento de entrada: {total_time:.4f} segundos")
+            print(f"Tiempo total de procesamiento de entrada: {end_time - start_time:.4f} segundos")
             return False  # 🔴 Retornar False si fue cancelado
             
         # Llamar a combine_texts después de procesar todo
         combine_texts(output_dir)
         end_time = time.time()
-        total_time = end_time - start_time
-        if total_time > 15:
-            print(f"Tiempo total de procesamiento de entrada: {total_time:.4f} segundos")
+        print(f"Tiempo total de procesamiento de entrada: {end_time - start_time:.4f} segundos")
         return True  # 🟢 Retornar True si todo fue exitoso
     except Exception as e:
         logging.error("Error general: %s", str(e))
         end_time = time.time()
-        total_time = end_time - start_time
-        if total_time > 15:
-            print(f"Tiempo total de procesamiento de entrada (con error): {total_time:.4f} segundos")
+        print(f"Tiempo total de procesamiento de entrada (con error): {end_time - start_time:.4f} segundos")
         return False  # 🔴 Retornar False en caso de error
 
 
