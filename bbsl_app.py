@@ -8,11 +8,15 @@ import os
 import sys
 import traceback
 import webbrowser
+import msvcrt
 
 # bibliotecas no nativas
 import cv2
 import requests
 import time
+
+LOCK_FILE_NAME = "babylon_app.lock"
+LOCK_FILE_PATH = os.path.join(os.getenv("TEMP"), LOCK_FILE_NAME)
 
 # pylint: disable=no-name-in-module
 from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal
@@ -85,7 +89,7 @@ class App(QMainWindow):
         self.temp_files = []
         self.audio_player = None
         self._setup_main_window()
-        resize_image(Config.LOGO_PATH, 336, 99)
+        resize_image(Config.LOGO_PATH, 336, 150)
         self._load_fonts()
         self._create_layout()
         self._setup_audio()
@@ -241,11 +245,11 @@ class App(QMainWindow):
         logo_label = QLabel(self.container)
         logo_pixmap = QPixmap(Config.LOGO_PATH)
         logo_label.setPixmap(logo_pixmap)
-        logo_label.setGeometry(13, 50, logo_pixmap.width(), logo_pixmap.height())
+        logo_label.setGeometry(13, 23, logo_pixmap.width(), logo_pixmap.height())
         logo_label.setCursor(Qt.PointingHandCursor)
 
         def open_dtupscan():
-            webbrowser.open("https://dtupscan.com/")
+            webbrowser.open("https://www.babylon-scanlation.pages.dev/")
 
         def handle_logo_click(event):
             if event.button() == Qt.LeftButton:
@@ -758,7 +762,26 @@ class App(QMainWindow):
 
 
 if __name__ == "__main__":
+    # Single instance lock mechanism
+    lock_file = None
+    try:
+        lock_file = open(LOCK_FILE_PATH, 'w')
+        msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1) # Non-blocking lock
+    except IOError:
+        print("La aplicación ya está en ejecución. Saliendo...")
+        sys.exit(1) # Exit if another instance is running
+
     app = QApplication(sys.argv)
+
+    # Ensure lock file is released on application exit
+    def release_lock():
+        if lock_file:
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            lock_file.close()
+            os.remove(LOCK_FILE_PATH)
+
+    app.aboutToQuit.connect(release_lock)
+
     window = App()
     window.show()
     sys.exit(app.exec_())
