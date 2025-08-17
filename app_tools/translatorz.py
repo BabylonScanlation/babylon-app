@@ -127,22 +127,20 @@ MAPEO_GENERAL = {
 
 def obtener_codigo(traductor: str, lang_code: str) -> str:
     """Obtiene el código de idioma específico para cada traductor"""
-    print(f"DEBUG: obtener_codigo - traductor: {traductor}, lang_code: {lang_code}")
+    
     if lang_code == "auto":
-        print("DEBUG: obtener_codigo - returning auto")
+        
         return "auto"
     traductor = traductor.lower()
-    base_code = lang_code.split("_")[0] # Handles cases like "es_ES" -> "es"
+    base_code = lang_code.split("_")[0]
     
-    # Try to get the specific mapping for the full lang_code first
-    # Then try the base_code if full lang_code not found
-    # Finally, fallback to the 'default' for that language, or the original lang_code if no mapping at all
     
-    # Get the language-specific mapping dictionary
+    
+    
     lang_map = MAPEO_GENERAL.get(lang_code, MAPEO_GENERAL.get(base_code, {}))
     
     result = lang_map.get(traductor, lang_map.get("default", lang_code))
-    print(f"DEBUG: obtener_codigo - result: {result}")
+    
     return result
 
 def detectar_idioma(texto: str) -> str:
@@ -250,6 +248,8 @@ def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str,
                 to_language=obtener_codigo("baidu", target_lang),
             ))
             processed_result = str(raw_result)
+        except Exception as e:
+            pass
 
             # Check for the specific "not certified" error
             specific_baidu_error = _check_baidu_compatibility(processed_result)
@@ -262,14 +262,11 @@ def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str,
                 time.sleep(delay)
                 continue
 
-            # If we reach here, it's not the specific Baidu error, and it's not empty/identical to input.
-            # We assume it's a valid translation.
+            
+            
             return processed_result
 
-        except Exception:
-            # Any Python exception (network, etc.) also triggers a retry
-            time.sleep(delay)
-            continue
+        
 
 def _ensure_string_result(result) -> str:
     if isinstance(result, str):
@@ -280,7 +277,6 @@ def _ensure_string_result(result) -> str:
                 return item
         if len(result) > 0 and isinstance(result[-1], str):
             return result[-1]
-    # Fallback for None or other unexpected types
     return str(result) if result is not None else "" # Ensure it's always a string
 
 def _translate_papago_safe(text: str, source_lang: str, target_lang: str) -> str:
@@ -457,9 +453,7 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
         if not text:
             return "El texto a traducir no puede estar vacío"
         
-        # Call the specific translator function
         result = translators[translator_name](text)
         return result # This result should already be a string due to _ensure_string_result
     except Exception as e:
-        # Catch any exception from the translator call and return it as a string
         return f"Error en {translator_name}: {str(e)}"
