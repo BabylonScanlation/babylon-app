@@ -56,7 +56,6 @@ def resize_image(image_path, width, height):
         with Image.open(image_path) as img:
             img = img.resize((width, height), Image.LANCZOS)
             img.save(image_path)
-            print(f"Imagen {image_path} redimensionada a {width}x{height}")
     except Exception as e:
         print(f"Error al redimensionar la imagen {image_path}: {e}")
 
