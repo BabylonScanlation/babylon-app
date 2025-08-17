@@ -13,7 +13,7 @@ import webbrowser
 import cv2
 import requests
 import time
-from PyQt5.QtNetwork import QLocalServer, QLocalSocket
+from PyQt5.QtCore import QSharedMemory
 
 # pylint: disable=no-name-in-module
 from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal
@@ -761,43 +761,21 @@ class App(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    # Single instance mechanism using QLocalServer
-    server_name = "BabylonScanlationApp"
-    socket = QLocalSocket()
-    print(f"DEBUG: Second instance - Attempting to connect to server '{server_name}'...")
-    socket.connectToServer(server_name)
+    # Single instance mechanism using QSharedMemory
+    # Use a unique key for the shared memory segment
+    shared_memory_key = "BabylonScanlationAppSharedMemory"
+    shared_memory = QSharedMemory(shared_memory_key)
 
-    connected = socket.waitForConnected(2000) # Wait up to 2000ms for connection
-    print(f"DEBUG: Second instance - socket.waitForConnected returned: {connected}")
-
-    if connected:
-        # Another instance is running, send a message to activate it (optional)
-        # For now, just exit
+    # Try to attach to the shared memory segment
+    if not shared_memory.create(1): # Create a 1-byte segment
+        # If creation fails, it means another instance is running
         print("La aplicación ya está en ejecución. Saliendo de la segunda instancia.")
         sys.exit(0)
     else:
-        # No other instance is running, or connection failed.
-        # Try to start the server.
-        server = QLocalServer()
-        # Clean up any leftover server from a previous crash
-        if server.listen(server_name):
-            print("Primera instancia iniciada. Servidor de instancia única escuchando.")
-        else:
-            # If listen fails, it might be a leftover server from a crashed instance
-            if server.serverError() == QLocalServer.AddressInUseError:
-                QLocalServer.removeServer(server_name)
-                # Try listening again after removing the old server
-                if not server.listen(server_name):
-                    print(f"Error: No se pudo iniciar el servidor de instancia única: {server.errorString()}")
-                    sys.exit(1)
-                else:
-                    print("Servidor de instancia única reiniciado después de limpiar un servidor anterior.")
-            else:
-                print(f"Error: No se pudo iniciar el servidor de instancia única: {server.errorString()}")
-                sys.exit(1)
-
-        # Ensure the server is closed when the application exits
-        app.aboutToQuit.connect(server.close)
+        # This is the first instance
+        print("Primera instancia iniciada. Bloqueo de memoria compartida adquirido.")
+        # Ensure the shared memory is detached when the application exits
+        app.aboutToQuit.connect(shared_memory.detach)
 
         window = App()
         window.show()
