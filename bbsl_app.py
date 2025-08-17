@@ -762,20 +762,23 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     # Single instance mechanism using QSharedMemory
-    # Use a unique key for the shared memory segment
     shared_memory_key = "BabylonScanlationAppSharedMemory"
+    print(f"DEBUG: QSharedMemory - Attempting to acquire lock with key: '{shared_memory_key}'")
     shared_memory = QSharedMemory(shared_memory_key)
 
     # Try to attach to the shared memory segment
     if not shared_memory.create(1): # Create a 1-byte segment
         # If creation fails, it means another instance is running
+        print(f"DEBUG: QSharedMemory - create() failed. Error: {shared_memory.errorString()}")
         print("La aplicación ya está en ejecución. Saliendo de la segunda instancia.")
         sys.exit(0)
     else:
         # This is the first instance
+        print("DEBUG: QSharedMemory - create() succeeded. This is the first instance.")
         print("Primera instancia iniciada. Bloqueo de memoria compartida adquirido.")
         # Ensure the shared memory is detached when the application exits
         app.aboutToQuit.connect(shared_memory.detach)
+        print("DEBUG: QSharedMemory - app.aboutToQuit connected to shared_memory.detach()")
 
         window = App()
         window.show()
