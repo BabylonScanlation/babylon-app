@@ -8,12 +8,13 @@ import os
 import sys
 import traceback
 import webbrowser
+import msvcrt # For file locking on Windows
+import psutil # For PID checking
 
 # bibliotecas no nativas
 import cv2
 import requests
 import time
-from PyQt5.QtCore import QSharedMemory
 
 # pylint: disable=no-name-in-module
 from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal
@@ -761,25 +762,104 @@ class App(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    # Single instance mechanism using QSharedMemory
-    shared_memory_key = "BabylonScanlationAppSharedMemory"
-    print(f"DEBUG: QSharedMemory - Attempting to acquire lock with key: '{shared_memory_key}'")
-    shared_memory = QSharedMemory(shared_memory_key)
+    # Define lock file path
+    LOCK_FILE_NAME = "babylon_app.lock"
+    LOCK_FILE_PATH = os.path.join(os.getenv("TEMP"), LOCK_FILE_NAME)
 
-    # Try to attach to the shared memory segment
-    if not shared_memory.create(1): # Create a 1-byte segment
-        # If creation fails, it means another instance is running
-        print(f"DEBUG: QSharedMemory - create() failed. Error: {shared_memory.errorString()}")
-        print("La aplicación ya está en ejecución. Saliendo de la segunda instancia.")
-        sys.exit(0)
-    else:
-        # This is the first instance
-        print("DEBUG: QSharedMemory - create() succeeded. This is the first instance.")
-        print("Primera instancia iniciada. Bloqueo de memoria compartida adquirido.")
-        # Ensure the shared memory is detached when the application exits
-        app.aboutToQuit.connect(shared_memory.detach)
-        print("DEBUG: QSharedMemory - app.aboutToQuit connected to shared_memory.detach()")
+    def is_process_running(pid):
+        """Checks if a process with the given PID is currently running."""
+        try:
+            return psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
+        except Exception as e:
+            print(f"Error checking PID {pid}: {e}")
+            return False
 
-        window = App()
-        window.show()
-        sys.exit(app.exec_())
+    lock_file_handle = None
+    try:
+        # Try to open and lock the file
+        lock_file_handle = open(LOCK_FILE_PATH, 'w+') # Open for read/write, create if not exists
+        
+        # Try to acquire an exclusive, non-blocking lock
+        msvcrt.locking(lock_file_handle.fileno(), msvcrt.LK_NBLCK, 1)
+        
+        # If lock acquired, write current PID
+        lock_file_handle.seek(0)
+        lock_file_handle.truncate() # Clear file content
+        lock_file_handle.write(str(os.getpid()))
+        lock_file_handle.flush() # Ensure PID is written
+        
+        print("Primera instancia iniciada. Bloqueo de archivo adquirido.")
+
+        # Ensure lock file is released on application exit
+        def release_lock_file():
+            print("Liberando bloqueo de archivo...")
+            if lock_file_handle:
+                try:
+                    msvcrt.locking(lock_file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    lock_file_handle.close()
+                    os.remove(LOCK_FILE_PATH)
+                    print("Bloqueo de archivo liberado y archivo eliminado.")
+                except Exception as e:
+                    print(f"Error al liberar el bloqueo de archivo: {e}")
+        
+        app.aboutToQuit.connect(release_lock_file)
+
+    except IOError:
+        # Lock could not be acquired, another instance might be running
+        print("DEBUG: Bloqueo de archivo no adquirido. Comprobando instancia existente...")
+        try:
+            with open(LOCK_FILE_PATH, 'r') as f:
+                pid_str = f.read().strip()
+                if pid_str:
+                    existing_pid = int(pid_str)
+                    if is_process_running(existing_pid):
+                        print(f"La aplicación ya está en ejecución (PID: {existing_pid}). Saliendo de la segunda instancia.")
+                        sys.exit(0)
+                    else:
+                        print(f"DEBUG: Instancia anterior (PID: {existing_pid}) no encontrada. Limpiando bloqueo antiguo.")
+                        # Old process not running, clean up and try to acquire lock again
+                        if lock_file_handle:
+                            lock_file_handle.close() # Close the handle that failed to lock
+                        os.remove(LOCK_FILE_PATH)
+                        
+                        # Try to acquire the lock again in this same block
+                        try:
+                            lock_file_handle = open(LOCK_FILE_PATH, 'w+')
+                            msvcrt.locking(lock_file_handle.fileno(), msvcrt.LK_NBLCK, 1)
+                            lock_file_handle.seek(0)
+                            lock_file_handle.truncate()
+                            lock_file_handle.write(str(os.getpid()))
+                            lock_file_handle.flush()
+                            print("Primera instancia iniciada (después de limpiar). Bloqueo de archivo adquirido.")
+                            
+                            def release_lock_file_after_cleanup():
+                                print("Liberando bloqueo de archivo (después de limpiar)...")
+                                if lock_file_handle:
+                                    try:
+                                        msvcrt.locking(lock_file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                                        lock_file_handle.close()
+                                        os.remove(LOCK_FILE_PATH)
+                                        print("Bloqueo de archivo liberado y archivo eliminado (después de limpiar).")
+                                    except Exception as e:
+                                        print(f"Error al liberar el bloqueo de archivo (después de limpiar): {e}")
+                            app.aboutToQuit.connect(release_lock_file_after_cleanup)
+
+                        except IOError:
+                            print("Error: No se pudo adquirir el bloqueo después de limpiar el antiguo. Saliendo.")
+                            sys.exit(1)
+
+                else:
+                    print("Error: PID en archivo de bloqueo vacío. Saliendo.")
+                    sys.exit(1)
+        except FileNotFoundError:
+            print("DEBUG: Archivo de bloqueo no encontrado. Esto no debería ocurrir si IOError fue lanzado.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error inesperado al manejar el bloqueo de archivo: {e}")
+            sys.exit(1)
+
+    window = App()
+    window.show()
+    sys.exit(app.exec_())
