@@ -1,6 +1,6 @@
 import logging
 import os
-from os import listdir
+from os import scandir
 import sys
 import time
 from threading import Thread
@@ -125,7 +125,7 @@ class GeminiProcessor:
                 relative_dir = os.path.relpath(current_path, input_base)
                 os.makedirs(os.path.join(output_dir, relative_dir), exist_ok=True)
                 
-                for entry in sorted(os.listdir(current_path)):
+                for entry in sorted([e.name for e in scandir(current_path) if e.is_file() or e.is_dir()]):
                     chapter_recursive_processor(os.path.join(current_path, entry))
 
         chapter_recursive_processor(chapter_path)
@@ -177,7 +177,7 @@ class GeminiProcessor:
                 success = success and chapter_success
             else: # input_path es un directorio
                 # Verificar si el directorio raíz contiene imágenes directamente (es un capítulo en sí mismo)
-                contains_images_directly = any(f.lower().endswith(Config.SUPPORTED_FORMATS) for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f)))
+                contains_images_directly = any(f.lower().endswith(Config.SUPPORTED_FORMATS) for f in [e.name for e in scandir(input_path) if e.is_file()] if os.path.isfile(os.path.join(input_path, f)))
                 
                 if contains_images_directly:
                     chapter_success = self.process_chapter(
@@ -189,7 +189,7 @@ class GeminiProcessor:
                     success = success and chapter_success
 
                 # Iterar sobre los subdirectorios como capítulos
-                for entry in os.path.listdir(input_path):
+                for entry in [e.name for e in scandir(input_path) if e.is_dir()]:
                     entry_path = os.path.join(input_path, entry)
                     if os.path.isdir(entry_path):
                         chapter_success = self.process_chapter(

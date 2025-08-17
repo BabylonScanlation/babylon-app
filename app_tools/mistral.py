@@ -1,7 +1,7 @@
 import base64
 import logging
 import os
-from os import listdir
+from os import scandir
 import re
 import sys
 import time
@@ -171,7 +171,7 @@ def process_input_path(input_path, output_dir, cancel_event=None, input_base=Non
                     processor.process_file(current_path, output_path)
 
             elif os.path.isdir(current_path):
-                for entry in sorted(os.listdir(current_path)):
+                for entry in sorted([e.name for e in scandir(current_path) if e.is_file() or e.is_dir()]):
                     process_recursive(os.path.join(current_path, entry))
 
         process_recursive(input_path)
@@ -236,7 +236,7 @@ def combine_texts(output_dir):
         final_output = os.path.join(output_dir, "resultado_final.txt")
         txt_files = [
             f
-            for f in os.listdir(output_dir)
+            for f in [e.name for e in scandir(output_dir) if e.is_file()]
             if f.endswith(".txt")
             and f != "resultado_final.txt"
             and os.path.splitext(f)[0].isdigit()
