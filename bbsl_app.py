@@ -8,15 +8,12 @@ import os
 import sys
 import traceback
 import webbrowser
-import msvcrt
 
 # bibliotecas no nativas
 import cv2
 import requests
 import time
-
-LOCK_FILE_NAME = "babylon_app.lock"
-LOCK_FILE_PATH = os.path.join(os.getenv("TEMP"), LOCK_FILE_NAME)
+from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 
 # pylint: disable=no-name-in-module
 from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal
@@ -762,43 +759,37 @@ class App(QMainWindow):
 
 
 if __name__ == "__main__":
-    print("Attempting to acquire single instance lock...")
-    lock_file = None
-    try:
-        # Open in binary mode for msvcrt.locking
-        lock_file = open(LOCK_FILE_PATH, 'wb')
-        msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1) # Non-blocking lock
-        print("Lock acquired. Starting application.")
-    except IOError as e:
-        print(f"IOError: {e}")
-        print("La aplicación ya está en ejecución. Saliendo...")
-        sys.exit(1) # Exit if another instance is running
-    except Exception as e: # Catch any other unexpected errors during lock
-        print(f"Unexpected error during lock acquisition: {e}")
-        sys.exit(1)
-    finally:
-        # Ensure the file handle is closed if an error occurred before QApplication
-        if lock_file and lock_file.closed is False:
-            # If lock was not acquired, close the file without unlocking
-            # If lock was acquired, it will be released by app.aboutToQuit.connect
-            pass # Keep the file open if lock was acquired, it will be closed by release_lock
-
     app = QApplication(sys.argv)
 
-    # Ensure lock file is released on application exit
-    def release_lock():
-        print("Releasing lock...")
-        if lock_file:
-            try:
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-                lock_file.close()
-                os.remove(LOCK_FILE_PATH)
-                print("Lock released and file removed.")
-            except Exception as e:
-                print(f"Error releasing lock: {e}")
+    # Single instance mechanism using QLocalServer
+    server_name = "BabylonScanlationApp"
+    socket = QLocalSocket()
+    socket.connectToServer(server_name)
 
-    app.aboutToQuit.connect(release_lock)
+    if socket.waitForConnected(500): # Wait up to 500ms for connection
+        # Another instance is running, bring it to foreground (if possible) and exit
+        print("La aplicación ya está en ejecución. Activando instancia existente y saliendo...")
+        # You might send a message to the existing instance to activate it
+        # For simplicity, we just exit here.
+        sys.exit(0)
+    else:
+        # No other instance is running, start the server
+        server = QLocalServer()
+        if not server.listen(server_name):
+            # If listen fails, it might be a leftover server from a crashed instance
+            # Try to remove it and listen again
+            if server.serverError() == QLocalServer.AddressInUseError:
+                QLocalServer.removeServer(server_name)
+                if not server.listen(server_name):
+                    print(f"Error: No se pudo iniciar el servidor de instancia única: {server.errorString()}")
+                    sys.exit(1)
+            else:
+                print(f"Error: No se pudo iniciar el servidor de instancia única: {server.errorString()}")
+                sys.exit(1)
 
-    window = App()
-    window.show()
-    sys.exit(app.exec_())
+        # Ensure the server is closed when the application exits
+        app.aboutToQuit.connect(server.close)
+
+        window = App()
+        window.show()
+        sys.exit(app.exec_())
