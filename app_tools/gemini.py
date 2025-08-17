@@ -60,10 +60,13 @@ class GeminiProcessor:
 
             # Procesar imagen
             image = Image.open(file_path)
+            ai_start_time = time.time()
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=[prompt, image]
             )
+            ai_end_time = time.time()
+            print(f"Tiempo de procesamiento de IA para {file_path}: {ai_end_time - ai_start_time:.4f} segundos")
 
             # Extraer y guardar contenido
             translations = []
@@ -131,30 +134,61 @@ class GeminiProcessor:
 
         if combined_content:
             # Crear archivo combinado desde los archivos individuales
-            return combine_texts(chapter_output_dir, combined_content, os.path.basename(chapter_path))
+            result = combine_texts(chapter_output_dir, combined_content, os.path.basename(chapter_path))
+            end_time = time.time()
+            print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {end_time - start_time:.4f} segundos")
+            return result
         
+        end_time = time.time()
+        print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {end_time - start_time:.4f} segundos")
         return False
 
     def process_input_path(self, input_path, output_dir, cancel_event=None, input_base=None):
         try:
-            input_base = input_base or (os.path.dirname(input_path) if os.path.isfile(input_path) else input_path)
+            # Determinar el input_base para el cálculo de rutas relativas
+            # input_base debe ser el directorio que contiene los "capítulos" o "series".
+            if input_base is None:
+                if os.path.isfile(input_path):
+                    # Si input_path es un archivo, el input_base es el directorio padre del capítulo.
+                    # Ejemplo: /manga/chapter1/page1.png -> input_base = /manga
+                    input_base = os.path.dirname(os.path.dirname(input_path))
+                    if input_base == '': # Si el archivo está en la raíz del sistema de archivos
+                        input_base = os.path.dirname(input_path) # El capítulo es el directorio padre del archivo
+                else:
+                    # Si input_path es un directorio, el input_base es el directorio padre de input_path
+                    # Ejemplo: /manga/chapter1/ -> input_base = /manga/
+                    # Ejemplo: /manga/ -> input_base = / (si manga es la raíz de la serie)
+                    input_base = os.path.dirname(input_path)
+                    if input_base == '': # Si el directorio está en la raíz del sistema de archivos
+                        input_base = input_path # El propio directorio es el input_base
+
+            success = True
             
-            # Si es directorio padre, procesar cada subdirectorio como capítulo
-            if os.path.isdir(input_path):
-                success = True
-                # Check if the input_path itself contains image files directly
+            # Si la entrada es un archivo, procesar su directorio padre como un capítulo
+            if os.path.isfile(input_path):
+                chapter_to_process = os.path.dirname(input_path)
+                chapter_success = self.process_chapter(
+                    chapter_to_process,
+                    output_dir,
+                    cancel_event,
+                    input_base
+                )
+                success = success and chapter_success
+            else: # input_path es un directorio
+                # Verificar si el directorio raíz contiene imágenes directamente (es un capítulo en sí mismo)
                 contains_images_directly = any(f.lower().endswith(Config.SUPPORTED_FORMATS) for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f)))
                 
                 if contains_images_directly:
                     chapter_success = self.process_chapter(
-                        input_path,
+                        input_path, # El propio input_path es el capítulo
                         output_dir,
                         cancel_event,
                         input_base
                     )
                     success = success and chapter_success
 
-                for entry in os.listdir(input_path):
+                # Iterar sobre los subdirectorios como capítulos
+                for entry in os.path.listdir(input_path):
                     entry_path = os.path.join(input_path, entry)
                     if os.path.isdir(entry_path):
                         chapter_success = self.process_chapter(
@@ -164,10 +198,7 @@ class GeminiProcessor:
                             input_base
                         )
                         success = success and chapter_success
-                return success
-            else:
-                # Procesar entrada única (archivo o capítulo individual)
-                return self.process_chapter(input_path, output_dir, cancel_event, input_base)
+            return success
 
         except Exception as e:
             logging.error("Error en process_input_path: %s", str(e))
@@ -196,10 +227,13 @@ def generar_grilla(content):
         with open(Config.GRILLA_PROMPT, "r", encoding="utf-8") as f:
             prompt = f.read()
 
+        ai_start_time = time.time()
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=[prompt, content]
         )
+        ai_end_time = time.time()
+        print(f"Tiempo de procesamiento de IA para grilla: {ai_end_time - ai_start_time:.4f} segundos")
         return response.text if response.text else "Sin datos de personajes"
 
     except Exception as e:

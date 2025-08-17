@@ -87,8 +87,6 @@ class App(QMainWindow):
         super().__init__()
 
         if not self._check_single_instance():
-            QMessageBox.warning(None, "Babylon Scanlation", "Otra instancia de la aplicación ya está en ejecución.")
-            # Explicitly stop timer and release video capture for the exiting instance
             if hasattr(self, 'timer') and self.timer.isActive():
                 self.timer.stop()
             if hasattr(self, 'cap') and self.cap is not None and self.cap.isOpened():

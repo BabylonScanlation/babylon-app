@@ -60,10 +60,8 @@ Sistema de etiquetado:
 Ⓒ 本当に大丈夫なのか？ [Posición: centro superior]
 1. Literal: "¿Realmente está bien?"
 2. Contexto: (Expresión ansiosa) "¿De verdad es seguro?"
-3. Natural: "¿Estás segur@?"
-4. Creativa: (Voz temblorosa) "¿No será peligroso?"
-5. Personaje: (Manos temblando) "¿Y si algo sale mal?"
-6. Definitiva: (Preocupación) "¿No habrá riesgos?"
+3. Creativa: (Voz temblorosa) "¿No será peligroso?"
+4. Definitiva: (Preocupación) "¿No habrá riesgos?"
 
 3. Onomatopeyas:
 "ガシャーン！" [Posición: esquina inferior derecha]
@@ -73,17 +71,15 @@ C. Opciones:
    - ¡CRASH! (cristales)
    - ¡CLANG! (metal)
    - ¡BANG! (disparo)
-D. Definitiva: ¡CRAAASH! (Vidrio rompiéndose) [Basado en imagen]
+D. Definitiva: ¡CLANG! (metal golpeandosé) [Basado en imagen]
 
 === PROTOCOLO DE TRADUCCIÓN ===
 
-Niveles obligatorios por fragmento:
+Niveles obligatorios de traducción por viñeta de diálogo o bocadillo:
 1. Literal ↔️ Palabra por palabra
-2. Contextual 🖼️ + elementos visuales
-3. Naturalizada 🗣️ Modismos coloquiales
-4. Creativa 🎨 Licencias literarias
-5. Caracterización 👤 (Emoción/vestimenta/gestos)
-6. Definitiva ✅ Combinación óptima
+2. Contextual 🖼️ Elementos visuales + modismos coloquiales + (Emoción/vestimenta/gestos)
+3. Creativa 🎨 Licencias literarias
+4. Definitiva ✅ Combinación óptima
 
 === EJEMPLOS CRUCIALES ===
 
