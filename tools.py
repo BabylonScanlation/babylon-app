@@ -803,7 +803,7 @@ class ToolsManager(QObject):
             use_button.setEnabled(True)
             use_button.setText("Usar")
             if error:
-                if "Idioma escogido a traducir incompatible." in error or "Error en Baidu: Función no certificada o inestable." in error:
+                if "Idioma escogido a traducir incompatible." in error or "Error en Baidu: Función no certificada o inestable." in error or "Papago no está operativo por el momento y se está intentando implementar una solución." in error:
                     output_container.setStyleSheet("color: red;")
                     output_container.setText(error)
                 elif tool_name == "iTranslate" and "503" in error:
