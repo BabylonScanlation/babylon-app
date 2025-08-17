@@ -3,7 +3,10 @@ import os
 from os import scandir
 import sys
 import time
-from threading import Thread
+from threading import Thread, Event
+
+global_processing_start_time = None
+global_image_count = 0
 
 from google import genai
 
@@ -40,9 +43,72 @@ def load_prompt():
         logging.error(f"Error cargando el prompt: {str(e)}")
         return None
 
+def generar_grilla(content):
+    """Genera análisis de personajes con Gemini."""
+    try:
+        with open(Config.GRILLA_PROMPT, "r", encoding="utf-8") as f:
+            prompt = f.read()
+
+        ai_start_time = time.time()
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[prompt, content]
+        )
+        ai_end_time = time.time()
+        print(f"Tiempo de procesamiento de IA para grilla: {ai_end_time - ai_start_time:.4f} segundos")
+        return response.text if response.text else "Sin datos de personajes"
+
+    except Exception as e:
+        logging.error(f"Error generando grilla: {str(e)}")
+        return "Error al generar análisis de personajes"
+
+def combine_texts(output_dir, combined_content, chapter_name):
+    """Combina contenido y genera archivos finales con verificación de errores"""
+    try:
+        # 1. Generar archivo combinado principal
+        final_output = os.path.join(output_dir, f"{chapter_name}_completo.txt")
+        with open(final_output, "w", encoding="utf-8") as f:
+            f.write(f"CAPÍTULO: {chapter_name}\n{'='*50}\n\n")
+            for i, texto in enumerate(combined_content, 1):
+                f.write(f"PÁGINA {i}\n{'-'*50}\n{texto}\n\n")
+                if i < len(combined_content):
+                    f.write("\n" + "✦" * 75 + "\n\n")
+
+        # 2. Generar grilla desde el contenido combinado
+        with open(final_output, "r", encoding="utf-8") as f:
+            full_content = f.read()
+
+        grid_content = generar_grilla(full_content)
+        grid_path = os.path.join(output_dir, f"{chapter_name}_grilla.txt")
+        
+        with open(grid_path, "w", encoding="utf-8") as f:
+            f.write(f"ANÁLISIS DE PERSONAJES - {chapter_name}\n{'='*50}\n\n")
+            f.write(grid_content)
+
+        # Verificación final
+        if not os.path.exists(final_output) or os.path.getsize(final_output) == 0:
+            raise Exception("Archivo combinado no se creó correctamente")
+            
+        if not os.path.exists(grid_path) or os.path.getsize(grid_path) == 0:
+            raise Exception("Archivo de grilla no se creó correctamente")
+
+        return True
+
+    except Exception as e:
+        logging.error(f"ERROR EN COMBINE_TEXTS: {str(e)}")
+        # Limpiar archivos incompletos
+        if 'final_output' in locals(): 
+            if os.path.exists(final_output): 
+                os.remove(final_output) 
+        if 'grid_path' in locals(): 
+            if os.path.exists(grid_path): 
+                os.remove(grid_path)
+        return False
+
 class GeminiProcessor:
     def __init__(self):
         pass # Placeholder for now
+
 
     def process_file(self, file_path, output_dir, input_base):
         """Procesa archivos de imagen y guarda el resultado en la estructura correcta."""
@@ -84,6 +150,15 @@ class GeminiProcessor:
                 f.write("\n".join(translations))
             
             print(f"✓ {output_file} creado en {time.time() - start_time:.2f}s")
+            
+            global global_processing_start_time
+            global global_image_count
+            
+            if global_processing_start_time is not None:
+                global_image_count += 1
+                total_elapsed_time = time.time() - global_processing_start_time
+                print(f"Tiempo total transcurrido: {total_elapsed_time:.2f}s | Imágenes procesadas: {global_image_count}")
+            
             return "\n".join(translations)
 
         except Exception as e:
@@ -107,7 +182,7 @@ class GeminiProcessor:
                 return
 
             if os.path.isfile(current_path):
-                if current_path.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
+                if current_path.lower().endswith(Config.SUPPORTED_FORMATS):
                     if image_count >= 15:
                         elapsed_time = time.time() - start_time
                         if elapsed_time < 60:
@@ -162,6 +237,10 @@ class GeminiProcessor:
                     input_base = os.path.dirname(input_path)
                     if input_base == '': # Si el directorio está en la raíz del sistema de archivos
                         input_base = input_path # El propio directorio es el input_base
+
+            global global_processing_start_time
+            if global_processing_start_time is None:
+                global_processing_start_time = time.time()
 
             success = True
             
@@ -222,64 +301,4 @@ class GeminiProcessor:
         thread.start()
         return thread
 
-def generar_grilla(content):
-    """Genera análisis de personajes con Gemini."""
-    try:
-        with open(Config.GRILLA_PROMPT, "r", encoding="utf-8") as f:
-            prompt = f.read()
 
-        ai_start_time = time.time()
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[prompt, content]
-        )
-        ai_end_time = time.time()
-        print(f"Tiempo de procesamiento de IA para grilla: {ai_end_time - ai_start_time:.4f} segundos")
-        return response.text if response.text else "Sin datos de personajes"
-
-    except Exception as e:
-        logging.error(f"Error generando grilla: {str(e)}")
-        return "Error al generar análisis de personajes"
-
-def combine_texts(output_dir, combined_content, chapter_name):
-    """Combina contenido y genera archivos finales con verificación de errores"""
-    try:
-        # 1. Generar archivo combinado principal
-        final_output = os.path.join(output_dir, f"{chapter_name}_completo.txt")
-        with open(final_output, "w", encoding="utf-8") as f:
-            f.write(f"CAPÍTULO: {chapter_name}\n{'='*50}\n\n")
-            for i, texto in enumerate(combined_content, 1):
-                f.write(f"PÁGINA {i}\n{'-'*50}\n{texto}\n\n")
-                if i < len(combined_content):
-                    f.write("\n" + "✦" * 75 + "\n\n")
-
-        # 2. Generar grilla desde el contenido combinado
-        with open(final_output, "r", encoding="utf-8") as f:
-            full_content = f.read()
-
-        grid_content = generar_grilla(full_content)
-        grid_path = os.path.join(output_dir, f"{chapter_name}_grilla.txt")
-        
-        with open(grid_path, "w", encoding="utf-8") as f:
-            f.write(f"ANÁLISIS DE PERSONAJES - {chapter_name}\n{'='*50}\n\n")
-            f.write(grid_content)
-
-        # Verificación final
-        if not os.path.exists(final_output) or os.path.getsize(final_output) == 0:
-            raise Exception("Archivo combinado no se creó correctamente")
-            
-        if not os.path.exists(grid_path) or os.path.getsize(grid_path) == 0:
-            raise Exception("Archivo de grilla no se creó correctamente")
-
-        return True
-
-    except Exception as e:
-        logging.error(f"ERROR EN COMBINE_TEXTS: {str(e)}")
-        # Limpiar archivos incompletos
-        if 'final_output' in locals(): 
-            if os.path.exists(final_output): 
-                os.remove(final_output)
-        if 'grid_path' in locals(): 
-            if os.path.exists(grid_path): 
-                os.remove(grid_path)
-        return False
