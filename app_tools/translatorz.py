@@ -131,16 +131,11 @@ def obtener_codigo(traductor: str, lang_code: str) -> str:
     if lang_code == "auto":
         
         return "auto"
+    
     traductor = traductor.lower()
     base_code = lang_code.split("_")[0]
-    
-    
-    
-    
     lang_map = MAPEO_GENERAL.get(lang_code, MAPEO_GENERAL.get(base_code, {}))
-    
     result = lang_map.get(traductor, lang_map.get("default", lang_code))
-    
     return result
 
 def detectar_idioma(texto: str) -> str:
@@ -333,12 +328,17 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
                 to_language=obtener_codigo("yandex", target_lang),
             )
         )[1]),
-        "Sogou": lambda t: _ensure_string_result(ts.translate_text(
-            t,
-            translator="sogou",
-            from_language=source_lang if source_lang != "auto" else "auto",
-            to_language=obtener_codigo("sogou", target_lang),
-        )),
+        "Sogou": lambda t: (
+            raw_sogou_result := ts.translate_text(
+                t,
+                translator="sogou",
+                from_language=source_lang if source_lang != "auto" else "auto",
+                to_language=obtener_codigo("sogou", target_lang),
+            ),
+            print(f"Raw Sogou result type: {type(raw_sogou_result)}"),
+            print(f"Raw Sogou result: {raw_sogou_result}"),
+            _ensure_string_result(raw_sogou_result)
+        )[-1],
         "Caiyun": lambda t: _ensure_string_result(ts.translate_text(
             t,
             translator="caiyun",
