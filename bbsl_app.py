@@ -766,23 +766,28 @@ if __name__ == "__main__":
     socket = QLocalSocket()
     socket.connectToServer(server_name)
 
-    if socket.waitForConnected(500): # Wait up to 500ms for connection
-        # Another instance is running, bring it to foreground (if possible) and exit
-        print("La aplicación ya está en ejecución. Activando instancia existente y saliendo...")
-        # You might send a message to the existing instance to activate it
-        # For simplicity, we just exit here.
+    if socket.waitForConnected(2000): # Give it more time to connect
+        # Another instance is running, send a message to activate it (optional)
+        # For now, just exit
+        print("La aplicación ya está en ejecución. Saliendo de la segunda instancia.")
         sys.exit(0)
     else:
-        # No other instance is running, start the server
+        # No other instance is running, or connection failed.
+        # Try to start the server.
         server = QLocalServer()
-        if not server.listen(server_name):
+        # Clean up any leftover server from a previous crash
+        if server.listen(server_name):
+            print("Primera instancia iniciada. Servidor de instancia única escuchando.")
+        else:
             # If listen fails, it might be a leftover server from a crashed instance
-            # Try to remove it and listen again
             if server.serverError() == QLocalServer.AddressInUseError:
                 QLocalServer.removeServer(server_name)
+                # Try listening again after removing the old server
                 if not server.listen(server_name):
                     print(f"Error: No se pudo iniciar el servidor de instancia única: {server.errorString()}")
                     sys.exit(1)
+                else:
+                    print("Servidor de instancia única reiniciado después de limpiar un servidor anterior.")
             else:
                 print(f"Error: No se pudo iniciar el servidor de instancia única: {server.errorString()}")
                 sys.exit(1)

@@ -804,8 +804,10 @@ class ToolsManager(QObject):
         try:
             use_button.setEnabled(True)
             use_button.setText("Usar")
+            print(f"DEBUG: _handle_translation_result - tool_name: {tool_name}, error: {error}") # DEBUG
             if error:
                 if "Idioma escogido a traducir incompatible." in error or "Error en Baidu: Función no certificada o inestable." in error or "Papago no está operativo por el momento, se corregira en actualizaciones posteriores." in error:
+                    print("DEBUG: Setting color to red.") # DEBUG
                     output_container.setStyleSheet("color: red;")
                     output_container.setText(error)
                 elif tool_name == "iTranslate" and "503" in error:
@@ -815,8 +817,10 @@ class ToolsManager(QObject):
                     )
                     output_container.setText(error_msg)
                 else:
+                    print("DEBUG: Setting color to default (white).") # DEBUG
                     output_container.setText(f"🚫 Error en {tool_name}: {error}")
             else:
+                print("DEBUG: Setting color to white (no error).") # DEBUG
                 output_container.setStyleSheet("color: white;")
                 output_container.setText(result)
 
