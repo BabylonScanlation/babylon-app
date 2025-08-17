@@ -1,16 +1,13 @@
 import logging
 import os
-import re
 import sys
 import time
-import traceback
-from threading import Event, Thread
+from threading import Thread
 
 from google import genai
 
 
 from PIL import Image
-from PyQt5.QtWidgets import QMessageBox
 
 # Configurar rutas del proyecto
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -94,7 +91,6 @@ def process_chapter(chapter_path, output_dir, cancel_event, input_base):
     # Obtener estructura relativa
     rel_path = os.path.relpath(chapter_path, input_base)
     chapter_output_dir = os.path.join(output_dir, rel_path)
-    pages_dir = os.path.join(chapter_output_dir, "paginas")
 
     def chapter_recursive_processor(current_path):
         nonlocal image_count, start_time, combined_content

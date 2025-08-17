@@ -4,12 +4,9 @@ import os
 import re
 import sys
 import time
-import traceback
 from threading import Thread
 
 import requests
-from PIL import Image
-from PyQt5.QtWidgets import QMessageBox  # pylint: disable=no-name-in-module
 
 # Configurar rutas del proyecto
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

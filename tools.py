@@ -26,9 +26,7 @@ from PyQt5.QtCore import (
     QObject,
     QRunnable,
     Qt,
-    QThread,
     QThreadPool,
-    QTimer,
     pyqtSignal,
 )
 from PyQt5.QtGui import QPixmap
@@ -810,8 +808,8 @@ class ToolsManager(QObject):
                     output_container.setText(error)
                 elif tool_name == "iTranslate" and "503" in error:
                     error_msg = (
-                        f"⚠ Error en iTranslate: Servicio no disponible\n"
-                        f"(El servidor está temporalmente fuera de línea)"
+                        "⚠ Error en iTranslate: Servicio no disponible\n"
+                        "(El servidor está temporalmente fuera de línea)"
                     )
                     output_container.setText(error_msg)
                 else:
@@ -1291,15 +1289,7 @@ class ToolsManager(QObject):
         if self.install_button:
             self.install_button.setEnabled(True)
 
-    def on_download_error(self, error_msg):
-        """Maneja errores durante la descarga mostrando mensaje y reestableciendo UI."""
-        self.download_in_progress = False
-        QMessageBox.critical(
-            self.app, "Error", f"Error durante la descarga: {error_msg}"
-        )
-        if self.install_button:
-            self.install_button.setEnabled(True)
-            self.install_button.setText("Descargar")
+    
 
     def on_download_error(self, error_msg):
         """Actualiza el estado y UI ante errores en el proceso de descarga."""

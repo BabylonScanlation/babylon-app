@@ -6,7 +6,6 @@ Proporciona una interfaz gráfica para acceder a diversas herramientas y gestion
 # bibliotecas nativas
 import os
 import sys
-import traceback
 import webbrowser
 import msvcrt # For file locking on Windows
 import psutil # For PID checking
