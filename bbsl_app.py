@@ -764,9 +764,13 @@ if __name__ == "__main__":
     # Single instance mechanism using QLocalServer
     server_name = "BabylonScanlationApp"
     socket = QLocalSocket()
+    print(f"DEBUG: Second instance - Attempting to connect to server '{server_name}'...")
     socket.connectToServer(server_name)
 
-    if socket.waitForConnected(2000): # Give it more time to connect
+    connected = socket.waitForConnected(2000) # Wait up to 2000ms for connection
+    print(f"DEBUG: Second instance - socket.waitForConnected returned: {connected}")
+
+    if connected:
         # Another instance is running, send a message to activate it (optional)
         # For now, just exit
         print("La aplicación ya está en ejecución. Saliendo de la segunda instancia.")

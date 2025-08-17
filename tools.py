@@ -105,7 +105,8 @@ class TranslationTask(QRunnable):
 
                 if "Idioma escogido a traducir incompatible." in translated_text:
                     self.signals.finished.emit(self.tool["name"], "", translated_text)
-                elif "Papago no está operativo por el momento y se está intentando implementar una solución." in translated_text:
+                elif "Papago no está operativo por el momento, se corregira en actualizaciones posteriores." in translated_text:
+                    print(f"DEBUG: TranslationTask - Papago error detected: {translated_text}") # DEBUG
                     self.signals.finished.emit(self.tool["name"], "", translated_text)
                 else:
                     self.signals.finished.emit(self.tool["name"], translated_text, "")
