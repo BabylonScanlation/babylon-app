@@ -32,7 +32,6 @@ from PyQt5.QtWidgets import (
     QMessageBox,
 )
 
-# módulos (no borrar)
 from project_manager import ProjectManager
 from tools import ToolsManager, resize_image
 from config import Config, resource_path, global_exception_handler
@@ -152,8 +151,6 @@ class App(QMainWindow):
                 self.audio_player.play()
             except (IOError, OSError):
                 pass
-        else:
-            pass
 
     def _initialize_video_capture(self):
         """Inicializa o detiene el vídeo según elección del usuario."""
