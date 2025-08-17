@@ -762,23 +762,40 @@ class App(QMainWindow):
 
 
 if __name__ == "__main__":
-    # Single instance lock mechanism
+    print("Attempting to acquire single instance lock...")
     lock_file = None
     try:
-        lock_file = open(LOCK_FILE_PATH, 'w')
+        # Open in binary mode for msvcrt.locking
+        lock_file = open(LOCK_FILE_PATH, 'wb')
         msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1) # Non-blocking lock
-    except IOError:
+        print("Lock acquired. Starting application.")
+    except IOError as e:
+        print(f"IOError: {e}")
         print("La aplicación ya está en ejecución. Saliendo...")
         sys.exit(1) # Exit if another instance is running
+    except Exception as e: # Catch any other unexpected errors during lock
+        print(f"Unexpected error during lock acquisition: {e}")
+        sys.exit(1)
+    finally:
+        # Ensure the file handle is closed if an error occurred before QApplication
+        if lock_file and lock_file.closed is False:
+            # If lock was not acquired, close the file without unlocking
+            # If lock was acquired, it will be released by app.aboutToQuit.connect
+            pass # Keep the file open if lock was acquired, it will be closed by release_lock
 
     app = QApplication(sys.argv)
 
     # Ensure lock file is released on application exit
     def release_lock():
+        print("Releasing lock...")
         if lock_file:
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-            lock_file.close()
-            os.remove(LOCK_FILE_PATH)
+            try:
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                lock_file.close()
+                os.remove(LOCK_FILE_PATH)
+                print("Lock released and file removed.")
+            except Exception as e:
+                print(f"Error releasing lock: {e}")
 
     app.aboutToQuit.connect(release_lock)
 

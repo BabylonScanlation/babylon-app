@@ -340,7 +340,7 @@ def _translate_papago_safe(text: str, source_lang: str, target_lang: str) -> str
             to_language=obtener_codigo("papago", target_lang),
         ))
     except Exception:
-        return "Papago no está operativo por el momento y se está intentando implementar una solución."
+        return "Papago no está operativo por el momento, se corregira en actualizaciones posteriores."
 
 def translatorz(translator_name: str, text: str, source_lang: str, target_lang: str) -> str:
     """Función unificada para traducciones usando múltiples servicios."""
