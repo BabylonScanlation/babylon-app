@@ -10,6 +10,7 @@ import threading
 import time
 import webbrowser
 import traceback
+import logging
 
 # bibliotecas no nativas
 from PIL import Image
