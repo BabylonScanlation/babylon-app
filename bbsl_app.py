@@ -300,7 +300,7 @@ class App(QMainWindow):
         logo_label.setCursor(Qt.PointingHandCursor)
 
         def open_dtupscan():
-            webbrowser.open("https://www.babylon-scanlation.pages.dev/")
+            webbrowser.open("https://babylon-scanlation.pages.dev/")
 
         def handle_logo_click(event):
             if event.button() == Qt.LeftButton:
