@@ -130,7 +130,8 @@ class GeminiProcessor:
             ai_start_time = time.time()
             response = client.models.generate_content(
                 model=MODEL_NAME,
-                contents=[prompt, image]
+                contents=[prompt, image],
+                thinkingBudget=-1 # Set to dynamic thinking
             )
             ai_end_time = time.time()
             print(f"Tiempo de procesamiento de IA para {file_path}: {ai_end_time - ai_start_time:.4f} segundos")
