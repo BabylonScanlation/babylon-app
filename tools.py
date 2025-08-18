@@ -124,7 +124,7 @@ class TranslationSignals(QObject):
 # pylint: disable=too-many-instance-attributes, too-many-lines
 class ToolsManager(QObject):
     """Gestiona la creación y configuración de herramientas de la aplicación."""
-    processing_finished = pyqtSignal(bool)
+    processing_finished = pyqtSignal(str)
 
     def __init__(self, app):
         super().__init__()

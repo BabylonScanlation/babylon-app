@@ -141,10 +141,12 @@ class GeminiProcessor:
 
             # Extraer y guardar contenido
             translations = []
-            for candidate in response.candidates:
-                for part in candidate.content.parts:
-                    if hasattr(part, 'text'):
-                        translations.append(part.text)
+            if response and response.candidates:
+                for candidate in response.candidates:
+                    if candidate and candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text'):
+                                translations.append(part.text)
 
             # Guardar archivo individual en /paginas
             base_name = os.path.splitext(os.path.basename(file_path))[0]
