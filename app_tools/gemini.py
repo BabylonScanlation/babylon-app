@@ -9,6 +9,7 @@ global_processing_start_time = None
 global_image_count = 0
 
 from google import genai
+from google.genai import types
 
 
 from PIL import Image
@@ -131,7 +132,9 @@ class GeminiProcessor:
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=[prompt, image],
-                thinkingBudget=-1 # Set to dynamic thinking
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=-1)
+                )
             )
             ai_end_time = time.time()
             print(f"Tiempo de procesamiento de IA para {file_path}: {ai_end_time - ai_start_time:.4f} segundos")
