@@ -153,6 +153,7 @@ class ToolsManager(QObject):
         self.toggle_ai_button = None
         self.source_combo = None
         self.target_combo = None
+        self.selected_files_for_processing = []
 
     def create_utilities_area(self):
         """Crea el área de herramientas."""
@@ -1235,7 +1236,8 @@ class ToolsManager(QObject):
             self.app, "Seleccionar Archivos", QDir.homePath()
         )
         if file_paths:
-            self.input_path = file_paths[0]
+            self.selected_files_for_processing = file_paths
+            self.input_path = None # Indicate that a list of files is selected, not a single path
             print(f"Archivos seleccionados: {file_paths}")
 
     def _save_results(self):
@@ -1376,17 +1378,31 @@ class ToolsManager(QObject):
     def _start_gemini_processing(self):
         """Inicia Gemini en segundo plano validando rutas y manejando cancelaciones."""
         try:
-            if not self.input_path or not self.output_directory:
-                raise ValueError(
-                    "Las rutas de entrada y salida deben estar configuradas."
-                )
+            if not self.output_directory: # output_directory is always required
+                raise ValueError("La ruta de salida debe estar configurada.")
+
             self.cancel_event = threading.Event()
-            self.processing_thread = self.gemini_processor.start_processing_in_background(
-                self.input_path,
-                self.output_directory,
-                self.cancel_event,
-                callback=self._handle_processing_finished,
-            )
+
+            if hasattr(self, 'selected_files_for_processing') and self.selected_files_for_processing:
+                # Process selected files
+                self.processing_thread = threading.Thread(
+                    target=self._process_selected_files_gemini,
+                    args=(self.selected_files_for_processing, self.output_directory, self.cancel_event, self._handle_processing_finished)
+                )
+                self.processing_thread.start()
+                # Clear selected files after starting processing
+                self.selected_files_for_processing = []
+            elif self.input_path:
+                # Process input directory
+                self.processing_thread = self.gemini_processor.start_processing_in_background(
+                    self.input_path,
+                    self.output_directory,
+                    self.cancel_event,
+                    callback=self._handle_processing_finished,
+                )
+            else:
+                raise ValueError("Las rutas de entrada o archivos seleccionados deben estar configurados.")
+
             QMessageBox.information(
                 self.app,
                 "Procesamiento iniciado",
@@ -1477,6 +1493,33 @@ class ToolsManager(QObject):
         """Envía el resultado a través de la señal (seguro para hilos)"""
         status_str = "success" if success else "error"
         self.processing_finished.emit(status_str)
+
+    def _process_selected_files_gemini(self, file_paths, output_dir, cancel_event, callback):
+        """Procesa una lista de archivos seleccionados para Gemini."""
+        success = True
+        try:
+            for file_path in file_paths:
+                if cancel_event.is_set():
+                    success = "cancelled"
+                    break
+                # Determine input_base for each file (its parent directory)
+                input_base = os.path.dirname(file_path)
+                content = self.gemini_processor.process_file(file_path, output_dir, input_base)
+                if not content: # If process_file returns empty string, it indicates an error
+                    success = False
+                    break
+        except Exception as e:
+            logging.error(f"Error procesando archivos seleccionados para Gemini: {str(e)}")
+            success = False
+        finally:
+            if callback:
+                # Convert boolean success to string status for callback
+                if success == "cancelled":
+                    callback("cancelled")
+                elif success:
+                    callback("success")
+                else:
+                    callback("error")
 
     def open_path_for_prompt(self, text_box):
         """Abre un cuadro de diálogo para seleccionar un archivo .txt y actualiza la ruta."""

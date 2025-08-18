@@ -295,11 +295,24 @@ class GeminiProcessor:
         """Inicia el procesamiento en segundo plano con estructura de capítulos."""
         
         def _process_and_callback():
-            result = False
+            result = False # Default to False (error or incomplete)
             try:
+                if cancel_event and cancel_event.is_set(): # Check for cancellation before starting
+                    result = "cancelled"
+                    return # Exit early if cancelled
+                
                 result = self.process_input_path(input_path, output_dir, cancel_event)
+                
+                if cancel_event and cancel_event.is_set(): # Check for cancellation after processing
+                    result = "cancelled"
+                elif result: # If process_input_path returned True (success)
+                    result = "success"
+                else: # If process_input_path returned False (error)
+                    result = "error"
+
             except Exception as e:
                 logging.error(f"Error crítico en _process_and_callback: {str(e)}")
+                result = "error" # Ensure result is "error" on critical exception
             finally:
                 if callback:
                     callback(result)
