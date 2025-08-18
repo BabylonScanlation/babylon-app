@@ -1475,7 +1475,8 @@ class ToolsManager(QObject):
 
     def _handle_processing_finished(self, success):
         """Envía el resultado a través de la señal (seguro para hilos)"""
-        self.processing_finished.emit(bool(success))
+        status_str = "success" if success else "error"
+        self.processing_finished.emit(status_str)
 
     def open_path_for_prompt(self, text_box):
         """Abre un cuadro de diálogo para seleccionar un archivo .txt y actualiza la ruta."""

@@ -31,7 +31,7 @@ logging.basicConfig(level=logging.DEBUG)
 sys.excepthook = global_exception_handler
 
 # Configurar cliente de Gemini
-MODEL_NAME = "gemini-2.5-flash-lite"
+MODEL_NAME = "gemini-2.5-pro"
 
 client = genai.Client(api_key=Config.GEMINI_API_KEY)
 
@@ -222,9 +222,7 @@ class GeminiProcessor:
         end_time = time.time()
         print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {end_time - start_time:.4f} segundos")
         return False
-        finally: # Correctly indented
-            stop_timer_event.set()
-            timer_thread.join() # Ensure the timer thread finishes
+        
 
     def process_input_path(self, input_path, output_dir, cancel_event=None, input_base=None):
         try:
@@ -294,15 +292,16 @@ class GeminiProcessor:
     def start_processing_in_background(self, input_path, output_dir, cancel_event=None, callback=None):
         """Inicia el procesamiento en segundo plano con estructura de capítulos."""
         
-        def _process_and_callback(process_func):
+        def _process_and_callback():
             result = False
             try:
-                result = process_func(input_path, output_dir, cancel_event)
+                result = self.process_input_path(input_path, output_dir, cancel_event)
             except Exception as e:
                 logging.error(f"Error crítico en _process_and_callback: {str(e)}")
             finally:
                 if callback:
                     callback(result)
+        thread = Thread(target=_process_and_callback)
         thread.start()
         return thread
 
