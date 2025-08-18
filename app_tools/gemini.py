@@ -248,16 +248,14 @@ class GeminiProcessor:
 
             success = True
             
-            # Si la entrada es un archivo, procesar su directorio padre como un capítulo
+            # Si la entrada es un archivo, procesar solo ese archivo
             if os.path.isfile(input_path):
-                chapter_to_process = os.path.dirname(input_path)
-                chapter_success = self.process_chapter(
-                    chapter_to_process,
+                file_success = self.process_file(
+                    input_path,
                     output_dir,
-                    cancel_event,
                     input_base
                 )
-                success = success and chapter_success
+                success = file_success # Success depends on single file processing
             else: # input_path es un directorio
                 # Verificar si el directorio raíz contiene imágenes directamente (es un capítulo en sí mismo)
                 contains_images_directly = any(f.lower().endswith(Config.SUPPORTED_FORMATS) for f in [e.name for e in scandir(input_path) if e.is_file()] if os.path.isfile(os.path.join(input_path, f)))
@@ -292,14 +290,21 @@ class GeminiProcessor:
         """Inicia el procesamiento en segundo plano con estructura de capítulos."""
         
         def _process_and_callback(process_func):
-            result = False
+            status = "error" # Default to error
             try:
                 result = process_func(input_path, output_dir, cancel_event)
+                if cancel_event and cancel_event.is_set():
+                    status = "cancelled"
+                elif result: # If process_func returned True
+                    status = "success"
+                else: # If process_func returned False (and not cancelled)
+                    status = "error" # This means processing failed for some reason
             except Exception as e:
                 logging.error(f"Error crítico en _process_and_callback: {str(e)}")
+                status = "error"
             finally:
                 if callback:
-                    callback(result)
+                    callback(status)
 
         thread = Thread(target=_process_and_callback, args=(self.process_input_path,))
         thread.start()

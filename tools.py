@@ -1453,16 +1453,24 @@ class ToolsManager(QObject):
                 "No hay ningún procesamiento en curso para cancelar.",
             )
 
-    def _show_completion_message(self, success):
+    def _show_completion_message(self, status):
         """Muestra el mensaje en el hilo principal"""
+        title = ""
+        message = ""
+        if status == "success":
+            title = "Proceso Completado"
+            message = "Procesamiento finalizado exitosamente!"
+        elif status == "cancelled":
+            title = "Proceso Cancelado"
+            message = "El procesamiento ha sido cancelado."
+        else: # status == "error"
+            title = "Error"
+            message = "Ocurrió un error durante el procesamiento."
+
         QMessageBox.information(
             self.app,
-            "Proceso Completado" if success else "Error",
-            (
-                "Procesamiento finalizado exitosamente!"
-                if success
-                else "Ocurrió un error durante el procesamiento."
-            ),
+            title,
+            message,
         )
 
     def _handle_processing_finished(self, success):
