@@ -897,7 +897,7 @@ class ToolsManager(QObject):
         )
         description_label.setFont(self.app.roboto_black_font)
         html_description = (
-            "<p>" + config_description.replace("\n", "<br>").replace(" ", " ") + "</p>"
+            "<p>" + config_description.replace("\n", "<br>").replace(" ", " ") + "</p>"
         )
         description_label.setHtml(html_description)
         top_layout.addWidget(description_label)
@@ -1010,18 +1010,20 @@ class ToolsManager(QObject):
             background-color: #555555;
         }
         """
-        start_button = QPushButton("Iniciar Procesamiento")
-        start_button.setStyleSheet(button_style)
-        start_button.setFont(self.app.super_cartoon_font)
-        start_button.setCursor(Qt.PointingHandCursor)
-        start_button.clicked.connect(self._start_gemini_processing)
-        right_layout.addWidget(start_button, alignment=Qt.AlignCenter)
-        cancel_button = QPushButton("Cancelar")
-        cancel_button.setStyleSheet(button_style)
-        cancel_button.setFont(self.app.super_cartoon_font)
-        cancel_button.setCursor(Qt.PointingHandCursor)
-        cancel_button.clicked.connect(self._cancel_gemini_processing)
-        right_layout.addWidget(cancel_button, alignment=Qt.AlignCenter)
+        self.gemini_start_button = QPushButton("Iniciar Procesamiento")  # Guardar referencia
+        self.gemini_start_button.setStyleSheet(button_style)
+        self.gemini_start_button.setFont(self.app.super_cartoon_font)
+        self.gemini_start_button.setCursor(Qt.PointingHandCursor)
+        self.gemini_start_button.clicked.connect(self._start_gemini_processing)
+        right_layout.addWidget(self.gemini_start_button, alignment=Qt.AlignCenter)
+        
+        self.gemini_cancel_button = QPushButton("Cancelar")  # Guardar referencia
+        self.gemini_cancel_button.setStyleSheet(button_style)
+        self.gemini_cancel_button.setFont(self.app.super_cartoon_font)
+        self.gemini_cancel_button.setCursor(Qt.PointingHandCursor)
+        self.gemini_cancel_button.clicked.connect(self._cancel_gemini_processing)
+        self.gemini_cancel_button.setEnabled(False)  # Inicialmente deshabilitado
+        right_layout.addWidget(self.gemini_cancel_button, alignment=Qt.AlignCenter)
         bottom_layout.addWidget(right_column, stretch=1)
         main_layout.addWidget(custom_section, stretch=0)
         self.gemini_container.show()
@@ -1294,8 +1296,6 @@ class ToolsManager(QObject):
         if self.install_button:
             self.install_button.setEnabled(True)
 
-    
-
     def on_download_error(self, error_msg):
         """Actualiza el estado y UI ante errores en el proceso de descarga."""
         self.download_in_progress = False
@@ -1382,12 +1382,17 @@ class ToolsManager(QObject):
             if not self.output_directory: # output_directory is always required
                 raise ValueError("La ruta de salida debe estar configurada.")
 
+            # Deshabilitar botón de inicio y habilitar botón de cancelación
+            self.gemini_start_button.setEnabled(False)
+            self.gemini_cancel_button.setEnabled(True)
+            QApplication.processEvents()  # Actualizar UI inmediatamente
+
             self.cancel_event = threading.Event()
 
             if hasattr(self, 'selected_files_for_processing') and self.selected_files_for_processing:
                 # Process selected files
                 self.processing_thread = threading.Thread(
-                    target=self._process_selected_files_gemini,
+                    target=self.gemini_processor._process_selected_files_gemini,
                     args=(self.selected_files_for_processing, self.output_directory, self.cancel_event, self._handle_processing_finished)
                 )
                 self.processing_thread.start()
@@ -1409,19 +1414,28 @@ class ToolsManager(QObject):
                 "Procesamiento iniciado",
                 "El procesamiento se ha iniciado. Puedes cancelarlo en cualquier momento.",
             )
+            # Mover el QApplication.processEvents() aquí para actualizar UI
+            QApplication.processEvents()
+            
         except ValueError as e:
             QMessageBox.critical(
                 self.app, "Error", f"Error durante el procesamiento: {e}"
             )
+            # Asegurar reset de botones en caso de error
+            if hasattr(self, 'gemini_start_button'):
+                self.gemini_start_button.setEnabled(True)
+            if hasattr(self, 'gemini_cancel_button'):
+                self.gemini_cancel_button.setEnabled(False)
 
     def _cancel_gemini_processing(self):
         """Cancela el procesamiento en curso de Gemini."""
         if hasattr(self, "cancel_event") and self.cancel_event:
             self.cancel_event.set()
+            self.gemini_cancel_button.setEnabled(False)  # Deshabilitar botón de cancelación
             QMessageBox.information(
                 self.app,
-                "Procesamiento Cancelado",
-                "El procesamiento ha sido cancelado.",
+                "Cancelación Solicitada",
+                "Se ha solicitado la cancelación. El proceso se detendrá lo antes posible.",
             )
         else:
             QMessageBox.warning(
@@ -1470,6 +1484,10 @@ class ToolsManager(QObject):
                 "No hay ningún procesamiento en curso para cancelar.",
             )
 
+    def _handle_processing_finished(self, status):
+        """Envía el resultado a través de la señal (seguro para hilos)"""
+        self.processing_finished.emit(status)
+
     def _show_completion_message(self, status):
         """Muestra el mensaje en el hilo principal"""
         title = ""
@@ -1479,8 +1497,8 @@ class ToolsManager(QObject):
             message = "Procesamiento finalizado exitosamente!"
         elif status == "cancelled":
             title = "Proceso Cancelado"
-            message = "El procesamiento ha sido cancelado."
-        else: # status == "error"
+            message = "El procesamiento ha sido cancelado por el usuario."
+        else:  # status == "error"
             title = "Error"
             message = "Ocurrió un error durante el procesamiento."
 
@@ -1490,10 +1508,11 @@ class ToolsManager(QObject):
             message,
         )
 
-    def _handle_processing_finished(self, success):
-        """Envía el resultado a través de la señal (seguro para hilos)"""
-        status_str = "success" if success else "error"
-        self.processing_finished.emit(status_str)
+        # RESET BUTTON STATES - ADDED FIX
+        if hasattr(self, 'gemini_start_button'):
+            self.gemini_start_button.setEnabled(True)
+        if hasattr(self, 'gemini_cancel_button'):
+            self.gemini_cancel_button.setEnabled(False)
 
     def _process_selected_files_gemini(self, file_paths, output_dir, cancel_event, callback):
         """Procesa una lista de archivos seleccionados para Gemini."""

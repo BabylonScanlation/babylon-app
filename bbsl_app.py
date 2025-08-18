@@ -678,6 +678,8 @@ class App(QMainWindow):
                 else:
                     raise
 
+    
+
     def _hide_all_sections(self):
         """Oculta todas las secciones de contenido y controles de traducción."""
         self._hide_translation_controls()

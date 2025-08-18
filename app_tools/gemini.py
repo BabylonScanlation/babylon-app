@@ -1,17 +1,18 @@
 import logging
 import os
-from os import scandir
 import sys
 import time
+import random
+import re
+import httpx
 from threading import Thread, Event
+import glob
 
-global_processing_start_time = None
-global_image_count = 0
+# Eliminamos las variables globales para manejar el estado por instancia
+# En su lugar, usaremos atributos de instancia
 
 from google import genai
 from google.genai import types
-
-
 from PIL import Image
 
 # Configurar rutas del proyecto
@@ -26,13 +27,11 @@ except ImportError as e:
     sys.exit(1)
 
 # Configuración inicial
-logging.basicConfig(level=logging.DEBUG)
-
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 sys.excepthook = global_exception_handler
 
 # Configurar cliente de Gemini
-MODEL_NAME = "gemini-2.5-pro"
-
+MODEL_NAME = "gemini-2.5-flash-lite"
 client = genai.Client(api_key=Config.GEMINI_API_KEY)
 
 def load_prompt():
@@ -63,56 +62,78 @@ def generar_grilla(content):
         logging.error(f"Error generando grilla: {str(e)}")
         return "Error al generar análisis de personajes"
 
-def combine_texts(output_dir, combined_content, chapter_name):
+def combine_texts(output_dir, combined_content, chapter_name, master_content=None):
     """Combina contenido y genera archivos finales con verificación de errores"""
     try:
+        # Sanitizar nombre del capítulo para evitar problemas en rutas
+        sanitized_chapter = "".join(c for c in chapter_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
+        if not sanitized_chapter:
+            sanitized_chapter = "capitulo"
+        
         # 1. Generar archivo combinado principal
-        final_output = os.path.join(output_dir, f"{chapter_name}_completo.txt")
-        with open(final_output, "w", encoding="utf-8") as f:
-            f.write(f"CAPÍTULO: {chapter_name}\n{'='*50}\n\n")
+        final_output = os.path.join(output_dir, f"{sanitized_chapter}_completo.txt")
+        
+        # Asegurar que existe el directorio de salida
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Creando archivos en: {output_dir}")
+        print(f" - Archivo combinado: {os.path.basename(final_output)}")
+        
+        # Construir el contenido completo en memoria
+        full_content = ""
+        if master_content is not None:
+            full_content = master_content
+        else:
+            full_content = f"CAPÍTULO: {sanitized_chapter}\n{'='*50}\n\n"
             for i, texto in enumerate(combined_content, 1):
-                f.write(f"PÁGINA {i}\n{'-'*50}\n{texto}\n\n")
+                full_content += f"PÁGINA {i}\n{'-'*50}\n{texto}\n\n"
                 if i < len(combined_content):
-                    f.write("\n" + "✦" * 75 + "\n\n")
+                    full_content += "\n" + "✦" * 75 + "\n\n"
 
-        # 2. Generar grilla desde el contenido combinado
-        with open(final_output, "r", encoding="utf-8") as f:
-            full_content = f.read()
+        # Escribir el archivo combinado
+        with open(final_output, "w", encoding="utf-8") as f:
+            f.write(full_content)
 
+        # 2. Generar grilla desde el contenido en memoria
         grid_content = generar_grilla(full_content)
-        grid_path = os.path.join(output_dir, f"{chapter_name}_grilla.txt")
+        grid_path = os.path.join(output_dir, f"{sanitized_chapter}_grilla.txt")
+        print(f" - Archivo grilla: {os.path.basename(grid_path)}")
         
         with open(grid_path, "w", encoding="utf-8") as f:
-            f.write(f"ANÁLISIS DE PERSONAJES - {chapter_name}\n{'='*50}\n\n")
+            f.write(f"ANÁLISIS DE PERSONAJES - {sanitized_chapter}\n{'='*50}\n\n")
             f.write(grid_content)
 
         # Verificación final
         if not os.path.exists(final_output) or os.path.getsize(final_output) == 0:
-            raise Exception("Archivo combinado no se creó correctamente")
+            raise Exception(f"Archivo combinado no se creó correctamente: {final_output}")
             
         if not os.path.exists(grid_path) or os.path.getsize(grid_path) == 0:
-            raise Exception("Archivo de grilla no se creó correctamente")
+            raise Exception(f"Archivo de grilla no se creó correctamente: {grid_path}")
 
+        print(f"✓ Archivos generados en: {output_dir}")
         return True
 
     except Exception as e:
-        logging.error(f"ERROR EN COMBINE_TEXTS: {str(e)}")
+        logging.error(f"ERROR EN COMBINE_TEXTS: {str(e)}", exc_info=True)
         # Limpiar archivos incompletos
-        if 'final_output' in locals(): 
-            if os.path.exists(final_output): 
-                os.remove(final_output) 
-        if 'grid_path' in locals(): 
-            if os.path.exists(grid_path): 
-                os.remove(grid_path)
+        if 'final_output' in locals() and os.path.exists(final_output): 
+            os.remove(final_output) 
+        if 'grid_path' in locals() and os.path.exists(grid_path): 
+            os.remove(grid_path)
         return False
 
 class GeminiProcessor:
     def __init__(self):
-        pass # Placeholder for now
+        self.processing_start_time = None
+        self.image_count = 0
+        self.cancel_event = None
 
+    def reset_counters(self):
+        """Reinicia los contadores para un nuevo procesamiento"""
+        self.processing_start_time = time.time()
+        self.image_count = 0
 
     def process_file(self, file_path, output_dir, input_base):
-        """Procesa archivos de imagen y guarda el resultado en la estructura correcta."""
+        """Procesa archivos de imagen con reintentos en caso de error de conexión"""
         try:
             start_time = time.time()
             print(f"\nProcesando: {file_path}")
@@ -126,27 +147,36 @@ class GeminiProcessor:
             pages_dir = os.path.join(chapter_dir, "paginas")
             os.makedirs(pages_dir, exist_ok=True)
 
-            # Procesar imagen
+            # Procesar imagen con manejo de reintentos
             image = Image.open(file_path)
             ai_start_time = time.time()
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[prompt, image],
-                config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(thinking_budget=-1)
-                )
-            )
+            
+            # Intento con reintentos para errores de conexión
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = client.models.generate_content(
+                        model=MODEL_NAME,
+                        contents=[prompt, image]
+                    )
+                    break  # Si tiene éxito, sal del bucle
+                except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) + random.uniform(0, 1)
+                        logging.warning(f"Error de conexión (intento {attempt+1}/{max_retries}): {e}. Reintentando en {wait_time:.1f} segundos...")
+                        time.sleep(wait_time)
+                    else:
+                        raise  # Relanza la excepción después del último intento
+            
             ai_end_time = time.time()
             print(f"Tiempo de procesamiento de IA para {file_path}: {ai_end_time - ai_start_time:.4f} segundos")
 
             # Extraer y guardar contenido
             translations = []
-            if response and response.candidates:
-                for candidate in response.candidates:
-                    if candidate and candidate.content and candidate.content.parts:
-                        for part in candidate.content.parts:
-                            if hasattr(part, 'text'):
-                                translations.append(part.text)
+            for candidate in response.candidates:
+                for part in candidate.content.parts:
+                    if hasattr(part, 'text'):
+                        translations.append(part.text)
 
             # Guardar archivo individual en /paginas
             base_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -155,169 +185,202 @@ class GeminiProcessor:
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write("\n".join(translations))
             
-            print(f"✓ {output_file} creado en {time.time() - start_time:.2f}s")
-            
-            global global_processing_start_time
-            global global_image_count
-            
-            if global_processing_start_time is not None:
-                global_image_count += 1
-                total_elapsed_time = time.time() - global_processing_start_time
-                print(f"Tiempo total transcurrido: {total_elapsed_time:.2f}s | Imágenes procesadas: {global_image_count}")
+            if self.processing_start_time is not None:
+                self.image_count += 1
+                total_elapsed_time = time.time() - self.processing_start_time
+                print(f"Tiempo total transcurrido: {total_elapsed_time:.2f}s | Imágenes procesadas: {self.image_count}")
             
             return "\n".join(translations)
 
         except Exception as e:
-            logging.error("Error procesando %s: %s", file_path, str(e))
+            logging.error(f"Error procesando {file_path}: {str(e)}", exc_info=True)
             return ""
-
     
     def process_chapter(self, chapter_path, output_dir, cancel_event, input_base):
-        """Procesa un capítulo individual con su propia carpeta de salida"""
-        combined_content = []
-        image_count = 0
-        start_time = time.time()
+        """Procesa un capítulo individual y genera sus archivos finales inmediatamente"""
+        try:
+            combined_content = []
+            image_count = 0
+            start_time = time.time()
 
-        # Obtener estructura relativa
-        rel_path = os.path.relpath(chapter_path, input_base)
-        chapter_output_dir = os.path.join(output_dir, rel_path)
+            # Obtener estructura relativa
+            rel_path = os.path.relpath(chapter_path, input_base)
+            chapter_output_dir = os.path.join(output_dir, rel_path)
+            os.makedirs(chapter_output_dir, exist_ok=True)
 
-        def chapter_recursive_processor(current_path):
-            nonlocal image_count, start_time, combined_content
-            if cancel_event and cancel_event.is_set():
-                return
+            print(f"\n{'='*80}")
+            print(f"INICIANDO PROCESAMIENTO DE CAPÍTULO: {os.path.basename(chapter_path)}")
+            print(f"Directorio de salida del capítulo: {chapter_output_dir}")
+            print(f"{'='*80}\n")
 
-            if os.path.isfile(current_path):
-                if current_path.lower().endswith(Config.SUPPORTED_FORMATS):
-                    if image_count >= 15:
-                        elapsed_time = time.time() - start_time
-                        if elapsed_time < 60:
-                            time.sleep(60 - elapsed_time)
-                        start_time = time.time()
-                        image_count = 0
+            # Encontrar todas las imágenes en el capítulo (incluyendo subdirectorios)
+            image_files = []
+            for root, _, files in os.walk(chapter_path):
+                for file in files:
+                    if file.lower().endswith(Config.SUPPORTED_FORMATS):
+                        image_files.append(os.path.join(root, file))
+            
+            # Ordenar imágenes naturalmente
+            image_files.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])
 
-                    content = self.process_file(current_path, output_dir, input_base)
-                    if content:
-                        combined_content.append(content)
-                        image_count += 1
+            # Procesar cada imagen
+            for i, image_path in enumerate(image_files, 1):
+                if cancel_event and cancel_event.is_set():
+                    print(f"Proceso cancelado durante el capítulo {os.path.basename(chapter_path)}")
+                    return "cancelled"
 
-            elif os.path.isdir(current_path):
-                # Crear estructura de carpetas reflejada
-                relative_dir = os.path.relpath(current_path, input_base)
-                os.makedirs(os.path.join(output_dir, relative_dir), exist_ok=True)
+                # Control de tasa: 15 imágenes por minuto
+                if i % 15 == 0:
+                    elapsed_time = time.time() - start_time
+                    if elapsed_time < 60:
+                        sleep_time = 60 - elapsed_time
+                        print(f"Alcanzado límite de tasa. Durmiendo {sleep_time:.2f} segundos...")
+                        time.sleep(sleep_time)
+                    start_time = time.time()
+
+                print(f"Procesando imagen {i}/{len(image_files)}: {os.path.basename(image_path)}")
+                content = self.process_file(image_path, output_dir, input_base)
+                if content:
+                    combined_content.append(content)
+
+            # Generar archivos combinados para el capítulo inmediatamente después de procesar las imágenes
+            if combined_content:
+                chapter_name = os.path.basename(chapter_path)
+                print(f"\n--- Generando archivos finales para CAPÍTULO: {chapter_name} ---")
                 
-                for entry in sorted([e.name for e in scandir(current_path) if e.is_file() or e.is_dir()]):
-                    chapter_recursive_processor(os.path.join(current_path, entry))
-
-        chapter_recursive_processor(chapter_path)
-
-        if cancel_event and cancel_event.is_set():
-            return False
-
-        if combined_content:
-            # Crear archivo combinado desde los archivos individuales
-            result = combine_texts(chapter_output_dir, combined_content, os.path.basename(chapter_path))
-            end_time = time.time()
-            print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {end_time - start_time:.4f} segundos")
-            return result
+                result = combine_texts(chapter_output_dir, combined_content, chapter_name)
+                
+                end_time = time.time()
+                print(f"\n{'='*80}")
+                print(f"CAPÍTULO COMPLETADO: {chapter_name}")
+                print(f"Tiempo total del capítulo: {end_time - start_time:.4f} segundos")
+                print(f"{'='*80}\n")
+                
+                if result:
+                    return "success"
+                else:
+                    return "error"
+            
+            print(f"\n{'!'*80}")
+            print(f"ADVERTENCIA: No se encontraron imágenes en el capítulo {os.path.basename(chapter_path)}")
+            print(f"{'!'*80}\n")
+            return "error"
         
-        end_time = time.time()
-        print(f"Tiempo total de procesamiento del capítulo {os.path.basename(chapter_path)}: {end_time - start_time:.4f} segundos")
-        return False
+        except Exception as e:
+            logging.error(f"Error crítico en process_chapter: {str(e)}", exc_info=True)
+            return "error"
         
 
-    def process_input_path(self, input_path, output_dir, cancel_event=None, input_base=None):
+    def process_input_path(self, input_path, output_dir, cancel_event, input_base=None):
         try:
             # Determinar el input_base para el cálculo de rutas relativas
-            # input_base debe ser el directorio que contiene los "capítulos" o "series".
             if input_base is None:
                 if os.path.isfile(input_path):
-                    # Si input_path es un archivo, el input_base es el directorio padre del capítulo.
-                    # Ejemplo: /manga/chapter1/page1.png -> input_base = /manga
                     input_base = os.path.dirname(os.path.dirname(input_path))
-                    if input_base == '': # Si el archivo está en la raíz del sistema de archivos
-                        input_base = os.path.dirname(input_path) # El capítulo es el directorio padre del archivo
+                    if input_base == '':
+                        input_base = os.path.dirname(input_path)
                 else:
-                    # Si input_path es un directorio, el input_base es el directorio padre de input_path
-                    # Ejemplo: /manga/chapter1/ -> input_base = /manga/
-                    # Ejemplo: /manga/ -> input_base = / (si manga es la raíz de la serie)
                     input_base = os.path.dirname(input_path)
-                    if input_base == '': # Si el directorio está en la raíz del sistema de archivos
-                        input_base = input_path # El propio directorio es el input_base
+                    if input_base == '' or input_base == input_path:
+                         input_base = os.path.abspath(os.path.join(input_path, os.pardir))
 
-            global global_processing_start_time
-            if global_processing_start_time is None:
-                global_processing_start_time = time.time()
-
-            success = True
+            self.reset_counters()
+            status = "success"
             
-            # Si la entrada es un archivo, procesar su directorio padre como un capítulo
-            if os.path.isfile(input_path):
-                chapter_to_process = os.path.dirname(input_path)
-                chapter_success = self.process_chapter(
-                    chapter_to_process,
-                    output_dir,
-                    cancel_event,
-                    input_base
-                )
-                success = success and chapter_success
-            else: # input_path es un directorio
-                # Verificar si el directorio raíz contiene imágenes directamente (es un capítulo en sí mismo)
-                contains_images_directly = any(f.lower().endswith(Config.SUPPORTED_FORMATS) for f in [e.name for e in scandir(input_path) if e.is_file()] if os.path.isfile(os.path.join(input_path, f)))
-                
-                if contains_images_directly:
-                    chapter_success = self.process_chapter(
-                        input_path, # El propio input_path es el capítulo
-                        output_dir,
-                        cancel_event,
-                        input_base
-                    )
-                    success = success and chapter_success
+            # Identificar los directorios de los capítulos (subdirectorios inmediatos)
+            subdirectories = [d.path for d in os.scandir(input_path) if d.is_dir()]
+            chapters_to_process = subdirectories if subdirectories else [input_path]
 
-                # Iterar sobre los subdirectorios como capítulos
-                for entry in [e.name for e in scandir(input_path) if e.is_dir()]:
-                    entry_path = os.path.join(input_path, entry)
-                    if os.path.isdir(entry_path):
-                        chapter_success = self.process_chapter(
-                            entry_path,
-                            output_dir,
-                            cancel_event,
-                            input_base
-                        )
-                        success = success and chapter_success
-            return success
+            # Procesar cada capítulo individualmente
+            for chapter_path in chapters_to_process:
+                if cancel_event and cancel_event.is_set(): return "cancelled"
+                
+                print(f"\n--- Procesando capítulo: {os.path.basename(chapter_path)} ---")
+                chapter_status = self.process_chapter(
+                    chapter_path, output_dir, cancel_event, input_base
+                )
+                if chapter_status != "success":
+                    status = chapter_status  # Marcar que hubo un error, pero continuar
+
+            # Si se procesaron subdirectorios, crear los archivos consolidados para la serie
+            if subdirectories:
+                print(f"\n--- Generando archivos consolidados para la serie: {os.path.basename(input_path)} ---")
+                
+                series_rel_path = os.path.relpath(input_path, input_base)
+                series_output_dir = os.path.join(output_dir, series_rel_path)
+                
+                master_content_list = []
+                
+                # Ordenar capítulos para asegurar el orden correcto en el archivo consolidado
+                sorted_chapters = sorted(chapters_to_process, key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', os.path.basename(f))])
+
+                for chapter_path in sorted_chapters:
+                    chapter_name = os.path.basename(chapter_path)
+                    chapter_rel_path = os.path.relpath(chapter_path, input_base)
+                    chapter_output_dir = os.path.join(output_dir, chapter_rel_path)
+                    
+                    # Nombre del archivo completo del capítulo
+                    sanitized_chapter_name = "".join(c for c in chapter_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
+                    if not sanitized_chapter_name:
+                        sanitized_chapter_name = "capitulo"
+                    chapter_complete_file = os.path.join(chapter_output_dir, f"{sanitized_chapter_name}_completo.txt")
+
+                    if os.path.exists(chapter_complete_file):
+                        with open(chapter_complete_file, 'r', encoding='utf-8') as f:
+                            master_content_list.append(f.read())
+                    else:
+                        print(f"Advertencia: No se encontró el archivo completo para el capítulo {chapter_name} en {chapter_complete_file}")
+
+                if master_content_list:
+                    series_master_content = ("\n\n" + "╬" * 75 + "\n\n").join(master_content_list)
+                    series_name = os.path.basename(input_path)
+                    combine_texts(series_output_dir, [], series_name, master_content=series_master_content)
+
+            return status
 
         except Exception as e:
-            logging.error("Error en process_input_path: %s", str(e))
-            return False
+            logging.error(f"Error en process_input_path: {str(e)}", exc_info=True)
+            return "error"
 
     def start_processing_in_background(self, input_path, output_dir, cancel_event=None, callback=None):
         """Inicia el procesamiento en segundo plano con estructura de capítulos."""
-        
+        if cancel_event is None:
+            self.cancel_event = Event()
+        else:
+            self.cancel_event = cancel_event
+            
         def _process_and_callback():
-            result = False # Default to False (error or incomplete)
+            result = "error"
             try:
-                if cancel_event and cancel_event.is_set(): # Check for cancellation before starting
-                    result = "cancelled"
-                    return # Exit early if cancelled
-                
-                result = self.process_input_path(input_path, output_dir, cancel_event)
-                
-                if cancel_event and cancel_event.is_set(): # Check for cancellation after processing
-                    result = "cancelled"
-                elif result: # If process_input_path returned True (success)
-                    result = "success"
-                else: # If process_input_path returned False (error)
-                    result = "error"
-
+                result = self.process_input_path(input_path, output_dir, self.cancel_event)
             except Exception as e:
-                logging.error(f"Error crítico en _process_and_callback: {str(e)}")
-                result = "error" # Ensure result is "error" on critical exception
+                logging.error(f"Error crítico en _process_and_callback: {str(e)}", exc_info=True)
             finally:
                 if callback:
                     callback(result)
+            print("Procesamiento completado")
+            
         thread = Thread(target=_process_and_callback)
         thread.start()
         return thread
 
+    def _process_selected_files_gemini(self, file_paths, output_dir, cancel_event, callback):
+        """Procesa una lista de archivos seleccionados para Gemini."""
+        try:
+            self.reset_counters()  # Reiniciar contadores
+            for file_path in file_paths:
+                if cancel_event and cancel_event.is_set():
+                    callback("cancelled")
+                    return
 
+                # Determine input_base for each file (its parent directory)
+                input_base = os.path.dirname(file_path)
+                content = self.process_file(file_path, output_dir, input_base)
+                if not content: # If process_file returns empty string, it indicates an error
+                    callback("error")
+                    return
+
+            callback("success")
+        except Exception as e:
+            logging.error(f"Error procesando archivos seleccionados para Gemini: {str(e)}", exc_info=True)
+            callback("error")
