@@ -33,7 +33,7 @@ class MistralProcessor:
             "Authorization": f"Bearer {Config.MISTRAL_API_KEY}",
             "Content-Type": "application/json",
         }
-        self.model = "pixtral-large-latest"
+        self.model = "mistral-medium-2508"
 
     def load_prompt(self):
         """Carga el prompt desde el archivo especificado en Config."""

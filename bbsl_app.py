@@ -28,8 +28,7 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QTextEdit,
     QVBoxLayout,
-    QWidget,
-    QMessageBox,
+    QWidget
 )
 
 from project_manager import ProjectManager

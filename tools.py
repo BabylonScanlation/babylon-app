@@ -11,6 +11,7 @@ import time
 import webbrowser
 import traceback
 import logging
+import asyncio
 
 # bibliotecas no nativas
 from PIL import Image
@@ -78,9 +79,9 @@ class TranslationTask(QRunnable):
             if self.tool["name"] == "Baidu":
                 while True:
                     try:
-                        translated_text_raw = translatorz.translatorz(
+                        translated_text_raw = asyncio.run(translatorz.translatorz(
                             self.tool["name"], self.text, self.source_lang, self.target_lang
-                        )
+                        ))
                         translated_text = str(translated_text_raw) # Ensure it's a string
                         
                         if "Error en Baidu: Función no certificada o inestable." in translated_text:
@@ -98,9 +99,9 @@ class TranslationTask(QRunnable):
                         break # Salir del bucle en caso de error crítico
             else:
                 # Lógica existente para otros traductores
-                translated_text_raw = translatorz.translatorz(
+                translated_text_raw = asyncio.run(translatorz.translatorz(
                     self.tool["name"], self.text, self.source_lang, self.target_lang
-                )
+                ))
                 translated_text = str(translated_text_raw) # Ensure it's a string
 
                 if "Idioma escogido a traducir incompatible." in translated_text:
