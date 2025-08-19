@@ -8,6 +8,8 @@ import os
 import sys
 import webbrowser
 
+# git fetch --all
+# git reset --hard origin/main
 
 # bibliotecas no nativas
 import cv2
