@@ -1558,6 +1558,11 @@ class ToolsManager(QObject):
             self.gemini_start_button.setEnabled(True)
         if hasattr(self, 'gemini_cancel_button'):
             self.gemini_cancel_button.setEnabled(False)
+        
+        if hasattr(self, 'mistral_start_button'):
+            self.mistral_start_button.setEnabled(True)
+        if hasattr(self, 'mistral_cancel_button'):
+            self.mistral_cancel_button.setEnabled(False)
 
     def _process_selected_files_gemini(self, file_paths, output_dir, cancel_event, callback):
         """Procesa una lista de archivos seleccionados para Gemini."""

@@ -362,14 +362,16 @@ class GeminiProcessor:
         """Procesa una lista de archivos seleccionados para Gemini."""
         try:
             self.reset_counters()  # Reiniciar contadores
+
+            # Determine a common input_base for all selected files
+            common_input_base = os.path.commonpath(file_paths)
+
             for file_path in file_paths:
                 if cancel_event and cancel_event.is_set():
                     callback("cancelled")
                     return
 
-                # Determine input_base for each file (its parent directory)
-                input_base = os.path.dirname(file_path)
-                content = self.process_file(file_path, output_dir, input_base)
+                content = self.process_file(file_path, output_dir, common_input_base)
                 if not content: # If process_file returns empty string, it indicates an error
                     callback("error")
                     return
