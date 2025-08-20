@@ -786,20 +786,34 @@ class ToolsManager(QObject):
                 self.source_combo.currentData(),
                 self.target_combo.currentData(),
             )
+            
+            # Conectar las señales del trabajador para manejar el resultado
             task.signals.finished.connect(
-                lambda name, result, error: self._handle_translation_result(
+                lambda name, result, error: self._handle_translation_finish(
                     name, result, error, output_container, use_button
                 )
             )
-            task.signals.error_occurred.connect(self._handle_critical_error)
+            
+            # Envía la tarea al pool de hilos para su ejecución
             QThreadPool.globalInstance().start(task)
-            return task
+
         except Exception as e:
-            print(f"Error en _translate_text: {str(e)}")
+            error_msg = f"Error al iniciar la traducción: {str(e)}"
+            QMessageBox.critical(self.app.content_container, "Error", error_msg)
             if use_button:
                 use_button.setEnabled(True)
                 use_button.setText("Usar")
-            return None
+
+    def _handle_translation_finish(self, name, result, error, output_container, use_button):
+        """Maneja el resultado de una traducción una vez que ha finalizado."""
+        if error:
+            output_container.setText(f"Error en {name}: {error}")
+        else:
+            output_container.setText(result)
+
+        if use_button:
+            use_button.setEnabled(True)
+            use_button.setText("Usar")
 
     def _handle_translation_result(
             self, tool_name, result, error, output_container, use_button
@@ -1090,7 +1104,7 @@ class ToolsManager(QObject):
         )
         description_label.setFont(self.app.roboto_black_font)
         html_description = (
-            "<p>" + config_description.replace("\n", "<br>").replace(" ", " ") + "</p>"
+            "<p>" + config_description.replace("\n", "<br>").replace(" ", " ") + "</p>"
         )
         description_label.setHtml(html_description)
         top_layout.addWidget(description_label)
@@ -1203,18 +1217,20 @@ class ToolsManager(QObject):
             background-color: #555555;
         }
         """
-        start_button = QPushButton("Iniciar Procesamiento")
-        start_button.setStyleSheet(button_style)
-        start_button.setFont(self.app.super_cartoon_font)
-        start_button.setCursor(Qt.PointingHandCursor)
-        start_button.clicked.connect(self._start_mistral_processing)
-        right_layout.addWidget(start_button, alignment=Qt.AlignCenter)
-        cancel_button = QPushButton("Cancelar")
-        cancel_button.setStyleSheet(button_style)
-        cancel_button.setFont(self.app.super_cartoon_font)
-        cancel_button.setCursor(Qt.PointingHandCursor)
-        cancel_button.clicked.connect(self._cancel_mistral_processing)
-        right_layout.addWidget(cancel_button, alignment=Qt.AlignCenter)
+        self.mistral_start_button = QPushButton("Iniciar Procesamiento")  # Guardar referencia
+        self.mistral_start_button.setStyleSheet(button_style)
+        self.mistral_start_button.setFont(self.app.super_cartoon_font)
+        self.mistral_start_button.setCursor(Qt.PointingHandCursor)
+        self.mistral_start_button.clicked.connect(self._start_mistral_processing)
+        right_layout.addWidget(self.mistral_start_button, alignment=Qt.AlignCenter)
+        
+        self.mistral_cancel_button = QPushButton("Cancelar")  # Guardar referencia
+        self.mistral_cancel_button.setStyleSheet(button_style)
+        self.mistral_cancel_button.setFont(self.app.super_cartoon_font)
+        self.mistral_cancel_button.setCursor(Qt.PointingHandCursor)
+        self.mistral_cancel_button.clicked.connect(self._cancel_mistral_processing)
+        self.mistral_cancel_button.setEnabled(False)  # Inicialmente deshabilitado
+        right_layout.addWidget(self.mistral_cancel_button, alignment=Qt.AlignCenter)
         bottom_layout.addWidget(right_column, stretch=1)
         main_layout.addWidget(custom_section, stretch=0)
         self.mistral_container.show()

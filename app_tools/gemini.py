@@ -6,13 +6,7 @@ import random
 import re
 import httpx
 from threading import Thread, Event
-import glob
-
-# Eliminamos las variables globales para manejar el estado por instancia
-# En su lugar, usaremos atributos de instancia
-
 from google import genai
-from google.genai import types
 from PIL import Image
 
 # Configurar rutas del proyecto
