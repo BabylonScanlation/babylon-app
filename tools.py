@@ -146,6 +146,7 @@ class ToolsManager(QObject):
         self.processing_thread = None
         self.active_threads = []
         self.gemini_processor = GeminiProcessor()
+        self.mistral_processor = mistral.MistralProcessor()
         self.haruneko_installed = False
         self.haruneko_version = None
         self.install_button = None
@@ -1462,28 +1463,55 @@ class ToolsManager(QObject):
             )
 
     def _start_mistral_processing(self):
-        """Inicia este procesamiento en segundo plano validando rutas y manejando cancelaciones."""
+        """Inicia Mistral en segundo plano validando rutas y manejando cancelaciones."""
         try:
-            if not self.input_path or not self.output_directory:
-                raise ValueError(
-                    "Las rutas de entrada y salida deben estar configuradas."
-                )
+            if not self.output_directory: # output_directory is always required
+                raise ValueError("La ruta de salida debe estar configurada.")
+
+            # Deshabilitar botón de inicio y habilitar botón de cancelación
+            self.mistral_start_button.setEnabled(False)
+            self.mistral_cancel_button.setEnabled(True)
+            QApplication.processEvents()  # Actualizar UI inmediatamente
+
             self.cancel_event = threading.Event()
-            self.processing_thread = mistral.start_processing_in_background(
-                self.input_path,
-                self.output_directory,
-                self.cancel_event,
-                callback=self._handle_processing_finished,
-            )
+
+            if hasattr(self, 'selected_files_for_processing') and self.selected_files_for_processing:
+                # Process selected files
+                self.processing_thread = threading.Thread(
+                    target=self.mistral_processor._process_selected_files_mistral,
+                    args=(self.selected_files_for_processing, self.output_directory, self.cancel_event, self._handle_processing_finished)
+                )
+                self.processing_thread.start()
+                # Clear selected files after starting processing
+                self.selected_files_for_processing = []
+            elif self.input_path:
+                # Process input directory
+                self.processing_thread = self.mistral_processor.start_processing_in_background(
+                    self.input_path,
+                    self.output_directory,
+                    self.cancel_event,
+                    callback=self._handle_processing_finished,
+                )
+            else:
+                raise ValueError("Las rutas de entrada o archivos seleccionados deben estar configurados.")
+
             QMessageBox.information(
                 self.app,
                 "Procesamiento iniciado",
                 "El procesamiento se ha iniciado. Puedes cancelarlo en cualquier momento.",
             )
+            # Mover el QApplication.processEvents() aquí para actualizar UI
+            QApplication.processEvents()
+            
         except ValueError as e:
             QMessageBox.critical(
                 self.app, "Error", f"Error durante el procesamiento: {e}"
             )
+            # Asegurar reset de botones en caso de error
+            if hasattr(self, 'mistral_start_button'):
+                self.mistral_start_button.setEnabled(True)
+            if hasattr(self, 'mistral_cancel_button'):
+                self.mistral_cancel_button.setEnabled(False)
 
     def _cancel_mistral_processing(self):
         """Cancela el procesamiento en curso de Mistral."""
