@@ -94,7 +94,7 @@ MAPEO_GENERAL = {
         "default": "en",
         "deepl": "EN-US",
         "itranslate": "en-US",
-        "modernMt": "en-US",
+        "modernMt": "en",
         "lingvanex": "en_US",
         "cloudtrans": "en-us",
     },
@@ -103,7 +103,7 @@ MAPEO_GENERAL = {
         "baidu": "jp",
         "deepl": "JA",
         "hujiang": "jp",
-        "modernMt": "ja_JP",
+        "modernMt": "ja",
         "lingvanex": "ja_JP",
         "yandex": "ja", # NOTA: No es soportado
     },
@@ -112,7 +112,7 @@ MAPEO_GENERAL = {
         "baidu": "kor",
         "deepl": "KO",
         "hujiang": "kr",
-        "modernMt": "ko_KR",
+        "modernMt": "ko",
         "lingvanex": "ko_KR",
         "yandex": "ko", # NOTA: No es soportado
     },
@@ -430,7 +430,7 @@ async def translatorz(translator_name: str, text: str, source_lang: str, target_
                 if source_lang != "auto"
                 else "auto"
             ),
-            to_language=obtener_codigo("modernmt", target_lang),
+            to_language="es-ES" if target_lang == "es" else obtener_codigo("modernmt", target_lang),
         )),
         # Traductores con mapeo propio
         "Hujiang": lambda t: _ensure_string_result(ts.translate_text(
