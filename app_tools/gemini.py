@@ -370,7 +370,10 @@ class GeminiProcessor:
 
             # Determine a common input_base for all selected files
             common_input_base = os.path.commonpath(file_paths)
-            logging.debug(f"DEBUG: _process_selected_files_gemini - common_input_base: {common_input_base}")
+            # Ensure common_input_base is a directory, not a file
+            if os.path.isfile(common_input_base):
+                common_input_base = os.path.dirname(common_input_base)
+            logging.debug(f"DEBUG: _process_selected_files_gemini - common_input_base (adjusted): {common_input_base}")
 
             for file_path in file_paths:
                 if cancel_event and cancel_event.is_set():
