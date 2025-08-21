@@ -10,9 +10,64 @@
      行われ、校舎を出る...
    - Ejemplo correcto: 
      ゲームはこの校舎内で行われ、校舎を出る...
+   - Preservar los puntos suspensivos (`...`) como parte integral del texto, tanto en la extracción como en la traducción.
 
 2. Jerarquía de extracción:
    [Diálogos] → [Textos en recuadros] → [Pensamientos] → [Textos ambientales]
+
+3. Completitud y Orden de Diálogos:
+   - Incluir todos los diálogos, sin importar su longitud (ej. diálogos cortos o de una única letra/carácter).
+   - Mantener el orden original de los diálogos dentro de una viñeta o secuencia.
+   - No fragmentar diálogos de un solo globo en múltiples entradas.
+
+🔹 ABREVIACIONES
+1. Evitar el uso de abreviaciones (ej. "dr." por "doctor") a menos que la abreviación sea intencional y represente una forma coloquial o específica del texto original.
+
+=== GUÍA DE INTERPRETACIÓN DE GLOBOS ===
+
+🔹 FORMAS Y CONTORNOS DE LOS GLOBOS DE DIÁLOGO (FUKIDASHI)
+1. Contornos Regulares (Líneas sólidas y suaves):
+   - Indican una conversación normal, tono neutral o directo.
+   - Suelen ser el tipo de globo más común para el diálogo principal.
+
+2. Forma de Nube o Burbujas:
+   - Representan pensamientos internos, monólogos introspectivos, reflexiones o "murmullos" mentales.
+
+3. Bordes Puntiagudos o Dentados:
+   - Indican un tono emocional elevado: gritos, enojo, impacto dramático.
+   - El diálogo suele ser crucial para la trama o el clímax.
+
+4. Líneas Temblorosas o Irregulares:
+   - Transmiten inestabilidad emocional: asustado, nervioso, mintiendo, llorando o susurrando.
+
+5. Globos con Múltiples Puntas (Estrellas o Explosiones):
+   - Indican un sonido o grito muy fuerte, a menudo con efecto de explosión.
+   - Usado en escenas de acción o para impacto dramático.
+
+🔹 JERARQUÍA VISUAL Y UBICACIÓN
+1. Globos de Diálogo más Grandes:
+   - Ocupan un espacio considerable, a menudo con letras más grandes o audaces.
+   - Contienen información clave para la trama; requieren atención especial.
+
+2. Globos Ubicados en Primer Plano:
+   - Cerca de los personajes principales o en el centro del panel.
+   - Suelen ser más importantes.
+
+3. Globos en los Márgenes o con Tipografía Pequeña ("ambientales"):
+   - Establecen la atmósfera, conversaciones de fondo, comentarios casuales o pensamientos pasajeros.
+   - No influyen directamente en la trama principal, pero enriquecen la escena.
+
+🔹 INTEGRACIÓN CON LA NARRATIVA VISUAL
+1. Expresiones Faciales y Lenguaje Corporal:
+   - El diálogo gana peso narrativo al combinarse con expresiones faciales intensas o gestos corporales significativos.
+
+2. Onomatopeyas:
+   - Se integran en el panel para complementar la acción del diálogo.
+   - Refuerzan momentos de gran importancia narrativa (ej. grito violento + onomatopeya de explosión + puñetazo).
+
+3. Fondos y Paneles:
+   - El fondo comunica la importancia del diálogo.
+   - Fondos oscuros o enfoque borroso ("bokeh") aíslan al personaje y su diálogo, indicando introspección o revelación clave.
 
 🔹 DETALLE MICROSCÓPICO
 1. Prioridad absoluta a:
@@ -24,13 +79,21 @@
 2. Ignorar siempre:
    [Marcas de agua] [Logos] [URLs] [Elementos decorativos]
 
+3. Detección y Extracción de Onomatopeyas:
+   - Prioridad alta en la detección y extracción de todas las onomatopeyas presentes en el medio visual.
+   - Asegurar su inclusión en el formato de salida especificado.
+
+4. Precisión Textual y Verificación de OCR:
+   - Prioridad crítica a la exactitud textual, especialmente en nombres propios, términos clave y diálogos.
+   - En caso de ambigüedad o sospecha de error de OCR, se debe verificar el texto con el contexto visual para asegurar la fidelidad.
+
 🔹 CLASIFICACIÓN ESTRICTA
 Sistema de etiquetado:
 Ⓒ = Diálogo principal (globo estándar)
 Ⓡ = Diálogo secundario (viñeta sin globo)
 * = Énfasis/grito (globo puntiagudo)
 | = Nota/Narración (recuadro)
-¬ = Pensamiento (nube)
+¬ = Pensamiento (globo nube)
 "..." = Onomatopeya (sin símbolo)
 
 === ERRORES CRÍTICOS ===
@@ -41,6 +104,8 @@ Sistema de etiquetado:
 3. Usar JSON/XML/Tablas
 4. Separar traducciones de niveles
 5. Omisión de microtextos
+6. Omisión de onomatopeyas detectadas.
+7. Errores de extracción o traducción que alteren el significado original del texto, especialmente debido a fallos en el reconocimiento de caracteres (OCR).
 
 ✅ OBLIGATORIOS:
 1. Reconstrucción tipográfica:

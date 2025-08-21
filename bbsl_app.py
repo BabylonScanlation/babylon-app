@@ -105,6 +105,7 @@ class App(QMainWindow):
         self.projects_area = None
         self.help_area = None
         self.about_area = None
+        self.configuration_area = None # New configuration area
         self.custom_fonts = []
         self.super_cartoon_font = QFont("Arial")
         self.adventure_font = QFont("Arial")
@@ -286,6 +287,12 @@ class App(QMainWindow):
 
         event.accept()
 
+        # Detach from shared memory
+        if self._shared_memory and self._shared_memory.isAttached():
+            self._shared_memory.detach()
+
+        event.accept()
+
     def _load_fonts(self):
         """Carga las fuentes personalizadas."""
         self.custom_fonts = self._load_custom_fonts()
@@ -374,6 +381,7 @@ class App(QMainWindow):
             "PROYECTOS": self.show_projects,
             "AYUDA": self.show_help,
             "OPCIONES": self.show_options,
+            "CONFIGURACIÓN": self.show_configuration, # New button
             "SOBRE ESTO": self.show_about,
         }
         for text, action in btn_data.items():
@@ -447,6 +455,7 @@ class App(QMainWindow):
         self.about_area = self._create_about_area()
         self.help_area = self._create_help_area()
         setattr(self, "options_area", self.options_menu.create_options_area())
+        self.configuration_area = self._create_configuration_area() # Initialize configuration area
         self._hide_all_sections()
         self.show_home()
 
@@ -710,11 +719,114 @@ class App(QMainWindow):
             ),
         )
 
+    def _create_configuration_area(self):
+        """Crea el área de configuración para Gemini y otras opciones."""
+        config_area = QWidget(self.content_container)
+        config_area.setGeometry(50, 50, 780, 500)
+        config_area.setStyleSheet(
+            """
+            background-color: rgba(0, 0, 0, 100);
+            border: 1px solid rgba(87, 35, 100, 180);
+            """
+        )
+        main_layout = QVBoxLayout(config_area)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+
+        title_label = QLabel("Configuración de Gemini")
+        title_label.setStyleSheet(
+            """
+            font-size: 18px;
+            color: white;
+            background: transparent;
+            qproperty-alignment: AlignCenter;
+            """
+        )
+        title_label.setFont(self.super_cartoon_font)
+        main_layout.addWidget(title_label)
+
+        # Model Selection
+        model_layout = QHBoxLayout()
+        model_label = QLabel("Modelo Gemini:")
+        model_label.setStyleSheet("color: white;")
+        model_label.setFont(self.roboto_black_font)
+        model_combo = QComboBox()
+        model_combo.addItems(["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-flash-lite"])
+        model_combo.setCurrentText(Config.GEMINI_MODEL)
+        model_combo.setStyleSheet(
+            """
+            QComboBox {
+                background-color: rgba(0,0,0,150);
+                color: white;
+                border: 2px solid #572364;
+                padding: 3px;
+                min-width: 100px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #2a2a2a;
+                color: white;
+                selection-background-color: #572364;
+            }
+            """
+        )
+        model_combo.setFont(self.roboto_black_font)
+        model_combo.currentIndexChanged.connect(
+            lambda: self._save_gemini_settings(model_combo.currentText(), self.thinking_checkbox.isChecked())
+        )
+        model_layout.addWidget(model_label)
+        model_layout.addWidget(model_combo)
+        model_layout.addStretch(1)
+        main_layout.addLayout(model_layout)
+
+        # Thinking Checkbox
+        thinking_layout = QHBoxLayout()
+        self.thinking_checkbox = QCheckBox("Activar Pensamiento (Thinking)")
+        self.thinking_checkbox.setChecked(Config.GEMINI_ENABLE_THINKING)
+        self.thinking_checkbox.setStyleSheet("color: white;")
+        self.thinking_checkbox.setFont(self.roboto_black_font)
+        self.thinking_checkbox.stateChanged.connect(
+            lambda: self._save_gemini_settings(model_combo.currentText(), self.thinking_checkbox.isChecked())
+        )
+        thinking_layout.addWidget(self.thinking_checkbox)
+        thinking_layout.addStretch(1)
+        main_layout.addLayout(thinking_layout)
+
+        main_layout.addStretch(1) # Push content to top
+
+        return config_area
+
     def _clear_temp_files(self):
         """Limpiar archivos temporales creados por la aplicación."""
         for file_path in self.temp_files:
             self._delete_file_with_retries(file_path)
         self.temp_files.clear()
+
+    def _save_gemini_settings(self, model_name, enable_thinking):
+        """Guarda la configuración de Gemini en config.py."""
+        try:
+            # Read the current content of config.py
+            with open("C:\Users\Estudiantes\AppData\Local\babylon-app\config.py", "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Update GEMINI_MODEL
+            old_model_line = f"    GEMINI_MODEL = \"{Config.GEMINI_MODEL}\""
+            new_model_line = f"    GEMINI_MODEL = \"{model_name}\""
+            content = content.replace(old_model_line, new_model_line)
+            Config.GEMINI_MODEL = model_name # Update in-memory Config
+
+            # Update GEMINI_ENABLE_THINKING
+            old_thinking_line = f"    GEMINI_ENABLE_THINKING = {Config.GEMINI_ENABLE_THINKING}"
+            new_thinking_line = f"    GEMINI_ENABLE_THINKING = {enable_thinking}"
+            content = content.replace(old_thinking_line, new_thinking_line)
+            Config.GEMINI_ENABLE_THINKING = enable_thinking # Update in-memory Config
+
+            # Write the updated content back to config.py
+            with open("C:\Users\Estudiantes\AppData\Local\babylon-app\config.py", "w", encoding="utf-8") as f:
+                f.write(content)
+
+            QMessageBox.information(self, "Configuración Guardada", "La configuración de Gemini ha sido guardada exitosamente.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error al Guardar Configuración", f"No se pudo guardar la configuración de Gemini: {e}")
 
     def _delete_file_with_retries(self, file_path, retries=3, delay=1):
         """Delete a file with retries in case of PermissionError."""
@@ -763,7 +875,7 @@ class App(QMainWindow):
 
     def _hide_main_sections(self):
         """Oculta las secciones principales de la UI."""
-        self._hide_widgets(["home_label", "help_area", "options_area", "about_area"])
+        self._hide_widgets(["home_label", "help_area", "options_area", "about_area", "configuration_area"])
         self._hide_utilities_area()
         self._hide_projects_area()
 
@@ -857,6 +969,13 @@ class App(QMainWindow):
         """Muestra la sección de opciones."""
         self._hide_all_sections()
         self.options_area.show()
+
+    def show_configuration(self):
+        """Muestra la sección de configuración."""
+        self._hide_all_sections()
+        if not self.configuration_area:
+            self.configuration_area = self._create_configuration_area()
+        self.configuration_area.show()
 
     def show_about(self):
         """Muestra la sección 'Sobre esto'."""

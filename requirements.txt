@@ -1,0 +1,12 @@
+PyQt5
+opencv-python
+requests
+yt_dlp
+Pillow
+httpx
+google-genai
+langid
+deepl
+translators
+mistralai
+pentago

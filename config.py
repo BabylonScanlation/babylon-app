@@ -59,6 +59,8 @@ class Config:
     WINDOW_TITLE = "Babylon Scanlation"
     WINDOW_SIZE = (1200, 600)
     GEMINI_API_KEY = "AIzaSyBPNOkv5VEHwLiuyYsyVHHW6qKtQAWabj8"
+    GEMINI_MODEL = "gemini-2.5-flash-lite"  # Default Gemini model
+    GEMINI_ENABLE_THINKING = False  # Default to disable thinking
     MISTRAL_API_KEY = "KifJee4MUJJqQKB3Kj8Q00FjIFAQn7Sh"
     ICON_PATH = resource_path(os.path.join("app_media", "img-aux", "icono.ico"))
     CAROUSEL_IMAGES = [

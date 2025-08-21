@@ -1037,6 +1037,153 @@ class ToolsManager(QObject):
         self.gemini_cancel_button.setStyleSheet(button_style)
         self.gemini_cancel_button.setFont(self.app.super_cartoon_font)
         self.gemini_cancel_button.setCursor(Qt.PointingHandCursor)
+        title_label.setFont(self.app.super_cartoon_font)
+        top_layout.addWidget(title_label)
+        gemini_tool = next(
+            tool
+            for tool in Config.SPECIFIED_TOOLS[category]
+            if tool["name"] == "Gemini"
+        )
+        config_description = gemini_tool.get(
+            "config_description", "Descripción no disponible."
+        )
+        description_label = QTextEdit()
+        description_label.setReadOnly(True)
+        description_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        description_label.setStyleSheet(
+            """
+            font-size: 14px;
+            color: white;
+            background-color: rgba(0, 0, 0, 50);
+            border: 1px solid rgba(87, 35, 100, 180);
+        """
+        )
+        description_label.setFont(self.app.roboto_black_font)
+        html_description = (
+            "<p>" + config_description.replace("\n", "<br>" ).replace(" ", " ") + "</p>"
+        )
+        description_label.setHtml(html_description)
+        top_layout.addWidget(description_label)
+        main_layout.addWidget(top_section, stretch=1)
+        custom_section = QWidget()
+        custom_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        custom_section.setStyleSheet(
+            """
+            background-color: rgba(0, 0, 0, 100);
+            border: 1px solid rgba(87, 35, 100, 180);
+            border-radius: 2px;
+        """
+        )
+        bottom_layout = QHBoxLayout(custom_section)
+        bottom_layout.setContentsMargins(10, 10, 10, 10)
+        bottom_layout.setSpacing(10)
+        left_column = QWidget()
+        left_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        left_column.setStyleSheet(
+            """
+            background-color: rgba(0, 0, 0, 100);
+            border: 1px solid rgba(87, 35, 100, 180);
+            border-radius: 2px;
+        """
+        )
+        left_layout = QVBoxLayout(left_column)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
+        browse_files_button = QPushButton("Examinar Archivos")
+        browse_files_button.setStyleSheet(
+            """
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """
+        )
+        browse_files_button.setFont(self.app.adventure_font)
+        browse_files_button.setCursor(Qt.PointingHandCursor)
+        browse_files_button.clicked.connect(self._browse_files)
+        browse_folders_button = QPushButton("Examinar Carpetas")
+        browse_folders_button.setStyleSheet(
+            """
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """
+        )
+        browse_folders_button.setFont(self.app.adventure_font)
+        browse_folders_button.setCursor(Qt.PointingHandCursor)
+        browse_folders_button.clicked.connect(self._browse_folders)
+        browse_layout = QHBoxLayout()
+        browse_layout.addWidget(browse_files_button)
+        browse_layout.addWidget(browse_folders_button)
+        left_layout.addLayout(browse_layout)
+        save_button = QPushButton("Guardar Resultados")
+        save_button.setStyleSheet(
+            """
+            QPushButton {
+                font-size: 12px; /* Smaller font size */
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 8px; /* Smaller padding */
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """
+        )
+        save_button.setFont(self.app.adventure_font)
+        save_button.setCursor(Qt.PointingHandCursor)
+        save_button.clicked.connect(self._save_results)
+        left_layout.addWidget(save_button)
+        bottom_layout.addWidget(left_column, stretch=2)
+        right_column = QWidget()
+        right_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        right_column.setStyleSheet(
+            """
+            background-color: rgba(0, 0, 0, 100);
+            border: 1px solid rgba(87, 35, 100, 180);
+            border-radius: 2px;
+        """
+        )
+        right_layout = QVBoxLayout(right_column)
+        right_layout.setContentsMargins(10, 10, 10, 10)
+        right_layout.setSpacing(10)
+        button_style = """
+        QPushButton {
+            font-size: 18px;
+            color: white;
+            background-color: #333333;
+            border: none;
+            padding: 12px;
+        }
+        QPushButton:hover {
+            background-color: #555555;
+        }
+        """
+        self.gemini_start_button = QPushButton("Iniciar Procesamiento")  # Guardar referencia
+        self.gemini_start_button.setStyleSheet(button_style)
+        self.gemini_start_button.setFont(self.app.super_cartoon_font)
+        self.gemini_start_button.setCursor(Qt.PointingHandCursor)
+        self.gemini_start_button.clicked.connect(self._start_gemini_processing)
+        right_layout.addWidget(self.gemini_start_button, alignment=Qt.AlignCenter)
+        
+        self.gemini_cancel_button = QPushButton("Cancelar")  # Guardar referencia
+        self.gemini_cancel_button.setStyleSheet(button_style)
+        self.gemini_cancel_button.setFont(self.app.super_cartoon_font)
+        self.gemini_cancel_button.setCursor(Qt.PointingHandCursor)
         self.gemini_cancel_button.clicked.connect(self._cancel_gemini_processing)
         self.gemini_cancel_button.setEnabled(False)  # Inicialmente deshabilitado
         right_layout.addWidget(self.gemini_cancel_button, alignment=Qt.AlignCenter)
@@ -1178,11 +1325,11 @@ class ToolsManager(QObject):
         save_button.setStyleSheet(
             """
             QPushButton {
-                font-size: 14px;
+                font-size: 12px;
                 color: white;
                 background-color: #555555;
                 border: none;
-                padding: 10px;
+                padding: 8px;
             }
             QPushButton:hover {
                 background-color: #888888;
