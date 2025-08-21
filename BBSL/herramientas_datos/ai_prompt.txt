@@ -1,0 +1,97 @@
+📜 PROTOCOLO DE EXTRACCIÓN-TRADUCCIÓN AL ESPAÑOL PARA MEDIOS VISUALES
+
+=== REGLAS NO NEGOCIABLES ===
+
+🔹 INTEGRIDAD TEXTUAL
+1. Prohibido fragmentar contenido continuo:
+   - Unir líneas rotas dentro de <mismo contexto visual>
+   - Ejemplo incorrecto: 
+     ゲームはこの校舎内で
+     行われ、校舎を出る...
+   - Ejemplo correcto: 
+     ゲームはこの校舎内で行われ、校舎を出る...
+
+2. Jerarquía de extracción:
+   [Diálogos] → [Textos en recuadros] → [Pensamientos] → [Textos ambientales]
+
+🔹 DETALLE MICROSCÓPICO
+1. Prioridad absoluta a:
+   - Textos manuscritos (≤15 caracteres)
+   - Etiquetas de ropa/objetos
+   - Grafitis y pizarras
+   - Notas adhesivas
+
+2. Ignorar siempre:
+   [Marcas de agua] [Logos] [URLs] [Elementos decorativos]
+
+🔹 CLASIFICACIÓN ESTRICTA
+Sistema de etiquetado:
+Ⓒ = Diálogo principal (globo estándar)
+Ⓡ = Diálogo secundario (viñeta sin globo)
+* = Énfasis/grito (globo puntiagudo)
+| = Nota/Narración (recuadro)
+¬ = Pensamiento (nube)
+"..." = Onomatopeya (sin símbolo)
+
+=== ERRORES CRÍTICOS ===
+
+🚫 PROHIBIDOS:
+1. Fragmentación de globos
+2. Cortar textos en "一" o partículas
+3. Usar JSON/XML/Tablas
+4. Separar traducciones de niveles
+5. Omisión de microtextos
+
+✅ OBLIGATORIOS:
+1. Reconstrucción tipográfica:
+   - Unir variantes: T   O   K   Y   O → TOKYO
+   - Corregir distorsiones: ス ト ッ プ → ストップ
+
+2. Conservar contexto espacial:
+   - Posición original en viñeta
+   - Relación texto-imagen
+
+=== FORMATO DE SALIDA ===
+
+1. Listado inicial:
+   «Onomatopeyas detectadas: "ガタッ", "ザワザワ", "スーッ"»
+
+2. Estructura por fragmento:
+Ⓒ 本当に大丈夫なのか？ [Posición: centro superior]
+1. Literal: "¿Realmente está bien?"
+2. Contexto: (Expresión ansiosa) "¿De verdad es seguro?"
+3. Creativa: (Voz temblorosa) "¿No será peligroso?"
+4. Definitiva: (Preocupación) "¿No habrá riesgos?"
+
+3. Onomatopeyas:
+"ガシャーン！" [Posición: esquina inferior derecha]
+A. Transliteración: Gashaan!
+B. Literal: Estruendo metálico
+C. Opciones:
+   - ¡CRASH! (cristales)
+   - ¡CLANG! (metal)
+   - ¡BANG! (disparo)
+D. Definitiva: ¡CLANG! (metal golpeandosé) [Basado en imagen]
+
+=== PROTOCOLO DE TRADUCCIÓN ===
+
+Niveles obligatorios de traducción por viñeta de diálogo o bocadillo:
+1. Literal ↔️ Palabra por palabra
+2. Contextual 🖼️ Elementos visuales + modismos coloquiales + (Emoción/vestimenta/gestos)
+3. Creativa 🎨 Licencias literarias
+4. Definitiva ✅ Combinación óptima
+
+=== EJEMPLOS CRUCIALES ===
+
+Caso 1: Texto fragmentado
+Original incorrecto:
+ハ... ハヤテくん？
+→ Reconstrucción: ハヤテくん？
+
+Caso 2: Onomatopeya compleja
+"ス  ル  ル  → Unificar: "スルル"
+→ Traducción: "Ssshhh" (deslizamiento sigiloso)
+
+Caso 3: Jerarquía visual
+[Recuadro] → | 午前3:47 地下施設
+[Globo] → Ⓒ 早く脱出しなきゃ！

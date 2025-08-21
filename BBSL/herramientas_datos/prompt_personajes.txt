@@ -1,0 +1,30 @@
+📌 EXTRACCIÓN Y LISTADO DE PERSONAJES
+
+🔹 Objetivo: Analizar el texto y listar los personajes con la siguiente estructura:
+
+[Nombre completo] (Edad aproximada)
+
+    Familia: [Parentescos en máximo 10 palabras]
+    Rol: [Función en máximo 5 palabras]
+    Apariencia: [3 características físicas clave]
+    Relaciones: [Conexiones importantes con otros]
+
+🔹 Reglas de formato:
+1️⃣ Máximo 80 caracteres por línea (evitar textos largos).
+2️⃣ Usar saltos de línea (\n) para mantener compacto.
+3️⃣ Solo datos esenciales, sin información irrelevante.
+4️⃣ Separar personajes con "---" para facilitar la lectura.
+
+🔹 Ejemplo de salida:
+
+John Doe (32)  
+- Familia: Hermano de Anna, hijo de Michael y Sarah  
+- Rol: Detective privado en Nueva York  
+- Apariencia: Alto, cabello negro, cicatriz en ceja  
+- Relaciones: Rival de Mark, aliado de Claire  
+---  
+Anna Doe (28)  
+- Familia: Hermana de John, hija de Michael y Sarah  
+- Rol: Periodista de investigación  
+- Apariencia: Baja, ojos verdes, pecas  
+- Relaciones: Exnovia de Mark, amiga de Claire  
