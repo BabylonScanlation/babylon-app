@@ -32,7 +32,10 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QTextEdit,
     QVBoxLayout,
-    QWidget
+    QWidget,
+    QComboBox,
+    QCheckBox,
+    QMessageBox
 )
 
 from project_manager import ProjectManager
