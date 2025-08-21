@@ -32,16 +32,51 @@ class Config:
     """Configuración general de la aplicación y rutas de recursos."""
 
     USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
+    FFMPEG_BIN_DIR = resource_path(os.path.join("app_tools", "ffmpeg_bin"))
+
+# Set FFMPEG environment variables for pydub
+ffmpeg_path = os.path.join(Config.FFMPEG_BIN_DIR, "ffmpeg.exe")
+ffprobe_path = os.path.join(Config.FFMPEG_BIN_DIR, "ffprobe.exe")
+
+if os.path.exists(ffmpeg_path):
+    os.environ["FFMPEG_PATH"] = ffmpeg_path
+else:
+    print(f"Advertencia: ffmpeg.exe no encontrado en {ffmpeg_path}. Las funciones de audio pueden fallar.")
+
+if os.path.exists(ffprobe_path):
+    os.environ["FFPROBE_PATH"] = ffprobe_path
+else:
+    print(f"Advertencia: ffprobe.exe no encontrado en {ffprobe_path}. Las funciones de audio pueden fallar.")
+
+class Config:
+    """Configuración general de la aplicación y rutas de recursos."""
+
+    USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
+    FFMPEG_BIN_DIR = resource_path(os.path.join("app_tools", "ffmpeg_bin"))
     HARUNEKO_DIR = os.path.join(os.getenv('APPDATA') or '', 'HaruNeko')
     TOOLS_DATA_DIR = resource_path(os.path.join("BBSL", "herramientas_datos"))
     GENERAL_TOOLS_FOLDER = resource_path(os.path.join("BBSL", "herramientas"))
     WINDOW_TITLE = "Babylon Scanlation"
     WINDOW_SIZE = (1200, 600)
+    GEMINI_API_KEY = "AIzaSyBPNOkv5VEHwLiuyYsyVHHW6qKtQAWabj8"
+    MISTRAL_API_KEY = "KifJee4MUJJqQKB3Kj8Q00FjIFAQn7Sh"
     ICON_PATH = resource_path(os.path.join("app_media", "img-aux", "icono.ico"))
-    BACKGROUND_PATH = resource_path(os.path.join("app_media", "img-aux", "background.png"))
+    CAROUSEL_IMAGES = [
+        resource_path(os.path.join("app_media", "img-aux", f"carousel_{i:02d}.jpg")) for i in range(1, 19) if os.path.exists(resource_path(os.path.join("app_media", "img-aux", f"carousel_{i:02d}.jpg")))
+    ] + [
+        resource_path(os.path.join("app_media", "img-aux", f"carousel_{i:02d}.png")) for i in range(1, 19) if os.path.exists(resource_path(os.path.join("app_media", "img-aux", f"carousel_{i:02d}.png")))
+    ]
+    CAROUSEL_INTERVAL = 60000 # 1 minute in milliseconds
     LOGO_PATH = resource_path(os.path.join("app_media", "img-aux", "logo.png"))
     VIDEO_PATH = resource_path(os.path.join("app_media", "vid-aux", "video.mp4"))
-    AUDIO_PATH = resource_path(os.path.join("app_media", "aud-aux", "audio.mp3"))
+    BACKGROUND_PATH = resource_path(os.path.join("app_media", "img-aux", "carousel_01.jpg"))
+    AUDIO_FILES = [
+        resource_path(os.path.join("app_media", "aud-aux", "audio_1.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "audio_2.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "audio_3.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "audio_4.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "audio_5.mp3"))
+    ]
     HELP_VIDEOS = [
         {'id': 'QwxG2S_PCMQ', 'title': 'Guía sobre TyperTools'},
         {'id': 'q94bCgsk3_Q', 'title': 'Cómo usar TyperTools'},
@@ -92,8 +127,6 @@ class Config:
     GENERAL_TOOLS_FOLDER = resource_path(os.path.join("BBSL", "herramientas"))
     AI_PROMPT = resource_path(os.path.join("BBSL", "herramientas_datos", "ai_prompt.txt"))
     GRILLA_PROMPT = resource_path(os.path.join("BBSL", "herramientas_datos", "prompt_personajes.txt"))
-    GEMINI_API_KEY = "AIzaSyBPNOkv5VEHwLiuyYsyVHHW6qKtQAWabj8"
-    MISTRAL_API_KEY = "KifJee4MUJJqQKB3Kj8Q00FjIFAQn7Sh"
     GENERAL_TOOLS = [
         resource_path(os.path.join("BBSL", "herramientas", "01_ocr.png")),
         resource_path(os.path.join("BBSL", "herramientas", "02_traductor.png")),
@@ -361,3 +394,5 @@ El programa recién está siendo creado por lo que puede fallar, y es muy sensib
     def get_tools_data_dir(self):
         """Obtiene la ruta del directorio de datos de herramientas."""
         return self.TOOLS_DATA_DIR
+
+print(f"DEBUG: Clase Config cargada. Tiene GEMINI_API_KEY: {'GEMINI_API_KEY' in Config.__dict__}")

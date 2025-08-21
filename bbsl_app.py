@@ -7,6 +7,8 @@ Proporciona una interfaz gráfica para acceder a diversas herramientas y gestion
 import os
 import sys
 import webbrowser
+from PyQt5.QtCore import QTimer, QPropertyAnimation, QEasingCurve
+from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
 # git fetch --all
 # git reset --hard origin/main
@@ -127,29 +129,78 @@ class App(QMainWindow):
         self.setFixedSize(*Config.WINDOW_SIZE)
         self.setWindowIcon(QIcon(Config.ICON_PATH))
         self.background_label = QLabel(self)
-        self.background_label.setPixmap(QPixmap(Config.BACKGROUND_PATH))
         self.background_label.setScaledContents(True)
         self.background_label.setGeometry(0, 0, *Config.WINDOW_SIZE)
+        self._setup_carousel() # Call the new carousel setup method
         self._setup_opencv_video()
         self.container = QWidget(self)
         self.container.setGeometry(0, 0, *Config.WINDOW_SIZE)
         self.container.raise_()
 
     def _setup_audio(self):
-        """Configura el reproductor de audio en bucle."""
-        if os.path.exists(Config.AUDIO_PATH):
+        # Configura el reproductor de audio en bucle con múltiples archivos.
+        self.audio_player = QMediaPlayer()
+        self.playlist = QMediaPlaylist()
+
+        for audio_file in Config.AUDIO_FILES:
+            if os.path.exists(audio_file):
+                self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile(audio_file)))
+            else:
+                print(f"Advertencia: Archivo de audio no encontrado: {audio_file}")
+
+        if self.playlist.mediaCount() > 0:
             try:
-                self.audio_player = QMediaPlayer()
-                self.playlist = QMediaPlaylist()
-                self.playlist.addMedia(
-                    QMediaContent(QUrl.fromLocalFile(Config.AUDIO_PATH))
-                )
                 self.playlist.setPlaybackMode(QMediaPlaylist.Loop)
                 self.audio_player.setPlaylist(self.playlist)
                 self.audio_player.setVolume(5)
                 self.audio_player.play()
-            except (IOError, OSError):
-                pass
+            except (IOError, OSError) as e:
+                print(f"Error al iniciar la reproducción de audio: {e}")
+        else:
+            print("No se encontraron archivos de audio válidos para reproducir.")
+
+    def _setup_carousel(self):
+        """Configura el carrusel de imágenes de fondo."""
+        self.carousel_images = [QPixmap(path) for path in Config.CAROUSEL_IMAGES if os.path.exists(path)]
+        if not self.carousel_images:
+            print("Advertencia: No se encontraron imágenes para el carrusel.")
+            return
+
+        self.current_carousel_index = 0
+        self.background_label.setPixmap(self.carousel_images[self.current_carousel_index])
+
+        self.opacity_effect = QGraphicsOpacityEffect(self.background_label)
+        self.background_label.setGraphicsEffect(self.opacity_effect)
+
+        self.carousel_timer = QTimer(self)
+        self.carousel_timer.setInterval(Config.CAROUSEL_INTERVAL)
+        self.carousel_timer.timeout.connect(self._next_carousel_image)
+        self.carousel_timer.start()
+
+    def _next_carousel_image(self):
+        """Cambia a la siguiente imagen del carrusel con una transición de fundido."""
+        if not self.carousel_images:
+            return
+
+        # Fade out current image
+        self.fade_out_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_out_animation.setDuration(1000) # 1 second fade
+        self.fade_out_animation.setStartValue(1.0)
+        self.fade_out_animation.setEndValue(0.0)
+        self.fade_out_animation.finished.connect(self._update_carousel_image)
+        self.fade_out_animation.start()
+
+    def _update_carousel_image(self):
+        """Actualiza la imagen y la desvanece."""
+        self.current_carousel_index = (self.current_carousel_index + 1) % len(self.carousel_images)
+        self.background_label.setPixmap(self.carousel_images[self.current_carousel_index])
+
+        # Fade in new image
+        self.fade_in_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_in_animation.setDuration(1000) # 1 second fade
+        self.fade_in_animation.setStartValue(0.0)
+        self.fade_in_animation.setEndValue(1.0)
+        self.fade_in_animation.start()
 
     def _initialize_video_capture(self):
         """Inicializa o detiene el vídeo según elección del usuario."""
