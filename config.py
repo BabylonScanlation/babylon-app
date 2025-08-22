@@ -28,31 +28,13 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
         None, "Error Crítico", f"Se produjo un error inesperado:\n\n{error_message}"
     )
 
-class Config:
-    """Configuración general de la aplicación y rutas de recursos."""
 
-    USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
-    FFMPEG_BIN_DIR = resource_path(os.path.join("app_tools", "ffmpeg_bin"))
-
-# Set FFMPEG environment variables for pydub
-ffmpeg_path = os.path.join(Config.FFMPEG_BIN_DIR, "ffmpeg.exe")
-ffprobe_path = os.path.join(Config.FFMPEG_BIN_DIR, "ffprobe.exe")
-
-if os.path.exists(ffmpeg_path):
-    os.environ["FFMPEG_PATH"] = ffmpeg_path
-else:
-    print(f"Advertencia: ffmpeg.exe no encontrado en {ffmpeg_path}. Las funciones de audio pueden fallar.")
-
-if os.path.exists(ffprobe_path):
-    os.environ["FFPROBE_PATH"] = ffprobe_path
-else:
-    print(f"Advertencia: ffprobe.exe no encontrado en {ffprobe_path}. Las funciones de audio pueden fallar.")
 
 class Config:
     """Configuración general de la aplicación y rutas de recursos."""
 
     USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
-    FFMPEG_BIN_DIR = resource_path(os.path.join("app_tools", "ffmpeg_bin"))
+    
     HARUNEKO_DIR = os.path.join(os.getenv('APPDATA') or '', 'HaruNeko')
     TOOLS_DATA_DIR = resource_path(os.path.join("BBSL", "herramientas_datos"))
     GENERAL_TOOLS_FOLDER = resource_path(os.path.join("BBSL", "herramientas"))

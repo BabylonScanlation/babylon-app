@@ -384,7 +384,7 @@ class App(QMainWindow):
             "PROYECTOS": self.show_projects,
             "AYUDA": self.show_help,
             "OPCIONES": self.show_options,
-            "CONFIGURACIÓN": self.show_configuration, # New button
+            
             "SOBRE ESTO": self.show_about,
         }
         for text, action in btn_data.items():

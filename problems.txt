@@ -1,5 +1,21 @@
-DirectShowPlayerService::doRender: Unknown error 0x80040266.
-DirectShowPlayerService::doRender: Unknown error 0x80040266.
-Could not parse stylesheet of object QLabel(0x13249cd31d0)
-Could not parse stylesheet of object QLabel(0x13249cd31d0)
-Could not parse stylesheet of object QLabel(0x13249cd31d0)
+[{
+	"resource": "/c:/Users/Administrator/Desktop/babylon-app-1/tools.py",
+	"owner": "pylance",
+	"code": {
+		"value": "reportUndefinedVariable",
+		"target": {
+			"$mid": 1,
+			"path": "/microsoft/pylance-release/blob/main/docs/diagnostics/reportUndefinedVariable.md",
+			"scheme": "https",
+			"authority": "github.com"
+		}
+	},
+	"severity": 4,
+	"message": "\"QSizePolicySizePolicy\" is not defined",
+	"source": "Pylance",
+	"startLineNumber": 894,
+	"startColumn": 64,
+	"endLineNumber": 894,
+	"endColumn": 85,
+	"origin": "extHost1"
+}]

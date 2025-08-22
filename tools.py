@@ -869,28 +869,18 @@ class ToolsManager(QObject):
         main_layout = QVBoxLayout(self.gemini_container)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
-        top_section = QWidget()
-        top_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        top_section.setStyleSheet(
-            """
-            background-color: rgba(0, 0, 0, 100);
-            border: 1px solid rgba(87, 35, 100, 180);
-            border-radius: 2px;
-        """
-        )
-        top_layout = QVBoxLayout(top_section)
-        top_layout.setContentsMargins(10, 10, 10, 10)
-        top_layout.setSpacing(10)
         title_label = QLabel("Configuración de Gemini")
         title_label.setStyleSheet(
             """
             font-size: 18px;
             color: white;
             background: transparent;
-            qproperty-alignment: AlignTop | AlignHCenter;
-        """)
+            qproperty-alignment: AlignCenter;
+        """
+        )
         title_label.setFont(self.app.super_cartoon_font)
-        top_layout.addWidget(title_label)
+        main_layout.addWidget(title_label, alignment=Qt.AlignCenter)
+
         gemini_tool = next(
             tool
             for tool in Config.SPECIFIED_TOOLS[category]
@@ -915,10 +905,8 @@ class ToolsManager(QObject):
             "<p>" + config_description.replace("\n", "<br>").replace(" ", " ") + "</p>"
         )
         description_label.setHtml(html_description)
-        top_layout.addWidget(description_label)
-        main_layout.addWidget(top_section, stretch=1)
+        main_layout.addWidget(description_label)
         custom_section = QWidget()
-        custom_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         custom_section.setStyleSheet(
             """
             background-color: rgba(0, 0, 0, 100);
@@ -929,7 +917,6 @@ class ToolsManager(QObject):
         bottom_layout.setContentsMargins(10, 10, 10, 10)
         bottom_layout.setSpacing(10)
         left_column = QWidget()
-        left_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_column.setStyleSheet(
             """
             background-color: rgba(0, 0, 0, 100);
@@ -1025,7 +1012,6 @@ class ToolsManager(QObject):
         left_layout.addLayout(combined_browse_layout)
         bottom_layout.addWidget(left_column, stretch=2)
         right_column = QWidget()
-        right_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         right_column.setStyleSheet(
             """
             background-color: rgba(0, 0, 0, 100);
@@ -1082,29 +1068,18 @@ class ToolsManager(QObject):
         main_layout = QVBoxLayout(self.mistral_container)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
-        top_section = QWidget()
-        top_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        top_section.setStyleSheet(
-            """
-            background-color: rgba(0, 0, 0, 100);
-            border: 1px solid rgba(87, 35, 100, 180);
-            border-radius: 2px;
-        """
-        )
-        top_layout = QVBoxLayout(top_section)
-        top_layout.setContentsMargins(10, 10, 10, 10)
-        top_layout.setSpacing(10)
         title_label = QLabel("Configuración de Mistral")
         title_label.setStyleSheet(
             """
             font-size: 18px;
             color: white;
             background: transparent;
-            qproperty-alignment: AlignTop | AlignHCenter;
-        """
+            qproperty-alignment: AlignCenter;
+            """
         )
         title_label.setFont(self.app.super_cartoon_font)
-        top_layout.addWidget(title_label)
+        main_layout.addWidget(title_label, alignment=Qt.AlignCenter)
+
         mistral_tool = next(
             tool
             for tool in Config.SPECIFIED_TOOLS[category]
@@ -1129,10 +1104,8 @@ class ToolsManager(QObject):
             "<p>" + config_description.replace("\n", "<br>").replace(" ", " ") + "</p>"
         )
         description_label.setHtml(html_description)
-        top_layout.addWidget(description_label)
-        main_layout.addWidget(top_section, stretch=1)
+        main_layout.addWidget(description_label)
         custom_section = QWidget()
-        custom_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         custom_section.setStyleSheet(
             """
             background-color: rgba(0, 0, 0, 100);
@@ -1144,7 +1117,6 @@ class ToolsManager(QObject):
         bottom_layout.setContentsMargins(10, 10, 10, 10)
         bottom_layout.setSpacing(10)
         left_column = QWidget()
-        left_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_column.setStyleSheet(
             """
             background-color: rgba(0, 0, 0, 100);
@@ -1216,7 +1188,6 @@ class ToolsManager(QObject):
         left_layout.addWidget(save_button)
         bottom_layout.addWidget(left_column, stretch=2)
         right_column = QWidget()
-        right_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         right_column.setStyleSheet(
             """
             background-color: rgba(0, 0, 0, 100);
