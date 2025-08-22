@@ -808,7 +808,8 @@ class App(QMainWindow):
         """Guarda la configuración de Gemini en config.py."""
         try:
             # Read the current content of config.py
-            with open("C:\Users\Estudiantes\AppData\Local\babylon-app\config.py", "r", encoding="utf-8") as f:
+            config_file_path = os.path.join(os.path.dirname(__file__), "config.py")
+            with open(config_file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # Update GEMINI_MODEL
@@ -824,7 +825,7 @@ class App(QMainWindow):
             Config.GEMINI_ENABLE_THINKING = enable_thinking # Update in-memory Config
 
             # Write the updated content back to config.py
-            with open("C:\Users\Estudiantes\AppData\Local\babylon-app\config.py", "w", encoding="utf-8") as f:
+            with open(config_file_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
             QMessageBox.information(self, "Configuración Guardada", "La configuración de Gemini ha sido guardada exitosamente.")

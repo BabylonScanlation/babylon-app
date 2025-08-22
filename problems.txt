@@ -1,0 +1,5 @@
+DirectShowPlayerService::doRender: Unknown error 0x80040266.
+DirectShowPlayerService::doRender: Unknown error 0x80040266.
+Could not parse stylesheet of object QLabel(0x13249cd31d0)
+Could not parse stylesheet of object QLabel(0x13249cd31d0)
+Could not parse stylesheet of object QLabel(0x13249cd31d0)
