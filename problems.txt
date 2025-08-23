@@ -1,5 +1,5 @@
 [{
-	"resource": "/c:/Users/Administrator/Desktop/babylon-app-1/tools.py",
+	"resource": "/c:/Users/Estudiantes/AppData/Local/babylon-app/app_tools/gemini.py",
 	"owner": "pylance",
 	"code": {
 		"value": "reportUndefinedVariable",
@@ -11,11 +11,72 @@
 		}
 	},
 	"severity": 4,
-	"message": "\"QSizePolicySizePolicy\" is not defined",
+	"message": "\"pages_dir\" is not defined",
 	"source": "Pylance",
-	"startLineNumber": 894,
-	"startColumn": 64,
-	"endLineNumber": 894,
-	"endColumn": 85,
+	"startLineNumber": 153,
+	"startColumn": 25,
+	"endLineNumber": 153,
+	"endColumn": 34,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Users/Estudiantes/AppData/Local/babylon-app/app_tools/gemini.py",
+	"owner": "pylance",
+	"code": {
+		"value": "reportUndefinedVariable",
+		"target": {
+			"$mid": 1,
+			"path": "/microsoft/pylance-release/blob/main/docs/diagnostics/reportUndefinedVariable.md",
+			"scheme": "https",
+			"authority": "github.com"
+		}
+	},
+	"severity": 4,
+	"message": "\"pages_dir\" is not defined",
+	"source": "Pylance",
+	"startLineNumber": 195,
+	"startColumn": 40,
+	"endLineNumber": 195,
+	"endColumn": 49,
+	"origin": "extHost1"
+}]
+[{
+	"resource": "/c:/Users/Estudiantes/AppData/Local/babylon-app/app_tools/mistral.py",
+	"owner": "pylance",
+	"code": {
+		"value": "reportUndefinedVariable",
+		"target": {
+			"$mid": 1,
+			"path": "/microsoft/pylance-release/blob/main/docs/diagnostics/reportUndefinedVariable.md",
+			"scheme": "https",
+			"authority": "github.com"
+		}
+	},
+	"severity": 4,
+	"message": "\"pages_dir\" is not defined",
+	"source": "Pylance",
+	"startLineNumber": 75,
+	"startColumn": 25,
+	"endLineNumber": 75,
+	"endColumn": 34,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Users/Estudiantes/AppData/Local/babylon-app/app_tools/mistral.py",
+	"owner": "pylance",
+	"code": {
+		"value": "reportUndefinedVariable",
+		"target": {
+			"$mid": 1,
+			"path": "/microsoft/pylance-release/blob/main/docs/diagnostics/reportUndefinedVariable.md",
+			"scheme": "https",
+			"authority": "github.com"
+		}
+	},
+	"severity": 4,
+	"message": "\"pages_dir\" is not defined",
+	"source": "Pylance",
+	"startLineNumber": 129,
+	"startColumn": 44,
+	"endLineNumber": 129,
+	"endColumn": 53,
 	"origin": "extHost1"
 }]

@@ -9,6 +9,9 @@ from threading import Thread, Event
 from google import genai
 from PIL import Image
 
+# Define the directory for generated pages/content
+pages_dir = os.path.join(os.path.dirname(__file__), "pages")
+
 # Configurar rutas del proyecto
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if root_dir not in sys.path:
@@ -21,7 +24,7 @@ except ImportError as e:
     sys.exit(1)
 
 # Configuración inicial
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 sys.excepthook = global_exception_handler
 
 # Configurar cliente de Gemini
@@ -142,19 +145,14 @@ class GeminiProcessor:
         try:
             start_time = time.time()
             print(f"\nProcesando: {file_path}")
-            logging.debug(f"DEBUG: process_file - file_path: {file_path}")
-            logging.debug(f"DEBUG: process_file - input_base: {input_base}")
+            
             prompt = load_prompt()
             if not prompt:
                 raise ValueError("Error: Prompt no cargado")
 
             # Crear estructura de carpetas
             rel_path = os.path.relpath(file_path, input_base)
-            logging.debug(f"DEBUG: process_file - rel_path: {rel_path}")
-            chapter_dir = os.path.join(output_dir, os.path.dirname(rel_path))
-            logging.debug(f"DEBUG: process_file - chapter_dir: {chapter_dir}")
-            pages_dir = os.path.join(chapter_dir, "paginas")
-            logging.debug(f"DEBUG: process_file - pages_dir: {pages_dir}")
+            
             os.makedirs(pages_dir, exist_ok=True)
 
             # Procesar imagen con manejo de reintentos
@@ -391,7 +389,7 @@ class GeminiProcessor:
             # Ensure common_input_base is a directory, not a file
             if os.path.isfile(common_input_base):
                 common_input_base = os.path.dirname(common_input_base)
-            logging.debug(f"DEBUG: _process_selected_files_gemini - common_input_base (adjusted): {common_input_base}")
+            
 
             for file_path in file_paths:
                 if cancel_event and cancel_event.is_set():

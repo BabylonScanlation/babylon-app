@@ -7,7 +7,7 @@ Proporciona una interfaz gráfica para acceder a diversas herramientas y gestion
 import os
 import sys
 import webbrowser
-from PyQt5.QtCore import QTimer, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import QTimer, QPropertyAnimation
 from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
 # git fetch --all
@@ -155,6 +155,11 @@ class App(QMainWindow):
         if self.playlist.mediaCount() > 0:
             try:
                 self.playlist.setPlaybackMode(QMediaPlaylist.Loop)
+                
+                for i in range(self.playlist.mediaCount()):
+                    media = self.playlist.media(i)
+                    if media.isNull():
+                        print(f"Advertencia: Medio nulo encontrado en la lista de reproducción en el índice {i}.")
                 self.audio_player.setPlaylist(self.playlist)
                 self.audio_player.setVolume(5)
                 self.audio_player.play()
@@ -188,7 +193,7 @@ class App(QMainWindow):
 
         # Fade out current image
         self.fade_out_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.fade_out_animation.setDuration(1000) # 1 second fade
+        self.fade_out_animation.setDuration(1000)
         self.fade_out_animation.setStartValue(1.0)
         self.fade_out_animation.setEndValue(0.0)
         self.fade_out_animation.finished.connect(self._update_carousel_image)
@@ -201,7 +206,16 @@ class App(QMainWindow):
 
         # Fade in new image
         self.fade_in_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.fade_in_animation.setDuration(1000) # 1 second fade
+        self.fade_in_animation.setDuration(1000)
+        self.fade_in_animation.setStartValue(0.0)
+        self.fade_in_animation.setEndValue(1.0)
+        self.fade_in_animation.start()
+
+    def _start_carousel_fade_in(self):
+        """Starts the fade-in animation for the carousel background."""
+        self.background_label.show() # Ensure the label is visible before fading in
+        self.fade_in_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_in_animation.setDuration(1000)
         self.fade_in_animation.setStartValue(0.0)
         self.fade_in_animation.setEndValue(1.0)
         self.fade_in_animation.start()
@@ -219,7 +233,7 @@ class App(QMainWindow):
     def _setup_opencv_video(self):
         """Inicializa el vídeo."""
         if not self._initialize_video_capture():
-            self.background_label.show()
+            self._start_carousel_fade_in() # If video fails, start fade-in for background
             return
         self.video_label.setGeometry(0, 0, *Config.WINDOW_SIZE)
         self.timer.timeout.connect(self._update_frame)
@@ -239,7 +253,7 @@ class App(QMainWindow):
                 self.background_label.hide()
             else:
                 # If re-initialization failed, show background and return
-                self.background_label.show()
+                self._start_carousel_fade_in() # If re-initialization failed, start fade-in for background
                 return
 
         try:
@@ -266,12 +280,14 @@ class App(QMainWindow):
                     self.timer.stop()
                     if self.cap is not None:
                         self.cap.release()
-                    self._setup_opencv_video() # Attempt full re-setup
+                    if self.cap is not None:
+                        self.cap.release()
+                    self._start_carousel_fade_in()
         except (IOError, cv2.error) as e:
             self.timer.stop()
             if self.cap is not None:
                 self.cap.release()
-            self._setup_opencv_video() # Attempt full re-setup
+            self._start_carousel_fade_in() # Attempt full re-setup with fade-in
 
     def closeEvent(self, event):  # pylint: disable=invalid-name, unused-argument
         """Liberar recursos al cerrar la aplicación."""

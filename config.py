@@ -59,7 +59,8 @@ class Config:
         resource_path(os.path.join("app_media", "aud-aux", "audio_2.mp3")),
         resource_path(os.path.join("app_media", "aud-aux", "audio_3.mp3")),
         resource_path(os.path.join("app_media", "aud-aux", "audio_4.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "audio_5.mp3"))
+        resource_path(os.path.join("app_media", "aud-aux", "audio_5.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "audio_6.mp3"))
     ]
     HELP_VIDEOS = [
         {'id': 'QwxG2S_PCMQ', 'title': 'Guía sobre TyperTools'},
@@ -379,4 +380,4 @@ El programa recién está siendo creado por lo que puede fallar, y es muy sensib
         """Obtiene la ruta del directorio de datos de herramientas."""
         return self.TOOLS_DATA_DIR
 
-print(f"DEBUG: Clase Config cargada. Tiene GEMINI_API_KEY: {'GEMINI_API_KEY' in Config.__dict__}")
+
