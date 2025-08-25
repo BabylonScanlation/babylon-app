@@ -7,10 +7,9 @@ import re
 import httpx
 from threading import Thread, Event
 from google import genai
+from google.genai import types
+from google.genai.types import HarmCategory, HarmBlockThreshold
 from PIL import Image
-
-# Define the directory for generated pages/content
-pages_dir = os.path.join(os.path.dirname(__file__), "pages")
 
 # Configurar rutas del proyecto
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -23,11 +22,14 @@ except ImportError as e:
     logging.error("Error importando config: %s", e)
     sys.exit(1)
 
+print(f"DEBUG: app_tools/gemini.py imported Config. Has GEMINI_API_KEY: {'GEMINI_API_KEY' in Config.__dict__}")
+
 # Configuración inicial
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 sys.excepthook = global_exception_handler
 
 # Configurar cliente de Gemini
+
 client = genai.Client(api_key=Config.GEMINI_API_KEY)
 
 def load_prompt():
@@ -39,9 +41,39 @@ def load_prompt():
         logging.error(f"Error cargando el prompt: {str(e)}")
         return None
 
+def generar_grilla(content):
+    """Genera análisis de personajes con Gemini."""
+    try:
+        with open(Config.GRILLA_PROMPT, "r", encoding="utf-8") as f:
+            prompt = f.read()
 
+        ai_start_time = time.time()
 
-def combine_texts(output_dir, combined_content, chapter_name, gemini_processor, master_content=None):
+        api_kwargs = {
+            'model': Config.GEMINI_MODEL,
+            'contents': [prompt, content]
+        }
+
+        if Config.GEMINI_ENABLE_THINKING:
+            budget = -1  # Pensamiento dinámico
+            thinking_config = types.ThinkingConfig(thinking_budget=budget)
+            api_kwargs['config'] = types.GenerateContentConfig(thinking_config=thinking_config)
+
+        response = client.models.generate_content(**api_kwargs)
+        ai_end_time = time.time()
+        print(f"Tiempo de procesamiento de IA para grilla: {ai_end_time - ai_start_time:.4f} segundos")
+        
+        if response and response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            return response.text
+        else:
+            logging.warning("La respuesta de Gemini para la grilla no contiene texto o fue bloqueada.")
+            return "Sin datos de personajes (respuesta bloqueada o vacía)"
+
+    except Exception as e:
+        logging.error(f"Error generando grilla: {str(e)}")
+        return "Error al generar análisis de personajes"
+
+def combine_texts(output_dir, combined_content, chapter_name, master_content=None):
     """Combina contenido y genera archivos finales con verificación de errores"""
     try:
         # Sanitizar nombre del capítulo para evitar problemas en rutas
@@ -73,7 +105,7 @@ def combine_texts(output_dir, combined_content, chapter_name, gemini_processor, 
             f.write(full_content)
 
         # 2. Generar grilla desde el contenido en memoria
-        grid_content = gemini_processor.generar_grilla(full_content)
+        grid_content = generar_grilla(full_content)
         grid_path = os.path.join(output_dir, f"{sanitized_chapter}_grilla.txt")
         print(f" - Archivo grilla: {os.path.basename(grid_path)}")
         
@@ -105,35 +137,6 @@ class GeminiProcessor:
         self.processing_start_time = None
         self.image_count = 0
         self.cancel_event = None
-        self.model_name = Config.GEMINI_MODEL
-        self.enable_thinking = Config.GEMINI_ENABLE_THINKING
-
-    def generar_grilla(self, content):
-        """Genera análisis de personajes con Gemini."""
-        try:
-            with open(Config.GRILLA_PROMPT, "r", encoding="utf-8") as f:
-                prompt = f.read()
-
-            ai_start_time = time.time()
-            
-            generation_config = {}
-            if self.enable_thinking:
-                generation_config["thinkingBudget"] = -1 # Dynamic thinking
-            else:
-                generation_config["thinkingBudget"] = 0 # Disable thinking
-
-            response = client.models.generate_content(
-                model=self.model_name,
-                contents=[prompt, content],
-                generation_config=generation_config
-            )
-            ai_end_time = time.time()
-            print(f"Tiempo de procesamiento de IA para grilla: {ai_end_time - ai_start_time:.4f} segundos")
-            return response.text if response.text else "Sin datos de personajes"
-
-        except Exception as e:
-            logging.error(f"Error generando grilla: {str(e)}")
-            return "Error al generar análisis de personajes"
 
     def reset_counters(self):
         """Reinicia los contadores para un nuevo procesamiento"""
@@ -145,14 +148,19 @@ class GeminiProcessor:
         try:
             start_time = time.time()
             print(f"\nProcesando: {file_path}")
-            
+            logging.debug(f"DEBUG: process_file - file_path: {file_path}")
+            logging.debug(f"DEBUG: process_file - input_base: {input_base}")
             prompt = load_prompt()
             if not prompt:
                 raise ValueError("Error: Prompt no cargado")
 
             # Crear estructura de carpetas
             rel_path = os.path.relpath(file_path, input_base)
-            
+            logging.debug(f"DEBUG: process_file - rel_path: {rel_path}")
+            chapter_dir = os.path.join(output_dir, os.path.dirname(rel_path))
+            logging.debug(f"DEBUG: process_file - chapter_dir: {chapter_dir}")
+            pages_dir = os.path.join(chapter_dir, "paginas")
+            logging.debug(f"DEBUG: process_file - pages_dir: {pages_dir}")
             os.makedirs(pages_dir, exist_ok=True)
 
             # Procesar imagen con manejo de reintentos
@@ -163,17 +171,17 @@ class GeminiProcessor:
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    generation_config = {}
-                    if self.enable_thinking:
-                        generation_config["thinkingBudget"] = -1 # Dynamic thinking
-                    else:
-                        generation_config["thinkingBudget"] = 0 # Disable thinking
+                    api_kwargs = {
+                        'model': Config.GEMINI_MODEL,
+                        'contents': [prompt, image]
+                    }
 
-                    response = client.models.generate_content(
-                        model=self.model_name,
-                        contents=[prompt, image],
-                        generation_config=generation_config
-                    )
+                    if Config.GEMINI_ENABLE_THINKING:
+                        budget = -1  # Pensamiento dinámico
+                        thinking_config = types.ThinkingConfig(thinking_budget=budget)
+                        api_kwargs['config'] = types.GenerateContentConfig(thinking_config=thinking_config)
+
+                    response = client.models.generate_content(**api_kwargs)
                     break  # Si tiene éxito, sal del bucle
                 except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as e:
                     if attempt < max_retries - 1:
@@ -188,10 +196,20 @@ class GeminiProcessor:
 
             # Extraer y guardar contenido
             translations = []
-            for candidate in response.candidates:
-                for part in candidate.content.parts:
-                    if hasattr(part, 'text'):
-                        translations.append(part.text)
+            if response and response.candidates:
+                for candidate in response.candidates:
+                    if candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text'):
+                                translations.append(part.text)
+                    else:
+                        # Esto maneja el caso donde el contenido es None o no tiene partes (bloqueado)
+                        block_reason = candidate.finish_reason.name if candidate.finish_reason else "DESCONOCIDO"
+                        logging.warning(f"Contenido bloqueado por la API de Gemini para {file_path}. Razón: {block_reason}.")
+                        return f"ERROR_BLOQUEO_GEMINI: Contenido bloqueado - Razón: {block_reason}"
+            else:
+                # Esto maneja el caso donde la respuesta no tiene candidatos (muy raro)
+                logging.warning(f"No se encontraron candidatos en la respuesta de Gemini para {file_path}. Respuesta: {response}")
 
             # Guardar archivo individual en /paginas
             base_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -263,7 +281,7 @@ class GeminiProcessor:
                 chapter_name = os.path.basename(chapter_path)
                 print(f"\n--- Generando archivos finales para CAPÍTULO: {chapter_name} ---")
                 
-                result = combine_texts(chapter_output_dir, combined_content, chapter_name, self)
+                result = combine_texts(chapter_output_dir, combined_content, chapter_name)
                 
                 end_time = time.time()
                 print(f"\n{'='*80}")
@@ -349,7 +367,7 @@ class GeminiProcessor:
                 if master_content_list:
                     series_master_content = ("\n\n" + "╬" * 75 + "\n\n").join(master_content_list)
                     series_name = os.path.basename(input_path)
-                    combine_texts(series_output_dir, [], series_name, self, master_content=series_master_content)
+                    combine_texts(series_output_dir, [], series_name, master_content=series_master_content)
 
             return status
 
@@ -389,7 +407,10 @@ class GeminiProcessor:
             # Ensure common_input_base is a directory, not a file
             if os.path.isfile(common_input_base):
                 common_input_base = os.path.dirname(common_input_base)
-            
+            logging.debug(f"DEBUG: _process_selected_files_gemini - common_input_base (adjusted): {common_input_base}")
+
+            error_occurred = False
+            combined_content = [] # Initialize list to collect translations
 
             for file_path in file_paths:
                 if cancel_event and cancel_event.is_set():
@@ -397,11 +418,30 @@ class GeminiProcessor:
                     return
 
                 content = self.process_file(file_path, output_dir, common_input_base)
-                if not content: # If process_file returns empty string, it indicates an error
-                    callback("error")
-                    return
+                if content and not content.startswith("ERROR_BLOQUEO_GEMINI:"): # Only append if content is valid and not an error message
+                    combined_content.append(content)
+                else: # If process_file returns empty string or error message, it indicates an error
+                    error_occurred = True
+                    # Log the error, but continue processing other files
+                    logging.error(f"Error al procesar {file_path}. Continuando con las demás imágenes.")
 
-            callback("success")
+            # After processing all files, combine them and generate grid if there's content
+            if combined_content:
+                # Determine a suitable chapter name for selected files
+                # Could be based on a common prefix, or a generic name
+                # For simplicity, let's use a generic name for now
+                chapter_name = "archivos_seleccionados"
+                
+                # Call combine_texts to create the combined file and the grid
+                # combine_texts also handles error logging internally
+                success_combine = combine_texts(output_dir, combined_content, chapter_name)
+                if not success_combine:
+                    error_occurred = True # Mark as error if combining fails
+
+            if error_occurred:
+                callback("error_with_some_files") # A new status to indicate partial success/failure
+            else:
+                callback("success")
         except Exception as e:
             logging.error(f"Error procesando archivos seleccionados para Gemini: {str(e)}", exc_info=True)
             callback("error")

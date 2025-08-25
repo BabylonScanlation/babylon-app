@@ -51,16 +51,6 @@ from PyQt5.QtWidgets import (
 )
 
 
-def resize_image(image_path, width, height):
-    """Redimensiona una imagen a las dimensiones especificadas sin perder calidad."""
-    try:
-        with Image.open(image_path) as img:
-            img = img.resize((width, height), Image.LANCZOS)
-            img.save(image_path)
-    except Exception as e:
-        print(f"Error al redimensionar la imagen {image_path}: {e}")
-
-
 # pylint: disable=too-few-public-methods
 class TranslationTask(QRunnable):
     """Maneja tareas de traducción en hilos en segundo plano."""

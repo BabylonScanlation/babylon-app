@@ -39,7 +39,7 @@ from PyQt5.QtWidgets import (
 )
 
 from project_manager import ProjectManager
-from tools import ToolsManager, resize_image
+from tools import ToolsManager
 from config import Config, resource_path, global_exception_handler
 from options_menu import OptionsMenu
 
@@ -122,10 +122,15 @@ class App(QMainWindow):
         self.temp_files = []
         self.audio_player = None
         self._setup_main_window()
-        resize_image(Config.LOGO_PATH, 336, 150)
         self._load_fonts()
         self._create_layout()
         self._setup_audio()
+
+    def showEvent(self, event):
+        """Maneja el evento de mostrar la ventana para iniciar la reproducción de medios."""
+        super().showEvent(event)
+        self._start_audio_playback()
+        self._start_video_playback()
 
     def _setup_main_window(self):
         """Configura la ventana principal con video o imagen de fondo."""
@@ -162,11 +167,15 @@ class App(QMainWindow):
                         print(f"Advertencia: Medio nulo encontrado en la lista de reproducción en el índice {i}.")
                 self.audio_player.setPlaylist(self.playlist)
                 self.audio_player.setVolume(5)
-                self.audio_player.play()
             except (IOError, OSError) as e:
                 print(f"Error al iniciar la reproducción de audio: {e}")
         else:
             print("No se encontraron archivos de audio válidos para reproducir.")
+
+    def _start_audio_playback(self):
+        """Inicia la reproducción de audio."""
+        if self.audio_player and self.playlist.mediaCount() > 0:
+            self.audio_player.play()
 
     def _setup_carousel(self):
         """Configura el carrusel de imágenes de fondo."""
@@ -237,9 +246,13 @@ class App(QMainWindow):
             return
         self.video_label.setGeometry(0, 0, *Config.WINDOW_SIZE)
         self.timer.timeout.connect(self._update_frame)
-        fps = self.cap.get(cv2.CAP_PROP_FPS)  # pylint: disable=no-member
-        self.timer.start(int(1000 / fps))
         self.background_label.hide()
+
+    def _start_video_playback(self):
+        """Inicia la reproducción de video."""
+        if self.cap and self.cap.isOpened():
+            fps = self.cap.get(cv2.CAP_PROP_FPS)  # pylint: disable=no-member
+            self.timer.start(int(1000 / fps))
 
     def _update_frame(self):
         """Actualiza el frame del video."""
@@ -459,7 +472,7 @@ class App(QMainWindow):
         self.content_container = QWidget(self.container)
         self.content_container.setGeometry(310, 0, 900, 600)
         self.home_label = self._create_text_area(
-            "Bienvenido a 'De Todo Un Poco'.",
+            "Bienvenido al programa 'Babylon Scanlation'.",
             style=(
                 "font-size: 24px;"
                 "color: white;"
@@ -770,7 +783,7 @@ class App(QMainWindow):
         model_label.setStyleSheet("color: white;")
         model_label.setFont(self.roboto_black_font)
         model_combo = QComboBox()
-        model_combo.addItems(["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-flash-lite"])
+        model_combo.addItems(["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"])
         model_combo.setCurrentText(Config.GEMINI_MODEL)
         model_combo.setStyleSheet(
             """

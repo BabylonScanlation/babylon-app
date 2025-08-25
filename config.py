@@ -41,8 +41,8 @@ class Config:
     WINDOW_TITLE = "Babylon Scanlation"
     WINDOW_SIZE = (1200, 600)
     GEMINI_API_KEY = "AIzaSyBPNOkv5VEHwLiuyYsyVHHW6qKtQAWabj8"
-    GEMINI_MODEL = "gemini-2.5-flash-lite"  # Default Gemini model
-    GEMINI_ENABLE_THINKING = False  # Default to disable thinking
+    GEMINI_MODEL = "gemini-2.5-pro"  # Default Gemini model
+    GEMINI_ENABLE_THINKING = True  # Default to disable thinking
     MISTRAL_API_KEY = "KifJee4MUJJqQKB3Kj8Q00FjIFAQn7Sh"
     ICON_PATH = resource_path(os.path.join("app_media", "img-aux", "icono.ico"))
     CAROUSEL_IMAGES = [
@@ -55,12 +55,12 @@ class Config:
     VIDEO_PATH = resource_path(os.path.join("app_media", "vid-aux", "video.mp4"))
     BACKGROUND_PATH = resource_path(os.path.join("app_media", "img-aux", "carousel_01.jpg"))
     AUDIO_FILES = [
-        resource_path(os.path.join("app_media", "aud-aux", "audio_1.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "audio_2.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "audio_3.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "audio_4.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "audio_5.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "audio_6.mp3"))
+        resource_path(os.path.join("app_media", "aud-aux", "walls.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "YrGGFK.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "russian_roulette.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "fairytale.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "echo.mp3")),
+        resource_path(os.path.join("app_media", "aud-aux", "devil_eyes.mp3"))
     ]
     HELP_VIDEOS = [
         {'id': 'QwxG2S_PCMQ', 'title': 'Guía sobre TyperTools'},

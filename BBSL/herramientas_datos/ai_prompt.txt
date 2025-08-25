@@ -23,6 +23,10 @@
 🔹 ABREVIACIONES
 1. Evitar el uso de abreviaciones (ej. "dr." por "doctor") a menos que la abreviación sea intencional y represente una forma coloquial o específica del texto original.
 
+🔹 FIDELIDAD Y CONSISTENCIA
+1. Preservación Semántica: La traducción definitiva debe preservar *todo* el contenido semántico del texto original, incluyendo adjetivos, adverbios y descriptores específicos (ej. "gordo", "viejo", "alto"). La omisión de cualquier elemento descriptivo solo se permite si es absolutamente necesario para la fluidez en español y debe ser justificada explícitamente.
+2. Consistencia Terminológica: Para nombres propios, términos técnicos o conceptos recurrentes, una vez que se ha establecido una traducción (ej. "Aken" o "Aiken" para "艾肯"), esta debe ser utilizada de manera *absolutamente consistente* en todas las apariciones futuras, sin variaciones. Si hay múltiples opciones válidas, se debe elegir una y adherirse a ella.
+
 === GUÍA DE INTERPRETACIÓN DE GLOBOS ===
 
 🔹 FORMAS Y CONTORNOS DE LOS GLOBOS DE DIÁLOGO (FUKIDASHI)

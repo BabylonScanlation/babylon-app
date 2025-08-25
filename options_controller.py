@@ -23,6 +23,24 @@ class OptionsController:
         self.background_choice = "video"
         self.download_thread = None
 
+    def save_gemini_settings(self, model, thinking_enabled):
+        """Guarda la configuración de Gemini en el objeto Config en memoria."""
+        try:
+            Config.GEMINI_MODEL = model
+            Config.GEMINI_ENABLE_THINKING = thinking_enabled
+            print(f"Configuración de Gemini actualizada en memoria: Modelo={model}, Pensamiento={thinking_enabled}")
+            QMessageBox.information(self.parent, "Guardado", "La configuración de Gemini ha sido guardada para la sesión actual.")
+        except Exception as e:
+            print(f"Error guardando la configuración de Gemini: {str(e)}")
+            QMessageBox.critical(self.parent, "Error", "No se pudo guardar la configuración de Gemini.")
+
+    def go_back_to_main_view(self):
+        """Oculta el menú de opciones y vuelve a la vista principal."""
+        if hasattr(self.parent, 'options_menu_launcher') and hasattr(self.parent.options_menu_launcher, 'hide_options_menu'):
+            self.parent.options_menu_launcher.hide_options_menu()
+        else:
+            print("Error: No se pudo encontrar el método para ocultar el menú de opciones.")
+
     def clear_temp_files(self):
         """Limpia todos los archivos temporales creados."""
         for temp_file in self.temp_files:
