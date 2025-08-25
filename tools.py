@@ -122,10 +122,12 @@ class ToolsManager(QObject):
         super().__init__()
         self.app = app
         self.processing_finished.connect(self._show_completion_message)
+        self.app.gemini_config_closed.connect(self._on_gemini_config_closed) # Conectar la señal
         self.utilities_area = None
         self.parent_container = None
         self.details_container = None
         self.gemini_container = None
+        print("DEBUG: ToolsManager.__init__ - self.gemini_container inicializado a None.")
         self.mistral_container = None
         self.haruneko_manager = HaruNekoManager(self.app)
         self.input_path = None
@@ -790,7 +792,9 @@ class ToolsManager(QObject):
 
         except Exception as e:
             error_msg = f"Error al iniciar la traducción: {str(e)}"
-            QMessageBox.critical(self.app.content_container, "Error", error_msg)
+            QMessageBox.critical(
+                self.app.content_container, "Error", error_msg
+            )
             if use_button:
                 use_button.setEnabled(True)
                 use_button.setText("Usar")
@@ -845,8 +849,13 @@ class ToolsManager(QObject):
     def _create_gemini_container(self, category):
         """Crea un contenedor personalizado para la herramienta Gemini según la categoría."""
         if hasattr(self, "gemini_container") and self.gemini_container:
-            self.gemini_container.deleteLater()
-            self.gemini_container = None
+            # Si el contenedor ya existe, simplemente lo mostramos y lo traemos al frente
+            self.gemini_container.show()
+            self.gemini_container.raise_()
+            QApplication.processEvents() # Forzar actualización de la UI
+            return # Salir de la función, no recrear el contenedor
+        
+        # Si el contenedor no existe, entonces procedemos a crearlo
         self.app._hide_all_sections()
         self.gemini_container = QWidget(self.app.content_container)
         self.gemini_container.setGeometry(50, 50, 780, 500)
@@ -902,7 +911,8 @@ class ToolsManager(QObject):
             background-color: rgba(0, 0, 0, 100);
             border: 1px solid rgba(87, 35, 100, 180);
             border-radius: 2px;
-        """)
+        """
+        )
         bottom_layout = QHBoxLayout(custom_section)
         bottom_layout.setContentsMargins(10, 10, 10, 10)
         bottom_layout.setSpacing(10)
@@ -912,7 +922,8 @@ class ToolsManager(QObject):
             background-color: rgba(0, 0, 0, 100);
             border: 1px solid rgba(87, 35, 100, 180);
             border-radius: 2px;
-        """)
+        """
+        )
         left_layout = QVBoxLayout(left_column)
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
@@ -929,7 +940,8 @@ class ToolsManager(QObject):
             QPushButton:hover {
                 background-color: #888888;
             }
-        """)
+        """
+        )
         browse_files_button.setFont(self.app.adventure_font)
         browse_files_button.setCursor(Qt.PointingHandCursor)
         browse_files_button.clicked.connect(self._browse_files)
@@ -946,7 +958,8 @@ class ToolsManager(QObject):
             QPushButton:hover {
                 background-color: #888888;
             }
-        """)
+        """
+        )
         browse_folders_button.setFont(self.app.adventure_font)
         browse_folders_button.setCursor(Qt.PointingHandCursor)
         browse_folders_button.clicked.connect(self._browse_folders)
@@ -967,7 +980,8 @@ class ToolsManager(QObject):
             QPushButton:hover {
                 background-color: #888888;
             }
-        """)
+        """
+        )
         config_button.setFont(self.app.adventure_font)
         config_button.setCursor(Qt.PointingHandCursor)
         config_button.clicked.connect(self._show_gemini_config_section) # Connect to new method
@@ -989,7 +1003,8 @@ class ToolsManager(QObject):
             QPushButton:hover {
                 background-color: #888888;
             }
-        """)
+        """
+        )
         save_button.setFont(self.app.adventure_font)
         save_button.setCursor(Qt.PointingHandCursor)
         save_button.clicked.connect(self._save_results)
@@ -1007,7 +1022,8 @@ class ToolsManager(QObject):
             background-color: rgba(0, 0, 0, 100);
             border: 1px solid rgba(87, 35, 100, 180);
             border-radius: 2px;
-        """)
+        """
+        )
         right_layout = QVBoxLayout(right_column)
         right_layout.setContentsMargins(10, 10, 10, 10)
         right_layout.setSpacing(10)
@@ -1040,6 +1056,8 @@ class ToolsManager(QObject):
         bottom_layout.addWidget(right_column, stretch=1)
         main_layout.addWidget(custom_section, stretch=0)
         self.gemini_container.show()
+        self.gemini_container.raise_() # Asegurar que esté en la parte superior
+        QApplication.processEvents() # Forzar actualización de la UI
 
     def _create_mistral_container(self, category):
         """Crea un contenedor personalizado para la herramienta Mistral según la categoría."""
@@ -1415,8 +1433,7 @@ class ToolsManager(QObject):
                 "El procesamiento se ha iniciado. Puedes cancelarlo en cualquier momento.",
             )
             # Mover el QApplication.processEvents() aquí para actualizar UI
-            QApplication.processEvents()
-            
+            QApplication.processEvents()            
         except ValueError as e:
             QMessageBox.critical(
                 self.app, "Error", f"Error durante el procesamiento: {e}"
@@ -1483,8 +1500,7 @@ class ToolsManager(QObject):
                 "El procesamiento se ha iniciado. Puedes cancelarlo en cualquier momento.",
             )
             # Mover el QApplication.processEvents() aquí para actualizar UI
-            QApplication.processEvents()
-            
+            QApplication.processEvents()            
         except ValueError as e:
             QMessageBox.critical(
                 self.app, "Error", f"Error durante el procesamiento: {e}"
@@ -1546,15 +1562,25 @@ class ToolsManager(QObject):
         if hasattr(self, 'mistral_cancel_button'):
             self.mistral_cancel_button.setEnabled(False)
 
+    def _on_gemini_config_closed(self):
+        print("DEBUG: _on_gemini_config_closed llamado.")
+        """Muestra el contenedor de Gemini cuando la configuración se cierra."""
+        if self.gemini_container:
+            print(f"DEBUG: gemini_container existe. Visible antes: {self.gemini_container.isVisible()}")
+            self.gemini_container.show()
+            self.gemini_container.raise_()
+            QApplication.processEvents() # Forzar actualización de la UI
+            print(f"DEBUG: gemini_container visible después: {self.gemini_container.isVisible()}")
+            if self.gemini_container.parentWidget():
+                print(f"DEBUG: Padre de gemini_container visible: {self.gemini_container.parentWidget().isVisible()}")
+                self.gemini_container.parentWidget().raise_()
+                QApplication.processEvents()
+        else:
+            print("DEBUG: gemini_container es None en _on_gemini_config_closed.")
+
     def _show_gemini_config_section(self):
         """Muestra la sección de configuración de Gemini."""
-        if self.gemini_container:
-            self.gemini_container.hide()
-        self.app._hide_all_sections() # Ocultar todas las secciones existentes
-        if not hasattr(self.app, 'gemini_config_area') or not self.app.gemini_config_area:
-            self.app.gemini_config_area = self.app._create_gemini_config_area()
-        self.app.gemini_config_area.show()
-        self.app.gemini_config_area.raise_() # Asegurar que esté en la parte superior
+        self.app.show_gemini_configuration()
 
     def _process_selected_files_gemini(self, file_paths, output_dir, cancel_event, callback):
         """Procesa una lista de archivos seleccionados para Gemini."""

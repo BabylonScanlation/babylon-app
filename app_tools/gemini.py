@@ -21,9 +21,7 @@ try:
 except ImportError as e:
     logging.error("Error importando config: %s", e)
     sys.exit(1)
-
-print(f"DEBUG: app_tools/gemini.py imported Config. Has GEMINI_API_KEY: {'GEMINI_API_KEY' in Config.__dict__}")
-
+    
 # Configuración inicial
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 sys.excepthook = global_exception_handler

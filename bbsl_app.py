@@ -68,6 +68,7 @@ class ClickableThumbnail(QLabel):  # pylint: disable=too-few-public-methods
 
 # pylint: disable=too-many-instance-attributes, too-many-lines
 class App(QMainWindow):
+    gemini_config_closed = pyqtSignal() # Nueva señal
     """Clase principal de la aplicación que maneja la interfaz gráfica."""
 
     SHARED_MEMORY_KEY = "BabylonScanlationAppSingleInstance"
@@ -111,6 +112,7 @@ class App(QMainWindow):
         self.help_area = None
         self.about_area = None
         self.configuration_area = None # New configuration area
+        self.gemini_config_area = None # Gemini specific configuration area
         self.custom_fonts = []
         self.super_cartoon_font = QFont("Arial")
         self.adventure_font = QFont("Arial")
@@ -491,6 +493,8 @@ class App(QMainWindow):
         self.options_area = self.options_menu.create_options_area()
         self.options_area.setParent(self.content_container) # Asegurarse de que sea hijo del content_container
         self.configuration_area = self._create_configuration_area() # Initialize configuration area
+        self.gemini_config_area = self._create_gemini_config_area() # Initialize Gemini specific configuration area
+        self.gemini_config_area.setParent(self.content_container) # Ensure it's a child of content_container
         self._hide_all_sections()
         self.show_home()
 
@@ -837,7 +841,7 @@ class App(QMainWindow):
             self._delete_file_with_retries(file_path)
         self.temp_files.clear()
 
-    def _save_gemini_settings(self, model_name, enable_thinking):
+    def _save_gemini_settings(self, model_name, enable_thinking, temperature):
         """Guarda la configuración de Gemini en config.py."""
         try:
             # Read the current content of config.py
@@ -857,13 +861,34 @@ class App(QMainWindow):
             content = content.replace(old_thinking_line, new_thinking_line)
             Config.GEMINI_ENABLE_THINKING = enable_thinking # Update in-memory Config
 
+            # Update GEMINI_TEMPERATURE
+            old_temp_line = f"    GEMINI_TEMPERATURE = {Config.GEMINI_TEMPERATURE}"
+            new_temp_line = f"    GEMINI_TEMPERATURE = {temperature}"
+            content = content.replace(old_temp_line, new_temp_line)
+            Config.GEMINI_TEMPERATURE = temperature # Update in-memory Config
+
             # Write the updated content back to config.py
             with open(config_file_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            QMessageBox.information(self, "Configuración Guardada", "La configuración de Gemini ha sido guardada exitosamente.")
         except Exception as e:
             QMessageBox.critical(self, "Error al Guardar Configuración", f"No se pudo guardar la configuración de Gemini: {e}")
+
+    def _cancel_gemini_settings(self):
+        """Restaura la configuración de Gemini a los valores originales y oculta la sección."""
+        # Restaurar los valores de Config a los originales
+        Config.GEMINI_MODEL = self._original_gemini_model
+        Config.GEMINI_ENABLE_THINKING = self._original_gemini_thinking
+        Config.GEMINI_TEMPERATURE = self._original_gemini_temperature
+
+        # Actualizar la UI para reflejar los valores restaurados (opcional, pero buena práctica)
+        self.gemini_model_combo.setCurrentText(Config.GEMINI_MODEL)
+        self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
+        self.temperature_slider.setValue(int(Config.GEMINI_TEMPERATURE * 100))
+        self._update_gemini_temperature_label(int(Config.GEMINI_TEMPERATURE * 100))
+
+        # Ocultar la sección de configuración de Gemini
+        self._hide_gemini_config_area()
 
     def _delete_file_with_retries(self, file_path, retries=3, delay=1):
         """Delete a file with retries in case of PermissionError."""
@@ -912,9 +937,16 @@ class App(QMainWindow):
 
     def _hide_main_sections(self):
         """Oculta las secciones principales de la UI."""
-        self._hide_widgets(["home_label", "help_area", "options_area", "about_area", "configuration_area"])
+        self._hide_widgets(["home_label", "help_area", "options_area", "about_area", "configuration_area", "gemini_config_area"])
         self._hide_utilities_area()
         self._hide_projects_area()
+        if hasattr(self.tools_manager, 'gemini_container') and self.tools_manager.gemini_container:
+            self.tools_manager.gemini_container.hide()
+
+    def show_gemini_configuration(self):
+        """Muestra la sección de configuración de Gemini."""
+        self._hide_all_sections()
+        self.gemini_config_area.show()
 
     def _hide_special_containers(self):
         """Maneja la ocultación de contenedores especializados."""
@@ -938,7 +970,6 @@ class App(QMainWindow):
             ("details_container", None),
             ("gemini_container", None),
             ("parent_container", self.tools_manager),
-            ("gemini_container", self.tools_manager),
             ("mistral_container", self.tools_manager),
         ]
         for attr, manager in containers:
@@ -1060,26 +1091,50 @@ class App(QMainWindow):
         gemini_layout = QVBoxLayout(gemini_group)
 
         # Widgets de GeminiOptions
+        # Guardar la configuración original al abrir la ventana
+        self._original_gemini_model = Config.GEMINI_MODEL
+        self._original_gemini_thinking = Config.GEMINI_ENABLE_THINKING
+        self._original_gemini_temperature = Config.GEMINI_TEMPERATURE
+
+        # Widgets de GeminiOptions
         self.gemini_model_combo = QComboBox()
         self.gemini_model_combo.addItems([
             "gemini-2.5-pro",
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite",
         ])
+        self.gemini_model_combo.setStyleSheet(
+            """
+            QComboBox {
+                background-color: rgba(0,0,0,150);
+                color: white;
+                border: 2px solid #572364;
+                padding: 3px;
+                min-width: 100px;
+                selection-color: white;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #2a2a2a;
+                color: white;
+                selection-background-color: #572364;
+            }
+            """
+        )
         self.gemini_model_combo.setFont(self.roboto_black_font)
+        # Establecer el modelo actual
+        self.gemini_model_combo.setCurrentText(Config.GEMINI_MODEL)
+
         self.gemini_thinking_cb = QCheckBox("Activar modo pensamiento")
         self.gemini_thinking_cb.setStyleSheet("color: white;")
         self.gemini_thinking_cb.setFont(self.roboto_black_font)
+        # Establecer el estado actual del checkbox
+        self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
 
         self.temperature_slider = QSlider(Qt.Horizontal)
         self.temperature_slider.setRange(0, 100)
-        try:
-            from config import Config
-            self.temperature_slider.setValue(int(Config.GEMINI_TEMPERATURE * 100))
-            self.temperature_label = QLabel(f"Temperatura: {Config.GEMINI_TEMPERATURE:.2f}")
-        except (ImportError, AttributeError):
-            self.temperature_slider.setValue(80)
-            self.temperature_label = QLabel("Temperatura: 0.80")
+        # Establecer la temperatura actual
+        self.temperature_slider.setValue(int(Config.GEMINI_TEMPERATURE * 100))
+        self.temperature_label = QLabel(f"Temperatura: {Config.GEMINI_TEMPERATURE:.2f}")
         
         # Aplicar estilo al temperature_label en ambos casos
         self.temperature_label.setStyleSheet("color: white;")
@@ -1087,7 +1142,7 @@ class App(QMainWindow):
         
         self.temperature_slider.valueChanged.connect(self._update_gemini_temperature_label)
 
-        self.save_gemini_button = QPushButton("Guardar")
+        self.save_gemini_button = QPushButton("Aplicar")
         self.save_gemini_button.setStyleSheet(
             """
             QPushButton {
@@ -1123,7 +1178,7 @@ class App(QMainWindow):
         )
         self.cancel_gemini_button.setFont(self.adventure_font)
         self.cancel_gemini_button.setCursor(Qt.PointingHandCursor)
-        self.cancel_gemini_button.clicked.connect(self._hide_gemini_config_area)
+        self.cancel_gemini_button.clicked.connect(self._cancel_gemini_settings) # Conectar a la nueva función de cancelar
 
         model_label = QLabel("Modelo de Gemini:")
         model_label.setStyleSheet("color: white;")
@@ -1161,7 +1216,7 @@ class App(QMainWindow):
         """Oculta la sección de configuración de Gemini."""
         if hasattr(self, 'gemini_config_area') and self.gemini_config_area:
             self.gemini_config_area.hide()
-            self.show_utilities() # Volver a la sección de herramientas
+            self.gemini_config_closed.emit() # Emitir la señal al ocultar
 
 
 if __name__ == "__main__":
