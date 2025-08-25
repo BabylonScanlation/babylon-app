@@ -332,61 +332,6 @@ class MiscOptions:
         return self.bg_type_combo.currentText()
 
 
-class GeminiOptions:
-    """Clase para manejar las opciones de Gemini."""
-
-    def __init__(self, controller):
-        self.controller = controller
-        self.gemini_model_combo = QComboBox()
-        self.gemini_model_combo.addItems([
-            "gemini-2.5-pro-latest",
-            "gemini-2.5-flash-latest",
-        ])
-        self.gemini_thinking_cb = QCheckBox("Activar modo pensamiento")
-        self.save_button = QPushButton("Guardar y Regresar")
-        self.save_button.clicked.connect(self.save_and_exit)
-
-    def create_page(self):
-        """Crea la página de configuración de Gemini."""
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        gemini_group = QGroupBox("Configuración de Gemini")
-        gemini_group.setStyleSheet(
-            """
-            QGroupBox {
-                font-size: 15px;
-                font-weight: bold;
-                color: white;
-                background-color: rgba(30, 30, 30, 200);
-                border: 1px solid rgba(150, 0, 150, 180);
-                border-radius: 5px;
-                margin-top: 25px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0px;
-                color: white;
-                background-color: transparent;
-            }
-        """
-        )
-        gemini_layout = QVBoxLayout(gemini_group)
-        gemini_layout.addWidget(QLabel("Modelo de Gemini:"))
-        gemini_layout.addWidget(self.gemini_model_combo)
-        gemini_layout.addWidget(self.gemini_thinking_cb)
-        layout.addWidget(gemini_group)
-        layout.addStretch()
-        layout.addWidget(self.save_button)
-        return page
-
-    def save_and_exit(self):
-        """Guarda la configuración y cierra el menú."""
-        model = self.gemini_model_combo.currentText()
-        is_thinking = self.gemini_thinking_cb.isChecked()
-        self.controller.save_gemini_settings(model, is_thinking)
-        self.controller.go_back_to_main_view()
-
 
 class OptionsMenu:
     """Clase para crear un menú de opciones con pestañas configurables."""
@@ -403,7 +348,6 @@ class OptionsMenu:
             "video": VideoOptions(self.controller, self),
             "image": ImageOptions(self.controller),
             "misc": MiscOptions(self.controller),
-            "gemini": GeminiOptions(self.controller),
         }
         for page in self.options_pages.values():
             self.option_stack.addWidget(page.create_page())
@@ -444,7 +388,6 @@ class OptionsMenu:
             ("VIDEO", "Configuración de video"),
             ("IMAGEN", "Configuración de imagen"),
             ("MISCELÁNEA", "Opciones diversas"),
-            ("GEMINI", "Configuración de Gemini"),
         ]
         for cat, tooltip in categories:
             btn = QPushButton(cat)
@@ -499,7 +442,6 @@ class OptionsMenu:
             "VIDEO": 3,
             "IMAGEN": 4,
             "MISCELÁNEA": 5,
-            "GEMINI": 6,
         }
         self.controller._clear_warnings()
         self.option_stack.setCurrentIndex(page_mapping[category])

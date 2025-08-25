@@ -23,13 +23,13 @@ class OptionsController:
         self.background_choice = "video"
         self.download_thread = None
 
-    def save_gemini_settings(self, model, thinking_enabled):
+    def save_gemini_settings(self, model, thinking_enabled, temperature):
         """Guarda la configuración de Gemini en el objeto Config en memoria."""
         try:
             Config.GEMINI_MODEL = model
             Config.GEMINI_ENABLE_THINKING = thinking_enabled
-            print(f"Configuración de Gemini actualizada en memoria: Modelo={model}, Pensamiento={thinking_enabled}")
-            QMessageBox.information(self.parent, "Guardado", "La configuración de Gemini ha sido guardada para la sesión actual.")
+            Config.GEMINI_TEMPERATURE = temperature
+            print(f"Configuración de Gemini actualizada en memoria: Modelo={model}, Pensamiento={thinking_enabled}, Temperatura={temperature}")
         except Exception as e:
             print(f"Error guardando la configuración de Gemini: {str(e)}")
             QMessageBox.critical(self.parent, "Error", "No se pudo guardar la configuración de Gemini.")

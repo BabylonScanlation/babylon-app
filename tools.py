@@ -1550,7 +1550,11 @@ class ToolsManager(QObject):
         """Muestra la sección de configuración de Gemini."""
         if self.gemini_container:
             self.gemini_container.hide()
-        self.app.show_configuration()
+        self.app._hide_all_sections() # Ocultar todas las secciones existentes
+        if not hasattr(self.app, 'gemini_config_area') or not self.app.gemini_config_area:
+            self.app.gemini_config_area = self.app._create_gemini_config_area()
+        self.app.gemini_config_area.show()
+        self.app.gemini_config_area.raise_() # Asegurar que esté en la parte superior
 
     def _process_selected_files_gemini(self, file_paths, output_dir, cancel_event, callback):
         """Procesa una lista de archivos seleccionados para Gemini."""

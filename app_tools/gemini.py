@@ -49,15 +49,36 @@ def generar_grilla(content):
 
         ai_start_time = time.time()
 
-        api_kwargs = {
-            'model': Config.GEMINI_MODEL,
-            'contents': [prompt, content]
+        # --- Construcción de la configuración completa ---
+        generation_config = types.GenerationConfig(
+            temperature=Config.GEMINI_TEMPERATURE
+        )
+
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
 
+        thinking_config = None
         if Config.GEMINI_ENABLE_THINKING:
             budget = -1  # Pensamiento dinámico
             thinking_config = types.ThinkingConfig(thinking_budget=budget)
-            api_kwargs['config'] = types.GenerateContentConfig(thinking_config=thinking_config)
+
+        # Construir el objeto de configuración principal
+        config = types.GenerateContentConfig(
+            generation_config=generation_config,
+            safety_settings=safety_settings,
+            thinking_config=thinking_config
+        )
+
+        api_kwargs = {
+            'model': Config.GEMINI_MODEL,
+            'contents': [prompt, content],
+            'system_instruction': Config.GEMINI_SYSTEM_INSTRUCTION,
+            'config': config
+        }
 
         response = client.models.generate_content(**api_kwargs)
         ai_end_time = time.time()
@@ -171,15 +192,35 @@ class GeminiProcessor:
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    api_kwargs = {
-                        'model': Config.GEMINI_MODEL,
-                        'contents': [prompt, image]
+                    # --- Construcción de la configuración completa ---
+                    generation_config = types.GenerationConfig(
+                        temperature=Config.GEMINI_TEMPERATURE
+                    )
+
+                    safety_settings = {
+                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
                     }
 
+                    thinking_config = None
                     if Config.GEMINI_ENABLE_THINKING:
                         budget = -1  # Pensamiento dinámico
                         thinking_config = types.ThinkingConfig(thinking_budget=budget)
-                        api_kwargs['config'] = types.GenerateContentConfig(thinking_config=thinking_config)
+
+                    config = types.GenerateContentConfig(
+                        generation_config=generation_config,
+                        safety_settings=safety_settings,
+                        thinking_config=thinking_config
+                    )
+
+                    api_kwargs = {
+                        'model': Config.GEMINI_MODEL,
+                        'contents': [prompt, image],
+                        'system_instruction': Config.GEMINI_SYSTEM_INSTRUCTION,
+                        'config': config
+                    }
 
                     response = client.models.generate_content(**api_kwargs)
                     break  # Si tiene éxito, sal del bucle

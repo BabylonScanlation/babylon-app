@@ -35,7 +35,9 @@ from PyQt5.QtWidgets import (
     QWidget,
     QComboBox,
     QCheckBox,
-    QMessageBox
+    QMessageBox,
+    QGroupBox,
+    QSlider
 )
 
 from project_manager import ProjectManager
@@ -486,7 +488,8 @@ class App(QMainWindow):
         self.projects_area = self._create_projects_area()
         self.about_area = self._create_about_area()
         self.help_area = self._create_help_area()
-        setattr(self, "options_area", self.options_menu.create_options_area())
+        self.options_area = self.options_menu.create_options_area()
+        self.options_area.setParent(self.content_container) # Asegurarse de que sea hijo del content_container
         self.configuration_area = self._create_configuration_area() # Initialize configuration area
         self._hide_all_sections()
         self.show_home()
@@ -793,6 +796,7 @@ class App(QMainWindow):
                 border: 2px solid #572364;
                 padding: 3px;
                 min-width: 100px;
+                selection-color: white; /* Añadido */
             }
             QComboBox QAbstractItemView {
                 background-color: #2a2a2a;
@@ -1014,6 +1018,150 @@ class App(QMainWindow):
         """Muestra la sección 'Sobre esto'."""
         self._hide_all_sections()
         self.about_area.show()
+
+
+    def show_about(self):
+        """Muestra la sección 'Sobre esto'."""
+        self._hide_all_sections()
+        self.about_area.show()
+
+    def _create_gemini_config_area(self):
+        """Crea el área de configuración independiente para Gemini."""
+        page = QWidget(self.content_container)
+        page.setGeometry(50, 50, 780, 500) # Misma geometría que otras secciones
+        page.setStyleSheet(
+            """
+            background-color: rgba(0, 0, 0, 100);
+            border: 1px solid rgba(87, 35, 100, 180);
+            """
+        )
+        layout = QVBoxLayout(page)
+        gemini_group = QGroupBox("Configuración de Gemini")
+        gemini_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-size: 15px;
+                font-weight: bold;
+                color: white;
+                background-color: rgba(30, 30, 30, 200);
+                border: 1px solid rgba(150, 0, 150, 180);
+                border-radius: 5px;
+                margin-top: 25px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0px;
+                color: white;
+                background-color: transparent;
+            }
+        """
+        )
+        gemini_layout = QVBoxLayout(gemini_group)
+
+        # Widgets de GeminiOptions
+        self.gemini_model_combo = QComboBox()
+        self.gemini_model_combo.addItems([
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+        ])
+        self.gemini_model_combo.setFont(self.roboto_black_font)
+        self.gemini_thinking_cb = QCheckBox("Activar modo pensamiento")
+        self.gemini_thinking_cb.setStyleSheet("color: white;")
+        self.gemini_thinking_cb.setFont(self.roboto_black_font)
+
+        self.temperature_slider = QSlider(Qt.Horizontal)
+        self.temperature_slider.setRange(0, 100)
+        try:
+            from config import Config
+            self.temperature_slider.setValue(int(Config.GEMINI_TEMPERATURE * 100))
+            self.temperature_label = QLabel(f"Temperatura: {Config.GEMINI_TEMPERATURE:.2f}")
+        except (ImportError, AttributeError):
+            self.temperature_slider.setValue(80)
+            self.temperature_label = QLabel("Temperatura: 0.80")
+        
+        # Aplicar estilo al temperature_label en ambos casos
+        self.temperature_label.setStyleSheet("color: white;")
+        self.temperature_label.setFont(self.roboto_black_font)
+        
+        self.temperature_slider.valueChanged.connect(self._update_gemini_temperature_label)
+
+        self.save_gemini_button = QPushButton("Guardar")
+        self.save_gemini_button.setStyleSheet(
+            """
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+            """
+        )
+        self.save_gemini_button.setFont(self.adventure_font)
+        self.save_gemini_button.setCursor(Qt.PointingHandCursor)
+        self.save_gemini_button.clicked.connect(self._save_gemini_settings_from_ui)
+
+        self.cancel_gemini_button = QPushButton("Cancelar")
+        self.cancel_gemini_button.setStyleSheet(
+            """
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+            """
+        )
+        self.cancel_gemini_button.setFont(self.adventure_font)
+        self.cancel_gemini_button.setCursor(Qt.PointingHandCursor)
+        self.cancel_gemini_button.clicked.connect(self._hide_gemini_config_area)
+
+        model_label = QLabel("Modelo de Gemini:")
+        model_label.setStyleSheet("color: white;")
+        model_label.setFont(self.roboto_black_font)
+        gemini_layout.addWidget(model_label, alignment=Qt.AlignLeft)
+        gemini_layout.addWidget(self.gemini_model_combo)
+        gemini_layout.addWidget(self.gemini_thinking_cb)
+        gemini_layout.addWidget(self.temperature_label)
+        gemini_layout.addWidget(self.temperature_slider)
+        layout.addWidget(gemini_group)
+        layout.addStretch()
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_gemini_button)
+        button_layout.addWidget(self.save_gemini_button)
+        layout.addLayout(button_layout)
+        page.setLayout(layout)
+
+        return page
+
+    def _update_gemini_temperature_label(self, value):
+        temp = value / 100.0
+        self.temperature_label.setText(f"Temperatura: {temp:.2f}")
+
+    def _save_gemini_settings_from_ui(self):
+        """Guarda la configuración de Gemini desde la UI independiente."""
+        model = self.gemini_model_combo.currentText()
+        is_thinking = self.gemini_thinking_cb.isChecked()
+        temperature = self.temperature_slider.value() / 100.0
+        self._save_gemini_settings(model, is_thinking, temperature) # Reutilizar el método existente
+        self._hide_gemini_config_area()
+
+    def _hide_gemini_config_area(self):
+        """Oculta la sección de configuración de Gemini."""
+        if hasattr(self, 'gemini_config_area') and self.gemini_config_area:
+            self.gemini_config_area.hide()
+            self.show_utilities() # Volver a la sección de herramientas
 
 
 if __name__ == "__main__":
