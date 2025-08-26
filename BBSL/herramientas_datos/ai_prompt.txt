@@ -85,6 +85,7 @@
 
 3. Detección y Extracción de Onomatopeyas:
    - Prioridad alta en la detección y extracción de todas las onomatopeyas presentes en el medio visual.
+   - IMPORTANTE: Si una onomatopeya se encuentra dentro de un globo de diálogo o pensamiento, debe ser tratada como parte integral de ese diálogo/pensamiento y no como una onomatopeya separada. Solo extraer como onomatopeya independiente si está fuera de un globo de texto o claramente separada del diálogo.
    - Asegurar su inclusión en el formato de salida especificado.
 
 4. Precisión Textual y Verificación de OCR:

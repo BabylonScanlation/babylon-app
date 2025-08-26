@@ -1,3 +1,0 @@
-https://ai.google.dev/gemini-api/docs/safety-settings
-https://ai.google.dev/api/palm <- (deprecated)
-https://ai.google.dev/api/generate-content

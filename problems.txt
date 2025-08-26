@@ -1,11 +1,49 @@
 PS C:\Users\Administrator\Desktop\babylon-app> & "C:/Program Files/Python312/python.exe" c:/Users/Administrator/Desktop/babylon-app/bbsl_app.py
-DEBUG: app_tools/gemini.py imported Config. Has GEMINI_API_KEY: True
-❌ Error no manejado:
-Traceback (most recent call last):
-  File "c:\Users\Administrator\Desktop\babylon-app\tools.py", line 1555, in _show_gemini_config_section
-    self.app.gemini_config_area = self.app._create_gemini_config_area()
-                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "c:\Users\Administrator\Desktop\babylon-app\bbsl_app.py", line 1090, in _create_gemini_config_area
-    model_label = gemini_layout.itemAt(gemini_layout.count() - 2).widget() # Get the QLabel just added
-                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'NoneType' object has no attribute 'widget'
+Archivos seleccionados: ['C:/Users/Administrator/Desktop/entrada/01.png', 'C:/Users/Administrator/Desktop/entrada/02.png', 'C:/Users/Administrator/Desktop/entrada/03.png', 'C:/Users/Administrator/Desktop/entrada/04.png', 'C:/Users/Administrator/Desktop/entrada/05.png', 'C:/Users/Administrator/Desktop/entrada/06.png']
+Resultados se guardarán en: C:/Users/Administrator/Desktop/salida
+
+Procesando: C:/Users/Administrator/Desktop/entrada/01.png
+2025-08-25 22:34:10,571 - INFO - AFC is enabled with max remote calls: 10.
+2025-08-25 22:35:03,270 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent "HTTP/1.1 200 OK"
+2025-08-25 22:35:03,275 - INFO - AFC remote call 1 is done.
+Tiempo de procesamiento de IA para C:/Users/Administrator/Desktop/entrada/01.png: 52.7059 segundos
+Tiempo total transcurrido: 52.75s | Imágenes procesadas: 1
+
+Procesando: C:/Users/Administrator/Desktop/entrada/02.png
+2025-08-25 22:35:03,298 - INFO - AFC is enabled with max remote calls: 10.
+2025-08-25 22:35:45,220 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent "HTTP/1.1 200 OK"
+2025-08-25 22:35:45,229 - INFO - AFC remote call 1 is done.
+Tiempo de procesamiento de IA para C:/Users/Administrator/Desktop/entrada/02.png: 41.9316 segundos
+Tiempo total transcurrido: 94.69s | Imágenes procesadas: 2
+
+Procesando: C:/Users/Administrator/Desktop/entrada/03.png
+2025-08-25 22:35:45,244 - INFO - AFC is enabled with max remote calls: 10.
+2025-08-25 22:36:49,654 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent "HTTP/1.1 200 OK"
+2025-08-25 22:36:49,665 - INFO - AFC remote call 1 is done.
+Tiempo de procesamiento de IA para C:/Users/Administrator/Desktop/entrada/03.png: 64.4266 segundos
+Tiempo total transcurrido: 159.14s | Imágenes procesadas: 3
+
+Procesando: C:/Users/Administrator/Desktop/entrada/04.png
+2025-08-25 22:36:49,688 - INFO - AFC is enabled with max remote calls: 10.
+2025-08-25 22:37:36,160 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent "HTTP/1.1 200 OK"
+2025-08-25 22:37:36,166 - INFO - AFC remote call 1 is done.
+Tiempo de procesamiento de IA para C:/Users/Administrator/Desktop/entrada/04.png: 46.4778 segundos
+Tiempo total transcurrido: 205.63s | Imágenes procesadas: 4
+
+Procesando: C:/Users/Administrator/Desktop/entrada/05.png
+2025-08-25 22:37:36,184 - INFO - AFC is enabled with max remote calls: 10.
+2025-08-25 22:38:49,030 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent "HTTP/1.1 200 OK"
+2025-08-25 22:38:49,041 - INFO - AFC remote call 1 is done.
+Tiempo de procesamiento de IA para C:/Users/Administrator/Desktop/entrada/05.png: 72.8604 segundos
+Tiempo total transcurrido: 278.51s | Imágenes procesadas: 5
+
+Procesando: C:/Users/Administrator/Desktop/entrada/06.png
+2025-08-25 22:38:49,065 - INFO - AFC is enabled with max remote calls: 10.
+2025-08-25 22:39:34,178 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent "HTTP/1.1 200 OK"
+2025-08-25 22:39:34,185 - INFO - AFC remote call 1 is done.
+Tiempo de procesamiento de IA para C:/Users/Administrator/Desktop/entrada/06.png: 45.1204 segundos
+Tiempo total transcurrido: 323.65s | Imágenes procesadas: 6
+Creando archivos en: C:/Users/Administrator/Desktop/salida
+ - Archivo combinado: archivos_seleccionados_completo.txt
+2025-08-25 22:39:34,201 - ERROR - Error generando grilla: Models.generate_content() got an unexpected keyword argument 'system_instruction'
+ - Archivo grilla: archivos_seleccionados_grilla.txt

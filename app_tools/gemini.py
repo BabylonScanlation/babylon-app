@@ -23,7 +23,7 @@ except ImportError as e:
     sys.exit(1)
     
 # Configuración inicial
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 sys.excepthook = global_exception_handler
 
 # Configurar cliente de Gemini
@@ -48,16 +48,12 @@ def generar_grilla(content):
         ai_start_time = time.time()
 
         # --- Construcción de la configuración completa ---
-        generation_config = types.GenerationConfig(
-            temperature=Config.GEMINI_TEMPERATURE
-        )
-
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
+        safety_settings = [
+            types.SafetySetting(category=HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+            types.SafetySetting(category=HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=HarmBlockThreshold.BLOCK_NONE),
+            types.SafetySetting(category=HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=HarmBlockThreshold.BLOCK_NONE),
+            types.SafetySetting(category=HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+        ]
 
         thinking_config = None
         if Config.GEMINI_ENABLE_THINKING:
@@ -66,15 +62,14 @@ def generar_grilla(content):
 
         # Construir el objeto de configuración principal
         config = types.GenerateContentConfig(
-            generation_config=generation_config,
+            temperature=Config.GEMINI_TEMPERATURE, # Pasar temperature directamente
             safety_settings=safety_settings,
             thinking_config=thinking_config
         )
 
         api_kwargs = {
             'model': Config.GEMINI_MODEL,
-            'contents': [prompt, content],
-            'system_instruction': Config.GEMINI_SYSTEM_INSTRUCTION,
+            'contents': [Config.GEMINI_SYSTEM_INSTRUCTION, prompt, content],
             'config': config
         }
 
@@ -167,19 +162,19 @@ class GeminiProcessor:
         try:
             start_time = time.time()
             print(f"\nProcesando: {file_path}")
-            logging.debug(f"DEBUG: process_file - file_path: {file_path}")
-            logging.debug(f"DEBUG: process_file - input_base: {input_base}")
+            
+            
             prompt = load_prompt()
             if not prompt:
                 raise ValueError("Error: Prompt no cargado")
 
             # Crear estructura de carpetas
             rel_path = os.path.relpath(file_path, input_base)
-            logging.debug(f"DEBUG: process_file - rel_path: {rel_path}")
+            
             chapter_dir = os.path.join(output_dir, os.path.dirname(rel_path))
-            logging.debug(f"DEBUG: process_file - chapter_dir: {chapter_dir}")
+            
             pages_dir = os.path.join(chapter_dir, "paginas")
-            logging.debug(f"DEBUG: process_file - pages_dir: {pages_dir}")
+            
             os.makedirs(pages_dir, exist_ok=True)
 
             # Procesar imagen con manejo de reintentos
@@ -191,16 +186,12 @@ class GeminiProcessor:
             for attempt in range(max_retries):
                 try:
                     # --- Construcción de la configuración completa ---
-                    generation_config = types.GenerationConfig(
-                        temperature=Config.GEMINI_TEMPERATURE
-                    )
-
-                    safety_settings = {
-                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                    }
+                    safety_settings = [
+                        types.SafetySetting(category=HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                        types.SafetySetting(category=HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                    ]
 
                     thinking_config = None
                     if Config.GEMINI_ENABLE_THINKING:
@@ -208,15 +199,14 @@ class GeminiProcessor:
                         thinking_config = types.ThinkingConfig(thinking_budget=budget)
 
                     config = types.GenerateContentConfig(
-                        generation_config=generation_config,
+                        temperature=Config.GEMINI_TEMPERATURE, # Pasar temperature directamente
                         safety_settings=safety_settings,
                         thinking_config=thinking_config
                     )
 
                     api_kwargs = {
                         'model': Config.GEMINI_MODEL,
-                        'contents': [prompt, image],
-                        'system_instruction': Config.GEMINI_SYSTEM_INSTRUCTION,
+                        'contents': [Config.GEMINI_SYSTEM_INSTRUCTION, prompt, image],
                         'config': config
                     }
 
@@ -446,7 +436,7 @@ class GeminiProcessor:
             # Ensure common_input_base is a directory, not a file
             if os.path.isfile(common_input_base):
                 common_input_base = os.path.dirname(common_input_base)
-            logging.debug(f"DEBUG: _process_selected_files_gemini - common_input_base (adjusted): {common_input_base}")
+            
 
             error_occurred = False
             combined_content = [] # Initialize list to collect translations

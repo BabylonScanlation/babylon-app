@@ -127,7 +127,7 @@ class ToolsManager(QObject):
         self.parent_container = None
         self.details_container = None
         self.gemini_container = None
-        print("DEBUG: ToolsManager.__init__ - self.gemini_container inicializado a None.")
+        
         self.mistral_container = None
         self.haruneko_manager = HaruNekoManager(self.app)
         self.input_path = None
@@ -891,18 +891,18 @@ class ToolsManager(QObject):
         description_label = QTextEdit()
         description_label.setReadOnly(True)
         description_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        description_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         description_label.setStyleSheet(
             """
             font-size: 14px;
             color: white;
             background-color: rgba(0, 0, 0, 50);
             border: 1px solid rgba(87, 35, 100, 180);
+            white-space: pre-wrap;
         """
         )
         description_label.setFont(self.app.roboto_black_font)
-        html_description = (
-            "<p>" + config_description.replace("\n", "<br>").replace(" ", " ") + "</p>"
-        )
+        html_description = "<p>" + config_description.replace(" ", "&nbsp;").replace("\n", "<br>") + "</p>"
         description_label.setHtml(html_description)
         main_layout.addWidget(description_label)
         custom_section = QWidget()
@@ -1099,18 +1099,18 @@ class ToolsManager(QObject):
         description_label = QTextEdit()
         description_label.setReadOnly(True)
         description_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        description_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         description_label.setStyleSheet(
             """
             font-size: 14px;
             color: white;
             background-color: rgba(0, 0, 0, 50);
             border: 1px solid rgba(87, 35, 100, 180);
+            white-space: pre-wrap;
         """
         )
         description_label.setFont(self.app.roboto_black_font)
-        html_description = (
-            "<p>" + config_description.replace("\n", "<br>").replace(" ", " ") + "</p>"
-        )
+        html_description = "<p>" + config_description.replace(" ", "&nbsp;").replace("\n", "<br>") + "</p>"
         description_label.setHtml(html_description)
         main_layout.addWidget(description_label)
         custom_section = QWidget()
@@ -1179,11 +1179,11 @@ class ToolsManager(QObject):
         save_button.setStyleSheet(
             """
             QPushButton {
-                font-size: 12px;
+                font-size: 14px;
                 color: white;
                 background-color: #555555;
                 border: none;
-                padding: 8px;
+                padding: 10px;
             }
             QPushButton:hover {
                 background-color: #888888;
@@ -1563,20 +1563,21 @@ class ToolsManager(QObject):
             self.mistral_cancel_button.setEnabled(False)
 
     def _on_gemini_config_closed(self):
-        print("DEBUG: _on_gemini_config_closed llamado.")
+        
         """Muestra el contenedor de Gemini cuando la configuración se cierra."""
         if self.gemini_container:
-            print(f"DEBUG: gemini_container existe. Visible antes: {self.gemini_container.isVisible()}")
+            
             self.gemini_container.show()
             self.gemini_container.raise_()
             QApplication.processEvents() # Forzar actualización de la UI
-            print(f"DEBUG: gemini_container visible después: {self.gemini_container.isVisible()}")
+            
             if self.gemini_container.parentWidget():
-                print(f"DEBUG: Padre de gemini_container visible: {self.gemini_container.parentWidget().isVisible()}")
+                
                 self.gemini_container.parentWidget().raise_()
                 QApplication.processEvents()
         else:
-            print("DEBUG: gemini_container es None en _on_gemini_config_closed.")
+            pass
+            
 
     def _show_gemini_config_section(self):
         """Muestra la sección de configuración de Gemini."""
