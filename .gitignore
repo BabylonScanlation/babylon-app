@@ -4,6 +4,7 @@ __pycache__/
 *.spec
 build/
 dist/
+*.vscode
 
 # Archivos de log
 *.log
@@ -12,6 +13,3 @@ dist/
 gemini.md
 compile.bat
 certificado.pfx
-
-# Archivos multimedia grandes (si no quieres subirlos a Git)
-# app_media/

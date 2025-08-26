@@ -23,21 +23,9 @@ from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal, QSharedMemory
 from PyQt5.QtGui import QFont, QFontDatabase, QIcon, QImage, QPixmap, QCursor
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer, QMediaPlaylist
 from PyQt5.QtWidgets import (
-    QApplication,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QPushButton,
-    QScrollArea,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-    QComboBox,
-    QCheckBox,
-    QMessageBox,
-    QGroupBox,
-    QSlider
+    QApplication, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QPushButton,
+    QScrollArea, QTextEdit, QVBoxLayout, QWidget, QComboBox, QCheckBox, QMessageBox,
+    QGroupBox, QSlider
 )
 
 from project_manager import ProjectManager

@@ -1,0 +1,31 @@
+Funcionalidad: Botones de copiado y pegado.
+En el container de la funcion del modulo "tools.py" hay que agregar un nuevo container en 'input_container = QLineEdit()' y 'output_container = QTextEdit()', que permita al usuario expandir dicho container.
+Allí donde el usuario debe poner el texto a traducir o donde aparece la traduccion, si el usuario hace click en dicho container, este se expandira y mostrara al usuario una vista mas amplia del contenido.
+Deberemos aprovechar esta funcionalidad para añadir un boton que le permitan al usuario "Volver", "Copiar" y "Pegar", tambien debera ser capaz de editar esa zona para modificar el contenido.
+El boton "Volver" debe regresar al usuario a donde estaba antes, es decir, en: _create_tool_container.
+El boton "Copiar" debe copiar el contenido al portapapeles del usuario.
+El boton "Pegar" debe pegar el contenido que el usuario haya copiado, en el container.
+Esto debe ser reutilizable para cada traductor.
+
+Funcionalidad: Informe de limite de frecuencia de la API. // control sobre cuanto lleva usado y cuanto le falta
+Solicitudes por minuto (RPM)
+Tokens por minuto (entrada) (TPM)
+Solicitudes por día (RPD)
+Modelo                  RPM	TPM	    RPD
+Gemini 2.5 Pro	        5	250,000	100
+Gemini 2.5 Flash	    10	250,000	250
+Gemini 2.5 Flash-Lite   15	250,000	1,000
+En la funcion "_create_gemini_config_area" del modulo "tools.py" habra que añadir un breve aviso que aparecera cuando el usuario pase el mouse sobre los distintos modelos hardcode.
+Se usa la informacion dada para añadir esos 'avisos' respectivamente para cada modelo.
+Para la siguiente funcionalidad se requerira de informarse de los siguientes enlaces para mayor contexto:
+https://ai.google.dev/gemini-api/docs/tokens?lang=python
+https://ai.google.dev/gemini-api/docs/function-calling
+https://ai.google.dev/api/generate-content
+https://ai.google.dev/api/all-methods
+https://googleapis.github.io/python-genai/genai.html#module-genai.types
+https://googleapis.github.io/python-genai/genai.html#module-genai.tokens
+Se necesitara saber cuantos tokens se han usado hasta ahora y cuantos faltan para llegar al limite, por medio de una interfaz moderna atractiva al usuario.
+Se necesitara añadir una nueva opcion para darle a elegir al usuario si quiere que se detenga inmediatamente una vez llegue al limite o prosiga usando otro modelo, hay que implementar la logica necesaria.
+
+Funcionalidad: Visibilidad del archivo ai_prompt.txt.
+En el metodo "_create_configuration_area", del modulo "tools.py" se debe mostrar el texto del prompt, con respectivos botones para copiar, pegar y aplicar, el boton pegar implica el hecho de editar el prompt.

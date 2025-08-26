@@ -5,3 +5,8 @@ requests
 httpx
 google-genai
 Pillow
+langid
+deepl
+translators
+mistralai
+pentago
