@@ -248,6 +248,17 @@ class ToolsManager(QObject):
         self.target_combo = None
         self.selected_files_for_processing = []
 
+        if not os.path.exists(Config.AI_PROMPT_USER):
+            try:
+                with open(Config.AI_PROMPT, 'r', encoding='utf-8') as f_default:
+                    default_prompt = f_default.read()
+                with open(Config.AI_PROMPT_USER, 'w', encoding='utf-8') as f_user:
+                    f_user.write(default_prompt)
+            except FileNotFoundError:
+                # Create an empty user file if the default is not found
+                with open(Config.AI_PROMPT_USER, 'w', encoding='utf-8') as f_user:
+                    f_user.write("No se pudo encontrar el prompt por defecto.")
+
     def create_utilities_area(self):
         """Crea el área de herramientas."""
         scroll_area = self._create_scroll_area("utilities")
@@ -954,6 +965,27 @@ class ToolsManager(QObject):
         print(f"Mensaje de error: {error_msg}")
         print("----------------------------------------\n")
 
+    def _reset_user_prompt(self, prompt_edit):
+        try:
+            with open(Config.AI_PROMPT, 'r', encoding='utf-8') as f_default:
+                default_prompt = f_default.read()
+            with open(Config.AI_PROMPT_USER, 'w', encoding='utf-8') as f_user:
+                f_user.write(default_prompt)
+            prompt_edit.setPlainText(default_prompt)
+        except Exception as e:
+            QMessageBox.critical(
+                self.app, "Error", f"No se pudo restablecer el prompt: {e}"
+            )
+
+    def _save_user_prompt_to_file(self, prompt_text):
+        try:
+            with open(Config.AI_PROMPT_USER, 'w', encoding='utf-8') as f:
+                f.write(prompt_text)
+        except Exception as e:
+            QMessageBox.critical(
+                self.app, "Error", f"No se pudo guardar el prompt: {e}"
+            )
+
     def _create_gemini_container(self, category):
         """Crea un contenedor personalizado para la herramienta Gemini según la categoría."""
         if hasattr(self, "gemini_container") and self.gemini_container:
@@ -988,19 +1020,16 @@ class ToolsManager(QObject):
         title_label.setFont(self.app.super_cartoon_font)
         main_layout.addWidget(title_label, alignment=Qt.AlignCenter)
 
-        gemini_tool = next(
-            tool
-            for tool in Config.SPECIFIED_TOOLS[category]
-            if tool["name"] == "Gemini"
-        )
-        config_description = gemini_tool.get(
-            "config_description", "Descripción no disponible."
-        )
-        description_label = QTextEdit()
-        description_label.setReadOnly(True)
-        description_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        description_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        description_label.setStyleSheet(
+        try:
+            with open(Config.AI_PROMPT_USER, 'r', encoding='utf-8') as f:
+                prompt_text = f.read()
+        except FileNotFoundError:
+            prompt_text = "No se pudo encontrar el archivo ai_prompt_user.txt."
+
+        prompt_edit = QTextEdit()
+        prompt_edit.setPlainText(prompt_text)
+        prompt_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        prompt_edit.setStyleSheet(
             """
             font-size: 14px;
             color: white;
@@ -1009,10 +1038,60 @@ class ToolsManager(QObject):
             white-space: pre-wrap;
         """
         )
-        description_label.setFont(self.app.roboto_black_font)
-        html_description = "<p>" + config_description.replace(" ", "&nbsp;").replace("\n", "<br>") + "</p>"
-        description_label.setHtml(html_description)
-        main_layout.addWidget(description_label)
+        prompt_edit.setFont(self.app.roboto_black_font)
+        main_layout.addWidget(prompt_edit)
+
+        button_layout = QHBoxLayout()
+
+        button_style = """
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """
+
+        copy_button = QPushButton("Copiar")
+        copy_button.setStyleSheet(button_style)
+        copy_button.setFont(self.app.adventure_font)
+        copy_button.setCursor(Qt.PointingHandCursor)
+        copy_button.clicked.connect(lambda: QApplication.clipboard().setText(prompt_edit.toPlainText()))
+        button_layout.addWidget(copy_button)
+
+        paste_button = QPushButton("Pegar")
+        paste_button.setStyleSheet(button_style)
+        paste_button.setFont(self.app.adventure_font)
+        paste_button.setCursor(Qt.PointingHandCursor)
+        paste_button.clicked.connect(lambda: prompt_edit.insertPlainText(QApplication.clipboard().text()))
+        button_layout.addWidget(paste_button)
+
+        apply_button = QPushButton("Aplicar")
+        apply_button.setStyleSheet(button_style)
+        apply_button.setFont(self.app.adventure_font)
+        apply_button.setCursor(Qt.PointingHandCursor)
+        apply_button.clicked.connect(lambda: self._save_user_prompt_to_file(prompt_edit.toPlainText()))
+        button_layout.addWidget(apply_button)
+
+        reset_button = QPushButton("Restablecer")
+        reset_button.setStyleSheet(button_style)
+        reset_button.setFont(self.app.adventure_font)
+        reset_button.setCursor(Qt.PointingHandCursor)
+        reset_button.clicked.connect(lambda: self._reset_user_prompt(prompt_edit))
+        button_layout.addWidget(reset_button)
+
+        clear_button = QPushButton("Borrar")
+        clear_button.setStyleSheet(button_style)
+        clear_button.setFont(self.app.adventure_font)
+        clear_button.setCursor(Qt.PointingHandCursor)
+        clear_button.clicked.connect(prompt_edit.clear)
+        button_layout.addWidget(clear_button)
+        
+        main_layout.addLayout(button_layout)
         custom_section = QWidget()
         custom_section.setStyleSheet(
             """
@@ -1196,19 +1275,16 @@ class ToolsManager(QObject):
         title_label.setFont(self.app.super_cartoon_font)
         main_layout.addWidget(title_label, alignment=Qt.AlignCenter)
 
-        mistral_tool = next(
-            tool
-            for tool in Config.SPECIFIED_TOOLS[category]
-            if tool["name"] == "Mistral"
-        )
-        config_description = mistral_tool.get(
-            "config_description", "Descripción no disponible."
-        )
-        description_label = QTextEdit()
-        description_label.setReadOnly(True)
-        description_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        description_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        description_label.setStyleSheet(
+        try:
+            with open(Config.AI_PROMPT_USER, 'r', encoding='utf-8') as f:
+                prompt_text = f.read()
+        except FileNotFoundError:
+            prompt_text = "No se pudo encontrar el archivo ai_prompt_user.txt."
+
+        prompt_edit = QTextEdit()
+        prompt_edit.setPlainText(prompt_text)
+        prompt_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        prompt_edit.setStyleSheet(
             """
             font-size: 14px;
             color: white;
@@ -1217,10 +1293,60 @@ class ToolsManager(QObject):
             white-space: pre-wrap;
         """
         )
-        description_label.setFont(self.app.roboto_black_font)
-        html_description = "<p>" + config_description.replace(" ", "&nbsp;").replace("\n", "<br>") + "</p>"
-        description_label.setHtml(html_description)
-        main_layout.addWidget(description_label)
+        prompt_edit.setFont(self.app.roboto_black_font)
+        main_layout.addWidget(prompt_edit)
+
+        button_layout = QHBoxLayout()
+
+        button_style = """
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """
+
+        copy_button = QPushButton("Copiar")
+        copy_button.setStyleSheet(button_style)
+        copy_button.setFont(self.app.adventure_font)
+        copy_button.setCursor(Qt.PointingHandCursor)
+        copy_button.clicked.connect(lambda: QApplication.clipboard().setText(prompt_edit.toPlainText()))
+        button_layout.addWidget(copy_button)
+
+        paste_button = QPushButton("Pegar")
+        paste_button.setStyleSheet(button_style)
+        paste_button.setFont(self.app.adventure_font)
+        paste_button.setCursor(Qt.PointingHandCursor)
+        paste_button.clicked.connect(lambda: prompt_edit.insertPlainText(QApplication.clipboard().text()))
+        button_layout.addWidget(paste_button)
+
+        apply_button = QPushButton("Aplicar")
+        apply_button.setStyleSheet(button_style)
+        apply_button.setFont(self.app.adventure_font)
+        apply_button.setCursor(Qt.PointingHandCursor)
+        apply_button.clicked.connect(lambda: self._save_user_prompt_to_file(prompt_edit.toPlainText()))
+        button_layout.addWidget(apply_button)
+
+        reset_button = QPushButton("Restablecer")
+        reset_button.setStyleSheet(button_style)
+        reset_button.setFont(self.app.adventure_font)
+        reset_button.setCursor(Qt.PointingHandCursor)
+        reset_button.clicked.connect(lambda: self._reset_user_prompt(prompt_edit))
+        button_layout.addWidget(reset_button)
+
+        clear_button = QPushButton("Borrar")
+        clear_button.setStyleSheet(button_style)
+        clear_button.setFont(self.app.adventure_font)
+        clear_button.setCursor(Qt.PointingHandCursor)
+        clear_button.clicked.connect(prompt_edit.clear)
+        button_layout.addWidget(clear_button)
+
+        main_layout.addLayout(button_layout)
         custom_section = QWidget()
         custom_section.setStyleSheet(
             """

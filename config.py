@@ -113,6 +113,7 @@ class Config:
     }
     GENERAL_TOOLS_FOLDER = resource_path(os.path.join("BBSL", "herramientas"))
     AI_PROMPT = resource_path(os.path.join("BBSL", "herramientas_datos", "ai_prompt.txt"))
+    AI_PROMPT_USER = resource_path(os.path.join("BBSL", "herramientas_datos", "ai_prompt_user.txt"))
     GRILLA_PROMPT = resource_path(os.path.join("BBSL", "herramientas_datos", "prompt_personajes.txt"))
     GENERAL_TOOLS = [
         resource_path(os.path.join("BBSL", "herramientas", "01_ocr.png")),
@@ -280,36 +281,7 @@ Sin embargo, tiene limitaciones: puede fallar con textos borrosos, dañados o es
                 "access_paths": [
                     {"label": "PROMPT", "path": AI_PROMPT},
                     {"label": "API", "path": GEMINI_API_KEY}
-                ],
-                "config_description": """Para usar correctamente Gemini deberás de seguir los siguientes pasos:
-
- 1. Elige la carpeta donde se guardarán los resultados.
- 2. Debes saber que es lo que quieres hacer y hay 2 posibilidades.
-       a. Quieres que el programa extraiga y traduzca una sola imagen y guarde tanto lo extraído como la traducción en un txt (para este caso usa el botón para archivos).
-       b. Quieres que el programa extraiga y traduzca varias imágenes o incluso varios proyectos a la vez y guarde tanto lo extraído como la traducción en un txt (para este caso usa el botón para carpetas).
- 3. Presiona el botón "INICIAR PROCESAMIENTO".
-
-En promedio debería tardar entre 15/30 minutos en extraer los textos y traducirlos de 5 capítulos con 40 páginas cada uno. Depende mucho de la complejidad y cantidad de caracteres en la imagen, también depende de la simpleza del prompt.
-
-Ejemplo de la estructura que debes tener antes de ejecutar el programa para evitar problemas.
-
-Series/Manhwas/Eleceed/01.jpg
-             |                    |                 /02.jpg
-             |                    |                 etc...
-             |                    /Era_Superhumana/01.jpg
-             |                    |                                      /02.jpg
-             |                    |                                      etc...
-             |                    etc...
-             /Manhua-/Convergencia/etc...
-             |                    /The_Chipset/etc...
-             |                    etc...
-             /Manga--/Prodigo/etc...
-             |                   /Solitario/etc..
-             /etc...
-
-SÍ EL PROGRAMA NO DETECTA UNA ONOMATOPEYA DIFÍCIL O TEXTOS VERTICALES EN CARTELES, CAMBIA LA RUTA PARA QUE SOLO INTENTE CON ESA IMAGEN Y MODIFICA EL PROMPT PARA INDICARLE DATOS QUE LE SIRVAN PARA DETECTARLA Y RECONOCERLA, POR EJEMPLO: ES DE COLOR ROSA, ES TRANSPARENTE, ES MUY GRANDE, HAY LUMINOSIDAD O SOMBRA, TRAZADO GRUESO, ETC.
-
-El programa recién está siendo creado por lo que puede fallar, y es muy sensible."""
+                ]
             },
             {
                 "name": "Mistral",
@@ -326,36 +298,7 @@ El programa recién está siendo creado por lo que puede fallar, y es muy sensib
                 "access_paths": [
                     {"label": "PROMPT", "path": AI_PROMPT},
                     {"label": "API", "path": MISTRAL_API_KEY}
-                ],
-                "config_description": """Para usar correctamente Mistral deberás de seguir los siguientes pasos:
-
- 1. Elige la carpeta donde se guardarán los resultados.
- 2. Debes saber que es lo que quieres hacer y hay 2 posibilidades.
-       a. Quieres que el programa extraiga y traduzca una sola imagen y guarde tanto lo extraído como la traducción en un txt (para este caso usa el botón para archivos).
-       b. Quieres que el programa extraiga y traduzca varias imágenes o incluso varios proyectos a la vez y guarde tanto lo extraído como la traducción en un txt (para este caso usa el botón para carpetas).
- 3. Presiona el botón "INICIAR PROCESAMIENTO".
-
-En promedio debería tardar entre 15/30 minutos en extraer los textos y traducirlos de 5 capítulos con 40 páginas cada uno. Depende mucho de la complejidad y cantidad de caracteres en la imagen, también depende de la simpleza del prompt.
-
-Ejemplo de la estructura que debes tener antes de ejecutar el programa para evitar problemas.
-
-Series/Manhwas/Eleceed/01.jpg
-             |                    |                 /02.jpg
-             |                    |                 etc...
-             |                    /Era_Superhumana/01.jpg
-             |                    |                                      /02.jpg
-             |                    |                                      etc...
-             |                    etc...
-             /Manhua-/Convergencia/etc...
-             |                    /The_Chipset/etc...
-             |                    etc...
-             /Manga--/Prodigo/etc...
-             |                   /Solitario/etc..
-             /etc...
-
-SÍ EL PROGRAMA NO DETECTA UNA ONOMATOPEYA DIFÍCIL O TEXTOS VERTICALES EN CARTELES, CAMBIA LA RUTA PARA QUE SOLO INTENTE CON ESA IMAGEN Y MODIFICA EL PROMPT PARA INDICARLE DATOS QUE LE SIRVAN PARA DETECTARLA Y RECONOCERLA, POR EJEMPLO: ES DE COLOR ROSA, ES TRANSPARENTE, ES MUY GRANDE, HAY LUMINOSIDAD O SOMBRA, TRAZADO GRUESO, ETC.
-
-El programa recién está siendo creado por lo que puede fallar, y es muy sensible."""
+                ]
             },
         ],
         "ch_downloaders": [

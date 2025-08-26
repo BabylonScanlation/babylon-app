@@ -19,4 +19,6 @@ Se necesitara saber cuantos tokens se han usado hasta ahora y cuantos faltan par
 Se necesitara añadir una nueva opcion para darle a elegir al usuario si quiere que se detenga inmediatamente una vez llegue al limite o prosiga usando otro modelo, hay que implementar la logica necesaria.
 
 Funcionalidad: Visibilidad del archivo ai_prompt.txt.
-En el metodo "_create_configuration_area", del modulo "tools.py" se debe mostrar el texto del prompt, con respectivos botones para copiar, pegar y aplicar, el boton pegar implica el hecho de editar el prompt.
+En el metodo "_create_gemini_container" y "_create_mistral_container", del modulo "tools.py" se debe mostrar el texto del "ai_prompt.txt", con respectivos botones para copiar, pegar y aplicar, el boton pegar implica el hecho de editar el prompt.
+Actualmente se muestra en "config_description" de config.py, asi que como la logica para mostrarlo ya esta, solo hace falta implementar la logica para editarlo y que al aplicarse los modelos ahora usen ese nueva modificacion.
+No copies el contenido de ai_prompt 2 veces, en su lugar se mas inteligente y usa el archivo que ya lo contiene, osea implica borrar el contenido actual de "config_description".
