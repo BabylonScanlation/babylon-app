@@ -1,12 +1,3 @@
-Funcionalidad: Botones de copiado y pegado.
-En el container de la funcion del modulo "tools.py" hay que agregar un nuevo container en 'input_container = QLineEdit()' y 'output_container = QTextEdit()', que permita al usuario expandir dicho container.
-Allí donde el usuario debe poner el texto a traducir o donde aparece la traduccion, si el usuario hace click en dicho container, este se expandira y mostrara al usuario una vista mas amplia del contenido.
-Deberemos aprovechar esta funcionalidad para añadir un boton que le permitan al usuario "Volver", "Copiar" y "Pegar", tambien debera ser capaz de editar esa zona para modificar el contenido.
-El boton "Volver" debe regresar al usuario a donde estaba antes, es decir, en: _create_tool_container.
-El boton "Copiar" debe copiar el contenido al portapapeles del usuario.
-El boton "Pegar" debe pegar el contenido que el usuario haya copiado, en el container.
-Esto debe ser reutilizable para cada traductor.
-
 Funcionalidad: Informe de limite de frecuencia de la API. // control sobre cuanto lleva usado y cuanto le falta
 Solicitudes por minuto (RPM)
 Tokens por minuto (entrada) (TPM)

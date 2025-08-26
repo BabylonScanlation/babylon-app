@@ -48,6 +48,7 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QDialog,
 )
 
 
@@ -113,6 +114,104 @@ class TranslationSignals(QObject):
     error_occurred = pyqtSignal(str, str)
 
 
+class ExpandedTextEditorDialog(QDialog):
+    """
+    Diálogo para editar texto en un área expandida con botones de copiar/pegar/volver.
+    """
+    def __init__(self, parent=None, initial_text="", title="Editar Texto", target_widget=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        # self.setGeometry(100, 100, 600, 400) # Original size and position
+        self.resize(600, 400) # Set initial size
+
+        self.target_widget = target_widget # Reference to the original QLineEdit/QTextEdit
+
+        self.setStyleSheet("""
+            QDialog {
+                background-color: rgba(0, 0, 0, 200);
+                border: 2px solid rgba(87, 35, 100, 180);
+            }
+            QTextEdit {
+                font-size: 14px;
+                color: white;
+                background-color: rgba(0, 0, 0, 150);
+                border: 1px solid rgba(87, 35, 100, 180);
+                padding: 5px;
+            }
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """)
+
+        main_layout = QVBoxLayout(self)
+
+        self.text_edit = QTextEdit()
+        self.text_edit.setText(initial_text)
+        self.text_edit.setAcceptRichText(False) # Force plain text pasting
+        main_layout.addWidget(self.text_edit)
+
+        button_layout = QHBoxLayout()
+
+        back_button = QPushButton("Volver")
+        back_button.clicked.connect(self._on_back_clicked)
+        button_layout.addWidget(back_button)
+
+        copy_button = QPushButton("Copiar")
+        copy_button.clicked.connect(self._on_copy_clicked)
+        button_layout.addWidget(copy_button)
+
+        paste_button = QPushButton("Pegar")
+        paste_button.clicked.connect(self._on_paste_clicked)
+        button_layout.addWidget(paste_button)
+
+        clear_button = QPushButton("Borrar")
+        clear_button.clicked.connect(self._on_clear_clicked)
+        button_layout.addWidget(clear_button)
+
+        main_layout.addLayout(button_layout)
+        
+        screen_geometry = QApplication.desktop().screenGeometry()
+        x = (screen_geometry.width() - self.width()) // 2
+        y = (screen_geometry.height() - self.height()) // 2
+        self.move(x, y)
+
+
+    def _on_back_clicked(self):
+        """Updates the target widget with the edited text and closes the dialog."""
+        if self.target_widget:
+            if isinstance(self.target_widget, QLineEdit):
+                self.target_widget.setText(self.text_edit.toPlainText())
+            elif isinstance(self.target_widget, QTextEdit):
+                self.target_widget.setText(self.text_edit.toPlainText())
+        self.accept() # Close the dialog
+
+    def _on_copy_clicked(self):
+        """Copies the content of the text editor to the clipboard."""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.text_edit.toPlainText())
+
+    def _on_paste_clicked(self):
+        """Pastes the content from the clipboard to the text editor."""
+        clipboard = QApplication.clipboard()
+        self.text_edit.insertPlainText(clipboard.text())
+
+    # Removed _on_select_all_clicked as per user request
+    # def _on_select_all_clicked(self):
+    #     """Selects all text in the text editor."""
+    #     self.text_edit.selectAll()
+
+    def _on_clear_clicked(self):
+        """Clears all text in the text editor."""
+        self.text_edit.clear()
+
+
 # pylint: disable=too-many-instance-attributes, too-many-lines
 class ToolsManager(QObject):
     """Gestiona la creación y configuración de herramientas de la aplicación."""
@@ -122,12 +221,11 @@ class ToolsManager(QObject):
         super().__init__()
         self.app = app
         self.processing_finished.connect(self._show_completion_message)
-        self.app.gemini_config_closed.connect(self._on_gemini_config_closed) # Conectar la señal
+        self.app.gemini_config_closed.connect(self._on_gemini_config_closed)
         self.utilities_area = None
         self.parent_container = None
         self.details_container = None
         self.gemini_container = None
-        
         self.mistral_container = None
         self.haruneko_manager = HaruNekoManager(self.app)
         self.input_path = None
@@ -581,9 +679,14 @@ class ToolsManager(QObject):
             input_container.setFont(self.app.roboto_black_font)
             input_container.setFixedHeight(55)
             input_container.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            # Make input_container clickable to open expanded editor
+            input_container.mousePressEvent = lambda event: self._open_expanded_editor(
+                input_container, "Editar Texto de Entrada"
+            )
             left_layout.addWidget(input_container)
+
             output_container = QTextEdit()
-            output_container.setReadOnly(True)
+            output_container.setReadOnly(False) # Allow editing
             output_container.setPlaceholderText("La traducción aparecerá aquí...")
             output_container.setStyleSheet(
                 """
@@ -602,6 +705,10 @@ class ToolsManager(QObject):
             output_container.setFont(self.app.roboto_black_font)
             output_container.setFixedHeight(45)
             output_container.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            # Make output_container clickable to open expanded editor
+            output_container.mousePressEvent = lambda event: self._open_expanded_editor(
+                output_container, "Editar Texto de Salida"
+            )
             left_layout.addWidget(output_container)
         tool_layout.addWidget(left_container)
         right_container = QWidget()
@@ -712,6 +819,7 @@ class ToolsManager(QObject):
                 self.haruneko_installed = True
                 self.haruneko_version = self.haruneko_manager.get_current_version()
                 self.install_button.setText("Eliminar")
+                self.install_button.clicked.disconnect()
                 self.install_button.clicked.connect(self.uninstall_hakuneko)
             else:
                 self.install_button.clicked.connect(self.download_hakuneko)
@@ -821,10 +929,10 @@ class ToolsManager(QObject):
                     output_container.setStyleSheet("color: red;")
                     output_container.setText(error)
                 elif tool_name == "iTranslate" and "503" in error:
-                    error_msg = (
+                    error_msg = {
                         "⚠ Error en iTranslate: Servicio no disponible\n"
                         "(El servidor está temporalmente fuera de línea)"
-                    )
+                    }
                     output_container.setText(error_msg)
                 else:
                     output_container.setText(f"🚫 Error en {tool_name}: {error}")
@@ -1625,13 +1733,31 @@ class ToolsManager(QObject):
             elif "Mistral" in text_box.objectName():
                 Config.MISTRAL_PROMPT = selected_path
 
+    def _open_expanded_editor(self, target_widget, title):
+        """
+        Opens the ExpandedTextEditorDialog for the given target widget.
+        """
+        initial_text = ""
+        if isinstance(target_widget, QLineEdit):
+            initial_text = target_widget.text()
+        elif isinstance(target_widget, QTextEdit):
+            initial_text = target_widget.toPlainText()
+
+        dialog = ExpandedTextEditorDialog(
+            parent=self.app.content_container, # Parent the dialog to the main content area
+            initial_text=initial_text,
+            title=title,
+            target_widget=target_widget
+        )
+        dialog.exec_() # Show the dialog modally
+
     def _create_scroll_area(self, section_type):
         """Crea un área de desplazamiento para herramientas o proyectos."""
         scroll_area = QScrollArea(self.app.content_container)
         scroll_area.setGeometry(50, 50, 780, 500)
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet(
-            "background-color: rgba(0, 0, 0, 100);" "border-radius: 0px;"
+            "background-color: rgba(0, 0, 0, 100);""border-radius: 0px;"
         )
         image_container = QWidget()
         container_style = """
@@ -1671,7 +1797,7 @@ class ToolsManager(QObject):
             else Config.PROJECTS_FOOTER_TEXT
         )
         footer_label.setStyleSheet(
-            "font-size: 18px;" "color: white;" "background: none;" "padding: 10px;"
+            "font-size: 18px;""color: white;""background: none;""padding: 10px;"
         )
         footer_label.setFont(self.app.super_cartoon_font)
         footer_label.setAlignment(Qt.AlignCenter)
