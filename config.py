@@ -31,10 +31,11 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
 
 
 
+USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
+USER_SETTINGS_FILE = os.path.join(USER_DATA_DIR, "user_settings.json")
+
 class Config:
     """Configuración general de la aplicación y rutas de recursos."""
-
-    USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
     
     HARUNEKO_DIR = os.path.join(os.getenv('APPDATA') or '', 'HaruNeko')
     TOOLS_DATA_DIR = resource_path(os.path.join("BBSL", "herramientas_datos"))
@@ -51,22 +52,22 @@ class Config:
             "GEMINI_ENABLE_THINKING": True,
             "GEMINI_TEMPERATURE": 1.0,
         }
-        if os.path.exists(Config.USER_SETTINGS_FILE):
+        if os.path.exists(USER_SETTINGS_FILE):
             try:
-                with open(Config.USER_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                with open(USER_SETTINGS_FILE, "r", encoding="utf-8") as f:
                     user_settings = json.load(f)
                     settings.update(user_settings)
             except json.JSONDecodeError:
-                print(f"Error decoding JSON from {Config.USER_SETTINGS_FILE}. Using default settings.")
+                print(f"Error decoding JSON from {USER_SETTINGS_FILE}. Using default settings.")
             except Exception as e:
                 print(f"Error loading user settings: {e}. Using default settings.")
         return settings
 
     @staticmethod
     def _save_user_settings(settings):
-        os.makedirs(Config.USER_DATA_DIR, exist_ok=True)
+        os.makedirs(USER_DATA_DIR, exist_ok=True)
         try:
-            with open(Config.USER_SETTINGS_FILE, "w", encoding="utf-8") as f:
+            with open(USER_SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=4)
         except Exception as e:
             print(f"Error saving user settings: {e}")

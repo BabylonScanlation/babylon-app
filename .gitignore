@@ -11,5 +11,6 @@ dist/
 
 # Archivos específicos del proyecto que no deben subirse
 gemini.md
+calité.txt
 compile.bat
 certificado.pfx

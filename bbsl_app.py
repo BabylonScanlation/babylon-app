@@ -7,6 +7,7 @@ Proporciona una interfaz gráfica para acceder a diversas herramientas y gestion
 import os
 import sys
 import webbrowser
+from config import USER_DATA_DIR
 from PyQt5.QtCore import QTimer, QPropertyAnimation
 from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
@@ -106,7 +107,7 @@ class App(QMainWindow):
         self.adventure_font = QFont("Arial")
         self.roboto_black_font = QFont("Arial")
         self.options_menu = OptionsMenu(self)
-        self.project_manager = ProjectManager(Config.USER_DATA_DIR)
+        self.project_manager = ProjectManager(USER_DATA_DIR)
         self.tools_manager = ToolsManager(self)
         self.tools_manager.gemini_processor.set_token_callback(self.update_session_token_count)
         self.cap = None

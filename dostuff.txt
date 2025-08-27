@@ -1,6 +1,0 @@
-https://ai.google.dev/gemini-api/docs/tokens?lang=python
-https://ai.google.dev/gemini-api/docs/function-calling
-https://ai.google.dev/api/generate-content
-https://ai.google.dev/api/all-methods
-https://googleapis.github.io/python-genai/genai.html#module-genai.types
-https://googleapis.github.io/python-genai/genai.html#module-genai.tokens
