@@ -832,37 +832,26 @@ class App(QMainWindow):
         self.temp_files.clear()
 
     def _save_gemini_settings(self, model_name, enable_thinking, temperature):
-        """Guarda la configuración de Gemini en config.py."""
+        """Guarda la configuración de Gemini en el archivo de usuario."""
         try:
-            # Read the current content of config.py
-            config_file_path = os.path.join(os.path.dirname(__file__), "config.py")
-            with open(config_file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            settings = {
+                "GEMINI_MODEL": model_name,
+                "GEMINI_ENABLE_THINKING": enable_thinking,
+                "GEMINI_TEMPERATURE": temperature,
+            }
+            Config._save_user_settings(settings)
 
-            # Update GEMINI_MODEL
-            old_model_line = f"    GEMINI_MODEL = \"{Config.GEMINI_MODEL}\""
-            new_model_line = f"    GEMINI_MODEL = \"{model_name}\""
-            content = content.replace(old_model_line, new_model_line)
-            Config.GEMINI_MODEL = model_name # Update in-memory Config
+            # Update in-memory Config
+            Config.GEMINI_MODEL = model_name
+            Config.GEMINI_ENABLE_THINKING = enable_thinking
+            Config.GEMINI_TEMPERATURE = temperature
 
-            # Update GEMINI_ENABLE_THINKING
-            old_thinking_line = f"    GEMINI_ENABLE_THINKING = {Config.GEMINI_ENABLE_THINKING}"
-            new_thinking_line = f"    GEMINI_ENABLE_THINKING = {enable_thinking}"
-            content = content.replace(old_thinking_line, new_thinking_line)
-            Config.GEMINI_ENABLE_THINKING = enable_thinking # Update in-memory Config
-
-            # Update GEMINI_TEMPERATURE
-            old_temp_line = f"    GEMINI_TEMPERATURE = {Config.GEMINI_TEMPERATURE}"
-            new_temp_line = f"    GEMINI_TEMPERATURE = {temperature}"
-            content = content.replace(old_temp_line, new_temp_line)
-            Config.GEMINI_TEMPERATURE = temperature # Update in-memory Config
-
-            # Write the updated content back to config.py
-            with open(config_file_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
+            print("✅ Configuración de Gemini guardada correctamente.")
         except Exception as e:
-            QMessageBox.critical(self, "Error al Guardar Configuración", f"No se pudo guardar la configuración de Gemini: {e}")
+            print(f"❌ Error al guardar la configuración de Gemini: {e}")
+            QMessageBox.critical(
+                None, "Error", f"Error al guardar la configuración de Gemini: {e}"
+            )
 
     def _cancel_gemini_settings(self):
         """Restaura la configuración de Gemini a los valores originales y oculta la sección."""

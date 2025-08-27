@@ -8,6 +8,7 @@ Incluye la configuración de directorios, rutas de archivos multimedia, herramie
 import sys
 import os
 import traceback
+import json
 from PyQt5.QtWidgets import QMessageBox
 
 def resource_path(relative_path):
@@ -41,9 +42,39 @@ class Config:
     WINDOW_TITLE = "Babylon Scanlation"
     WINDOW_SIZE = (1200, 600)
     GEMINI_API_KEY = "AIzaSyBPNOkv5VEHwLiuyYsyVHHW6qKtQAWabj8"
-    GEMINI_MODEL = "gemini-2.5-flash"  # Default Gemini model
-    GEMINI_ENABLE_THINKING = True  # Default to disable thinking
-    GEMINI_TEMPERATURE = 1.0 # Default temperature for creativity
+    USER_SETTINGS_FILE = os.path.join(USER_DATA_DIR, "user_settings.json")
+
+    @staticmethod
+    def _load_user_settings():
+        settings = {
+            "GEMINI_MODEL": "gemini-2.5-flash",
+            "GEMINI_ENABLE_THINKING": True,
+            "GEMINI_TEMPERATURE": 1.0,
+        }
+        if os.path.exists(Config.USER_SETTINGS_FILE):
+            try:
+                with open(Config.USER_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    user_settings = json.load(f)
+                    settings.update(user_settings)
+            except json.JSONDecodeError:
+                print(f"Error decoding JSON from {Config.USER_SETTINGS_FILE}. Using default settings.")
+            except Exception as e:
+                print(f"Error loading user settings: {e}. Using default settings.")
+        return settings
+
+    @staticmethod
+    def _save_user_settings(settings):
+        os.makedirs(Config.USER_DATA_DIR, exist_ok=True)
+        try:
+            with open(Config.USER_SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=4)
+        except Exception as e:
+            print(f"Error saving user settings: {e}")
+
+    _user_settings = _load_user_settings()
+    GEMINI_MODEL = _user_settings["GEMINI_MODEL"]
+    GEMINI_ENABLE_THINKING = _user_settings["GEMINI_ENABLE_THINKING"]
+    GEMINI_TEMPERATURE = _user_settings["GEMINI_TEMPERATURE"]
     GEMINI_SYSTEM_INSTRUCTION = "You are a highly skilled assistant for text localization and translation. Your goal is to be extremely eloquent, expressive, and detailed. Provide translations that are not just literal, but also capture the cultural nuances and artistic intent of the original text. When describing scenes or characters, do so with rich, evocative language."
     MISTRAL_API_KEY = "KifJee4MUJJqQKB3Kj8Q00FjIFAQn7Sh"
     ICON_PATH = resource_path(os.path.join("app_media", "img-aux", "icono.ico"))
