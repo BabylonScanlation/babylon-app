@@ -39,118 +39,132 @@ def load_prompt():
         logging.error(f"Error cargando el prompt: {str(e)}")
         return None
 
-def generar_grilla(content):
-    """Genera análisis de personajes con Gemini."""
-    try:
-        with open(Config.GRILLA_PROMPT, "r", encoding="utf-8") as f:
-            prompt = f.read()
-
-        ai_start_time = time.time()
-
-        # --- Construcción de la configuración completa ---
-        safety_settings = [
-            types.SafetySetting(category=HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=HarmBlockThreshold.BLOCK_NONE),
-            types.SafetySetting(category=HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=HarmBlockThreshold.BLOCK_NONE),
-            types.SafetySetting(category=HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=HarmBlockThreshold.BLOCK_NONE),
-            types.SafetySetting(category=HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=HarmBlockThreshold.BLOCK_NONE),
-        ]
-
-        thinking_config = None
-        if Config.GEMINI_ENABLE_THINKING:
-            budget = -1  # Pensamiento dinámico
-            thinking_config = types.ThinkingConfig(thinking_budget=budget)
-
-        # Construir el objeto de configuración principal
-        config = types.GenerateContentConfig(
-            temperature=Config.GEMINI_TEMPERATURE, # Pasar temperature directamente
-            safety_settings=safety_settings,
-            thinking_config=thinking_config
-        )
-
-        api_kwargs = {
-            'model': Config.GEMINI_MODEL,
-            'contents': [Config.GEMINI_SYSTEM_INSTRUCTION, prompt, content],
-            'config': config
-        }
-
-        response = client.models.generate_content(**api_kwargs)
-        ai_end_time = time.time()
-        print(f"Tiempo de procesamiento de IA para grilla: {ai_end_time - ai_start_time:.4f} segundos")
-        
-        if response and response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-            return response.text
-        else:
-            logging.warning("La respuesta de Gemini para la grilla no contiene texto o fue bloqueada.")
-            return "Sin datos de personajes (respuesta bloqueada o vacía)"
-
-    except Exception as e:
-        logging.error(f"Error generando grilla: {str(e)}")
-        return "Error al generar análisis de personajes"
-
-def combine_texts(output_dir, combined_content, chapter_name, master_content=None):
-    """Combina contenido y genera archivos finales con verificación de errores"""
-    try:
-        # Sanitizar nombre del capítulo para evitar problemas en rutas
-        sanitized_chapter = "".join(c for c in chapter_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
-        if not sanitized_chapter:
-            sanitized_chapter = "capitulo"
-        
-        # 1. Generar archivo combinado principal
-        final_output = os.path.join(output_dir, f"{sanitized_chapter}_completo.txt")
-        
-        # Asegurar que existe el directorio de salida
-        os.makedirs(output_dir, exist_ok=True)
-        print(f"Creando archivos en: {output_dir}")
-        print(f" - Archivo combinado: {os.path.basename(final_output)}")
-        
-        # Construir el contenido completo en memoria
-        full_content = ""
-        if master_content is not None:
-            full_content = master_content
-        else:
-            full_content = f"CAPÍTULO: {sanitized_chapter}\n{'='*50}\n\n"
-            for i, texto in enumerate(combined_content, 1):
-                full_content += f"PÁGINA {i}\n{'-'*50}\n{texto}\n\n"
-                if i < len(combined_content):
-                    full_content += "\n" + "✦" * 75 + "\n\n"
-
-        # Escribir el archivo combinado
-        with open(final_output, "w", encoding="utf-8") as f:
-            f.write(full_content)
-
-        # 2. Generar grilla desde el contenido en memoria
-        grid_content = generar_grilla(full_content)
-        grid_path = os.path.join(output_dir, f"{sanitized_chapter}_grilla.txt")
-        print(f" - Archivo grilla: {os.path.basename(grid_path)}")
-        
-        with open(grid_path, "w", encoding="utf-8") as f:
-            f.write(f"ANÁLISIS DE PERSONAJES - {sanitized_chapter}\n{'='*50}\n\n")
-            f.write(grid_content)
-
-        # Verificación final
-        if not os.path.exists(final_output) or os.path.getsize(final_output) == 0:
-            raise Exception(f"Archivo combinado no se creó correctamente: {final_output}")
-            
-        if not os.path.exists(grid_path) or os.path.getsize(grid_path) == 0:
-            raise Exception(f"Archivo de grilla no se creó correctamente: {grid_path}")
-
-        print(f"✓ Archivos generados en: {output_dir}")
-        return True
-
-    except Exception as e:
-        logging.error(f"ERROR EN COMBINE_TEXTS: {str(e)}", exc_info=True)
-        # Limpiar archivos incompletos
-        if 'final_output' in locals() and os.path.exists(final_output): 
-            os.remove(final_output) 
-        if 'grid_path' in locals() and os.path.exists(grid_path): 
-            os.remove(grid_path)
-        return False
-
 class GeminiProcessor:
     def __init__(self):
         self.processing_start_time = None
         self.image_count = 0
         self.cancel_event = None
+        self.token_callback = None
+
+    def set_token_callback(self, callback):
+        self.token_callback = callback
+
+    def generar_grilla(self, content):
+        """Genera análisis de personajes con Gemini."""
+        try:
+            with open(Config.GRILLA_PROMPT, "r", encoding="utf-8") as f:
+                prompt = f.read()
+
+            ai_start_time = time.time()
+
+            # --- Construcción de la configuración completa ---
+            safety_settings = [
+                types.SafetySetting(category=HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+            ]
+
+            thinking_config = None
+            if Config.GEMINI_ENABLE_THINKING:
+                budget = -1  # Pensamiento dinámico
+                thinking_config = types.ThinkingConfig(thinking_budget=budget)
+
+            # Construir el objeto de configuración principal
+            config = types.GenerateContentConfig(
+                temperature=Config.GEMINI_TEMPERATURE, # Pasar temperature directamente
+                safety_settings=safety_settings,
+                thinking_config=thinking_config
+            )
+
+            api_kwargs = {
+                'model': Config.GEMINI_MODEL,
+                'contents': [Config.GEMINI_SYSTEM_INSTRUCTION, prompt, content],
+                'config': config
+            }
+
+            try:
+                token_count_response = client.models.count_tokens(
+                    model=Config.GEMINI_MODEL,
+                    contents=api_kwargs['contents']
+                )
+                if self.token_callback:
+                    self.token_callback(token_count_response.total_tokens)
+            except Exception as e:
+                logging.error(f"Could not count tokens: {e}")
+
+            response = client.models.generate_content(**api_kwargs)
+            ai_end_time = time.time()
+            print(f"Tiempo de procesamiento de IA para grilla: {ai_end_time - ai_start_time:.4f} segundos")
+            
+            if response and response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                return response.text
+            else:
+                logging.warning("La respuesta de Gemini para la grilla no contiene texto o fue bloqueada.")
+                return "Sin datos de personajes (respuesta bloqueada o vacía)"
+
+        except Exception as e:
+            logging.error(f"Error generando grilla: {str(e)}")
+            return "Error al generar análisis de personajes"
+
+    def combine_texts(self, output_dir, combined_content, chapter_name, master_content=None):
+        """Combina contenido y genera archivos finales con verificación de errores"""
+        try:
+            # Sanitizar nombre del capítulo para evitar problemas en rutas
+            sanitized_chapter = "".join(c for c in chapter_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
+            if not sanitized_chapter:
+                sanitized_chapter = "capitulo"
+            
+            # 1. Generar archivo combinado principal
+            final_output = os.path.join(output_dir, f"{sanitized_chapter}_completo.txt")
+            
+            # Asegurar que existe el directorio de salida
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"Creando archivos en: {output_dir}")
+            print(f" - Archivo combinado: {os.path.basename(final_output)}")
+            
+            # Construir el contenido completo en memoria
+            full_content = ""
+            if master_content is not None:
+                full_content = master_content
+            else:
+                full_content = f"CAPÍTULO: {sanitized_chapter}\n{'='*50}\n\n"
+                for i, texto in enumerate(combined_content, 1):
+                    full_content += f"PÁGINA {i}\n{'-'*50}\n{texto}\n\n"
+                    if i < len(combined_content):
+                        full_content += "\n" + "✦" * 75 + "\n\n"
+
+            # Escribir el archivo combinado
+            with open(final_output, "w", encoding="utf-8") as f:
+                f.write(full_content)
+
+            # 2. Generar grilla desde el contenido en memoria
+            grid_content = self.generar_grilla(full_content)
+            grid_path = os.path.join(output_dir, f"{sanitized_chapter}_grilla.txt")
+            print(f" - Archivo grilla: {os.path.basename(grid_path)}")
+            
+            with open(grid_path, "w", encoding="utf-8") as f:
+                f.write(f"ANÁLISIS DE PERSONAJES - {sanitized_chapter}\n{'='*50}\n\n")
+                f.write(grid_content)
+
+            # Verificación final
+            if not os.path.exists(final_output) or os.path.getsize(final_output) == 0:
+                raise Exception(f"Archivo combinado no se creó correctamente: {final_output}")
+                
+            if not os.path.exists(grid_path) or os.path.getsize(grid_path) == 0:
+                raise Exception(f"Archivo de grilla no se creó correctamente: {grid_path}")
+
+            print(f"✓ Archivos generados en: {output_dir}")
+            return True
+
+        except Exception as e:
+            logging.error(f"ERROR EN COMBINE_TEXTS: {str(e)}", exc_info=True)
+            # Limpiar archivos incompletos
+            if 'final_output' in locals() and os.path.exists(final_output): 
+                os.remove(final_output) 
+            if 'grid_path' in locals() and os.path.exists(grid_path): 
+                os.remove(grid_path)
+            return False
 
     def reset_counters(self):
         """Reinicia los contadores para un nuevo procesamiento"""
@@ -209,6 +223,16 @@ class GeminiProcessor:
                         'contents': [Config.GEMINI_SYSTEM_INSTRUCTION, prompt, image],
                         'config': config
                     }
+
+                    try:
+                        token_count_response = client.models.count_tokens(
+                            model=Config.GEMINI_MODEL,
+                            contents=api_kwargs['contents']
+                        )
+                        if self.token_callback:
+                            self.token_callback(token_count_response.total_tokens)
+                    except Exception as e:
+                        logging.error(f"Could not count tokens: {e}")
 
                     response = client.models.generate_content(**api_kwargs)
                     break  # Si tiene éxito, sal del bucle
@@ -273,7 +297,7 @@ class GeminiProcessor:
             print(f"\n{'='*80}")
             print(f"INICIANDO PROCESAMIENTO DE CAPÍTULO: {os.path.basename(chapter_path)}")
             print(f"Directorio de salida del capítulo: {chapter_output_dir}")
-            print(f"{'='*80}\n")
+            print(f"{ '='*80}\n")
 
             # Encontrar todas las imágenes en el capítulo (incluyendo subdirectorios)
             image_files = []
@@ -310,13 +334,13 @@ class GeminiProcessor:
                 chapter_name = os.path.basename(chapter_path)
                 print(f"\n--- Generando archivos finales para CAPÍTULO: {chapter_name} ---")
                 
-                result = combine_texts(chapter_output_dir, combined_content, chapter_name)
+                result = self.combine_texts(chapter_output_dir, combined_content, chapter_name)
                 
                 end_time = time.time()
                 print(f"\n{'='*80}")
                 print(f"CAPÍTULO COMPLETADO: {chapter_name}")
                 print(f"Tiempo total del capítulo: {end_time - start_time:.4f} segundos")
-                print(f"{'='*80}\n")
+                print(f"{ '='*80}\n")
                 
                 if result:
                     return "success"
@@ -325,7 +349,7 @@ class GeminiProcessor:
             
             print(f"\n{'!'*80}")
             print(f"ADVERTENCIA: No se encontraron imágenes en el capítulo {os.path.basename(chapter_path)}")
-            print(f"{'!'*80}\n")
+            print(f"{ '!'*80}\n")
             return "error"
         
         except Exception as e:
@@ -396,7 +420,7 @@ class GeminiProcessor:
                 if master_content_list:
                     series_master_content = ("\n\n" + "╬" * 75 + "\n\n").join(master_content_list)
                     series_name = os.path.basename(input_path)
-                    combine_texts(series_output_dir, [], series_name, master_content=series_master_content)
+                    self.combine_texts(series_output_dir, [], series_name, master_content=series_master_content)
 
             return status
 
@@ -463,7 +487,7 @@ class GeminiProcessor:
                 
                 # Call combine_texts to create the combined file and the grid
                 # combine_texts also handles error logging internally
-                success_combine = combine_texts(output_dir, combined_content, chapter_name)
+                success_combine = self.combine_texts(output_dir, combined_content, chapter_name)
                 if not success_combine:
                     error_occurred = True # Mark as error if combining fails
 

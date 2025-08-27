@@ -1,24 +1,6 @@
-Funcionalidad: Informe de limite de frecuencia de la API. // control sobre cuanto lleva usado y cuanto le falta
-Solicitudes por minuto (RPM)
-Tokens por minuto (entrada) (TPM)
-Solicitudes por día (RPD)
-Modelo                  RPM	TPM	    RPD
-Gemini 2.5 Pro	        5	250,000	100
-Gemini 2.5 Flash	    10	250,000	250
-Gemini 2.5 Flash-Lite   15	250,000	1,000
-En la funcion "_create_gemini_config_area" del modulo "tools.py" habra que añadir un breve aviso que aparecera cuando el usuario pase el mouse sobre los distintos modelos hardcode.
-Se usa la informacion dada para añadir esos 'avisos' respectivamente para cada modelo.
-Para la siguiente funcionalidad se requerira de informarse de los siguientes enlaces para mayor contexto:
 https://ai.google.dev/gemini-api/docs/tokens?lang=python
 https://ai.google.dev/gemini-api/docs/function-calling
 https://ai.google.dev/api/generate-content
 https://ai.google.dev/api/all-methods
 https://googleapis.github.io/python-genai/genai.html#module-genai.types
 https://googleapis.github.io/python-genai/genai.html#module-genai.tokens
-Se necesitara saber cuantos tokens se han usado hasta ahora y cuantos faltan para llegar al limite, por medio de una interfaz moderna atractiva al usuario.
-Se necesitara añadir una nueva opcion para darle a elegir al usuario si quiere que se detenga inmediatamente una vez llegue al limite o prosiga usando otro modelo, hay que implementar la logica necesaria.
-
-Funcionalidad: Visibilidad del archivo ai_prompt.txt.
-En el metodo "_create_gemini_container" y "_create_mistral_container", del modulo "tools.py" se debe mostrar el texto del "ai_prompt.txt", con respectivos botones para copiar, pegar y aplicar, el boton pegar implica el hecho de editar el prompt.
-Actualmente se muestra en "config_description" de config.py, asi que como la logica para mostrarlo ya esta, solo hace falta implementar la logica para editarlo y que al aplicarse los modelos ahora usen ese nueva modificacion.
-No copies el contenido de ai_prompt 2 veces, en su lugar se mas inteligente y usa el archivo que ya lo contiene, osea implica borrar el contenido actual de "config_description".

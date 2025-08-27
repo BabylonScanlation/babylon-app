@@ -25,7 +25,7 @@ from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer, QMediaPlaylist
 from PyQt5.QtWidgets import (
     QApplication, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QPushButton,
     QScrollArea, QTextEdit, QVBoxLayout, QWidget, QComboBox, QCheckBox, QMessageBox,
-    QGroupBox, QSlider
+    QGroupBox, QSlider, QProgressBar
 )
 
 from project_manager import ProjectManager
@@ -108,11 +108,13 @@ class App(QMainWindow):
         self.options_menu = OptionsMenu(self)
         self.project_manager = ProjectManager(Config.USER_DATA_DIR)
         self.tools_manager = ToolsManager(self)
+        self.tools_manager.gemini_processor.set_token_callback(self.update_session_token_count)
         self.cap = None
         self.timer = QTimer(self)
         self.video_label = QLabel(self)
         self.temp_files = []
         self.audio_player = None
+        self.session_tokens = 0
         self._setup_main_window()
         self._load_fonts()
         self._create_layout()
@@ -432,8 +434,8 @@ class App(QMainWindow):
             padding: 0;
         }
         """
-        version_label = QLabel("Versión: 2.0.1.5")
-        snapshot_label = QLabel("Snapshot: U13042025")
+        version_label = QLabel("Versión: 2.3.1")
+        snapshot_label = QLabel("Snapshot: U27082025")
         for label in (version_label, snapshot_label):
             label.setStyleSheet(label_style)
             label.setFont(self.roboto_black_font)
@@ -1055,6 +1057,8 @@ class App(QMainWindow):
             """
         )
         layout = QVBoxLayout(page)
+
+        # --- Grupo Principal de Configuración ---
         gemini_group = QGroupBox("Configuración de Gemini")
         gemini_group.setStyleSheet(
             """
@@ -1078,19 +1082,19 @@ class App(QMainWindow):
         )
         gemini_layout = QVBoxLayout(gemini_group)
 
-        # Widgets de GeminiOptions
-        # Guardar la configuración original al abrir la ventana
         self._original_gemini_model = Config.GEMINI_MODEL
         self._original_gemini_thinking = Config.GEMINI_ENABLE_THINKING
         self._original_gemini_temperature = Config.GEMINI_TEMPERATURE
 
-        # Widgets de GeminiOptions
         self.gemini_model_combo = QComboBox()
-        self.gemini_model_combo.addItems([
-            "gemini-2.5-pro",
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-        ])
+        models = {
+            "gemini-2.5-pro": "RPM: 5, TPM: 250,000, RPD: 100",
+            "gemini-2.5-flash": "RPM: 10, TPM: 250,000, RPD: 250",
+            "gemini-2.5-flash-lite": "RPM: 15, TPM: 250,000, RPD: 1,000"
+        }
+        for model, tooltip in models.items():
+            self.gemini_model_combo.addItem(model)
+            self.gemini_model_combo.setItemData(self.gemini_model_combo.count() - 1, tooltip, Qt.ToolTipRole)
         self.gemini_model_combo.setStyleSheet(
             """
             QComboBox {
@@ -1109,64 +1113,20 @@ class App(QMainWindow):
             """
         )
         self.gemini_model_combo.setFont(self.roboto_black_font)
-        # Establecer el modelo actual
         self.gemini_model_combo.setCurrentText(Config.GEMINI_MODEL)
 
         self.gemini_thinking_cb = QCheckBox("Activar modo pensamiento")
         self.gemini_thinking_cb.setStyleSheet("color: white;")
         self.gemini_thinking_cb.setFont(self.roboto_black_font)
-        # Establecer el estado actual del checkbox
         self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
 
         self.temperature_slider = QSlider(Qt.Horizontal)
         self.temperature_slider.setRange(0, 100)
-        # Establecer la temperatura actual
         self.temperature_slider.setValue(int(Config.GEMINI_TEMPERATURE * 100))
         self.temperature_label = QLabel(f"Temperatura: {Config.GEMINI_TEMPERATURE:.2f}")
-        
-        # Aplicar estilo al temperature_label en ambos casos
         self.temperature_label.setStyleSheet("color: white;")
         self.temperature_label.setFont(self.roboto_black_font)
-        
         self.temperature_slider.valueChanged.connect(self._update_gemini_temperature_label)
-
-        self.save_gemini_button = QPushButton("Aplicar")
-        self.save_gemini_button.setStyleSheet(
-            """
-            QPushButton {
-                font-size: 14px;
-                color: white;
-                background-color: #555555;
-                border: none;
-                padding: 10px;
-            }
-            QPushButton:hover {
-                background-color: #888888;
-            }
-            """
-        )
-        self.save_gemini_button.setFont(self.adventure_font)
-        self.save_gemini_button.setCursor(Qt.PointingHandCursor)
-        self.save_gemini_button.clicked.connect(self._save_gemini_settings_from_ui)
-
-        self.cancel_gemini_button = QPushButton("Cancelar")
-        self.cancel_gemini_button.setStyleSheet(
-            """
-            QPushButton {
-                font-size: 14px;
-                color: white;
-                background-color: #555555;
-                border: none;
-                padding: 10px;
-            }
-            QPushButton:hover {
-                background-color: #888888;
-            }
-            """
-        )
-        self.cancel_gemini_button.setFont(self.adventure_font)
-        self.cancel_gemini_button.setCursor(Qt.PointingHandCursor)
-        self.cancel_gemini_button.clicked.connect(self._cancel_gemini_settings) # Conectar a la nueva función de cancelar
 
         model_label = QLabel("Modelo de Gemini:")
         model_label.setStyleSheet("color: white;")
@@ -1176,17 +1136,185 @@ class App(QMainWindow):
         gemini_layout.addWidget(self.gemini_thinking_cb)
         gemini_layout.addWidget(self.temperature_label)
         gemini_layout.addWidget(self.temperature_slider)
+
+        # --- Grupo de Límites de API (Informativo) ---
+        limits_group = QGroupBox("Límites de API (Informativo)")
+        limits_group.setStyleSheet("""
+            QGroupBox {
+                font-size: 15px;
+                font-weight: bold;
+                color: white;
+                background-color: rgba(30, 30, 30, 100);
+                border: 1px solid rgba(150, 0, 150, 180);
+                border-radius: 5px;
+                margin-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding-bottom: 5px;
+                color: white;
+                background-color: transparent;
+            }
+        """)
+        limits_layout = QVBoxLayout(limits_group)
+
+        self.GEMINI_LIMITS = {
+            "gemini-2.5-pro": "Límite: 100 solicitudes por día",
+            "gemini-2.5-flash": "Límite: 250 solicitudes por día",
+            "gemini-2.5-flash-lite": "Límite: 1,000 solicitudes por día"
+        }
+        self.GEMINI_TPM_LIMITS = {
+            "gemini-2.5-pro": 250000,
+            "gemini-2.5-flash": 250000,
+            "gemini-2.5-flash-lite": 250000
+        }
+
+        self.gemini_limit_label = QLabel()
+        self.gemini_limit_label.setStyleSheet("color: white; margin-top: 10px;")
+        self.gemini_limit_label.setFont(self.roboto_black_font)
+        self.gemini_limit_label.setWordWrap(True)
+        limits_layout.addWidget(self.gemini_limit_label)
+
+        self.gcp_quota_button = QPushButton("Consultar mi uso en Google Cloud")
+        self.gcp_quota_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+                margin-top: 5px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """)
+        self.gcp_quota_button.setFont(self.adventure_font)
+        self.gcp_quota_button.setCursor(Qt.PointingHandCursor)
+        self.gcp_quota_button.clicked.connect(self._open_gcp_quota_page)
+        limits_layout.addWidget(self.gcp_quota_button)
+
+        # --- Grupo de Uso de Tokens (Sesión Actual) ---
+        session_token_group = QGroupBox("Uso de Tokens en esta Sesión")
+        session_token_group.setStyleSheet("""
+            QGroupBox {
+                font-size: 15px;
+                font-weight: bold;
+                color: white;
+                background-color: rgba(30, 30, 30, 100);
+                border: 1px solid rgba(150, 0, 150, 180);
+                border-radius: 5px;
+                margin-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding-bottom: 5px;
+                color: white;
+                background-color: transparent;
+            }
+        """)
+        session_token_layout = QVBoxLayout(session_token_group)
+        session_token_layout.setSpacing(10)
+
+        disclaimer_label = QLabel("Nota: Este contador solo refleja el uso en esta sesión y se reinicia con el programa. No representa el límite total de su cuenta.")
+        disclaimer_label.setStyleSheet("color: #cccccc; font-style: italic;")
+        disclaimer_label.setWordWrap(True)
+        session_token_layout.addWidget(disclaimer_label)
+
+        self.session_token_progress_bar = QProgressBar()
+        self.session_token_progress_bar.setValue(0)
+        self.session_token_progress_bar.setTextVisible(False)
+        session_token_layout.addWidget(self.session_token_progress_bar)
+
+        self.session_token_label = QLabel()
+        self.session_token_label.setStyleSheet("color: white;")
+        self.session_token_label.setFont(self.roboto_black_font)
+        session_token_layout.addWidget(self.session_token_label)
+
+        # Añadir los grupos al layout principal de la página
         layout.addWidget(gemini_group)
+        layout.addWidget(limits_group)
+        layout.addWidget(session_token_group)
         layout.addStretch()
+
+        # Botones de acción en la parte inferior
+        self.save_gemini_button = QPushButton("Aplicar")
+        self.save_gemini_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """)
+        self.save_gemini_button.setFont(self.adventure_font)
+        self.save_gemini_button.setCursor(Qt.PointingHandCursor)
+        self.save_gemini_button.clicked.connect(self._save_gemini_settings_from_ui)
+
+        self.cancel_gemini_button = QPushButton("Cancelar")
+        self.cancel_gemini_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #555555;
+                border: none;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #888888;
+            }
+        """)
+        self.cancel_gemini_button.setFont(self.adventure_font)
+        self.cancel_gemini_button.setCursor(Qt.PointingHandCursor)
+        self.cancel_gemini_button.clicked.connect(self._cancel_gemini_settings)
 
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         button_layout.addWidget(self.cancel_gemini_button)
         button_layout.addWidget(self.save_gemini_button)
         layout.addLayout(button_layout)
+
         page.setLayout(layout)
 
+        # Conectar el cambio de modelo a la actualización de la UI
+        self.gemini_model_combo.currentIndexChanged.connect(self._update_model_specific_ui)
+        # Actualizar la UI con los valores iniciales
+        self._update_model_specific_ui()
+
         return page
+
+    
+
+    def _update_model_specific_ui(self):
+        model = self.gemini_model_combo.currentText()
+        
+        # Update daily limit label
+        daily_limit_text = self.GEMINI_LIMITS.get(model, "Límites diarios no definidos.")
+        self.gemini_limit_label.setText(daily_limit_text)
+
+        # Update session token counter UI
+        tpm_limit = self.GEMINI_TPM_LIMITS.get(model, 250000) # Default to 250k
+        self.session_token_progress_bar.setMaximum(tpm_limit)
+        self.session_token_label.setText(f"Tokens en sesión: {self.session_tokens} / {tpm_limit:,}")
+
+    def _open_gcp_quota_page(self):
+        webbrowser.open("https://console.cloud.google.com/iam-admin/quotas")
+
+    def update_session_token_count(self, tokens):
+        self.session_tokens += tokens
+        # Ensure progress bar doesn't exceed max if user continues after warning
+        current_max = self.session_token_progress_bar.maximum()
+        if self.session_tokens > current_max:
+             self.session_token_progress_bar.setValue(current_max)
+        else:
+             self.session_token_progress_bar.setValue(self.session_tokens)
+        self.session_token_label.setText(f"Tokens en sesión: {self.session_tokens} / {current_max:,}")
 
     def _update_gemini_temperature_label(self, value):
         temp = value / 100.0

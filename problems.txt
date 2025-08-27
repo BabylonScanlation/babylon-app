@@ -1,23 +1,13 @@
-[{
-	"resource": "/c:/Users/Educacion/AppData/Local/babylon-app/tools.py",
-	"owner": "pylance",
-	"severity": 8,
-	"message": "Expected expression to the right of \"=\"",
-	"source": "Pylance",
-	"startLineNumber": 932,
-	"startColumn": 32,
-	"endLineNumber": 933,
-	"endColumn": 1,
-	"origin": "extHost1"
-},{
-	"resource": "/c:/Users/Educacion/AppData/Local/babylon-app/tools.py",
-	"owner": "pylance",
-	"severity": 8,
-	"message": "Unexpected indentation",
-	"source": "Pylance",
-	"startLineNumber": 933,
-	"startColumn": 1,
-	"endLineNumber": 933,
-	"endColumn": 25,
-	"origin": "extHost1"
-}]
+PS C:\Users\Administrator\Desktop\babylon-app> & "C:/Program Files/Python312/python.exe" c:/Users/Administrator/Desktop/babylon-app/bbsl_app.py
+❌ Error no manejado:
+Traceback (most recent call last):
+  File "c:\Users\Administrator\Desktop\babylon-app\bbsl_app.py", line 32, in <module>
+    from tools import ToolsManager
+  File "c:\Users\Administrator\Desktop\babylon-app\tools.py", line 21, in <module>
+    from app_tools.gemini import GeminiProcessor
+  File "c:\Users\Administrator\Desktop\babylon-app\app_tools\gemini.py", line 31, in <module>
+    genai.configure(api_key=Config.GEMINI_API_KEY)
+    ^^^^^^^^^^^^^^^
+AttributeError: module 'google.genai' has no attribute 'configure'
+
+QWidget: Must construct a QApplication before a QWidget

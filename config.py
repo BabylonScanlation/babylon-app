@@ -41,8 +41,8 @@ class Config:
     WINDOW_TITLE = "Babylon Scanlation"
     WINDOW_SIZE = (1200, 600)
     GEMINI_API_KEY = "AIzaSyBPNOkv5VEHwLiuyYsyVHHW6qKtQAWabj8"
-    GEMINI_MODEL = "gemini-2.5-flash-lite"  # Default Gemini model
-    GEMINI_ENABLE_THINKING = False  # Default to disable thinking
+    GEMINI_MODEL = "gemini-2.5-flash"  # Default Gemini model
+    GEMINI_ENABLE_THINKING = True  # Default to disable thinking
     GEMINI_TEMPERATURE = 1.0 # Default temperature for creativity
     GEMINI_SYSTEM_INSTRUCTION = "You are a highly skilled assistant for text localization and translation. Your goal is to be extremely eloquent, expressive, and detailed. Provide translations that are not just literal, but also capture the cultural nuances and artistic intent of the original text. When describing scenes or characters, do so with rich, evocative language."
     MISTRAL_API_KEY = "KifJee4MUJJqQKB3Kj8Q00FjIFAQn7Sh"

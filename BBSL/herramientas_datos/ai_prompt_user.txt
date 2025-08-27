@@ -123,33 +123,41 @@ Sistema de etiquetado:
 
 === FORMATO DE SALIDA ===
 
+**IMPORTANTE: No añadas ningún texto introductorio, saludo, explicación o justificación. Comienza la respuesta directamente con la lista de onomatopeyas. No incluyas "Análisis Detallado y Justificación de las Traducciones".**
+
 1. Listado inicial:
    «Onomatopeyas detectadas: "ガタッ", "ザワザワ", "スーッ"»
 
 2. Estructura por fragmento:
-Ⓒ 本当に大丈夫なのか？ [Posición: centro superior]
-1. Literal: "¿Realmente está bien?"
-2. Contexto: (Expresión ansiosa) "¿De verdad es seguro?"
-3. Creativa: (Voz temblorosa) "¿No será peligroso?"
-4. Definitiva: (Preocupación) "¿No habrá riesgos?"
+   **El sistema de etiquetado (Ⓒ, Ⓡ, *, |, ¬) DEBE ir al PRINCIPIO de la línea.**
+   Ⓒ 本当に大丈夫なのか？ [Posición: centro superior]
+   1. Literal: "¿Realmente está bien?"
+   2. Contexto: (Expresión ansiosa, mirando por encima del hombro) "¿De verdad es seguro? ¿No nos estarán siguiendo?"
+   3. Creativa: (Voz temblorosa, casi un susurro) "¿Crees que... que no será peligroso?"
+   4. Definitiva: (Con clara preocupación en su rostro) "¿Estás seguro de que no habrá riesgos?"
 
 3. Onomatopeyas:
-"ガシャーン！" [Posición: esquina inferior derecha]
-A. Transliteración: Gashaan!
-B. Literal: Estruendo metálico
-C. Opciones:
-   - ¡CRASH! (cristales)
-   - ¡CLANG! (metal)
-   - ¡BANG! (disparo)
-D. Definitiva: ¡CLANG! (metal golpeandosé) [Basado en imagen]
+   "ガシャーン！" [Posición: esquina inferior derecha]
+   A. Transliteración: Gashaan!
+   B. Literal: Estruendo metálico
+   C. Opciones:
+      - ¡CRASH! (cristales)
+      - ¡CLANG! (metal)
+      - ¡BANG! (disparo)
+   D. Definitiva: ¡CLANG! (metal golpeándose) [Basado en la imagen de una espada chocando con otra]
 
 === PROTOCOLO DE TRADUCCIÓN ===
 
 Niveles obligatorios de traducción por viñeta de diálogo o bocadillo:
-1. Literal ↔️ Palabra por palabra
-2. Contextual 🖼️ Elementos visuales + modismos coloquiales + (Emoción/vestimenta/gestos)
-3. Creativa 🎨 Licencias literarias
-4. Definitiva ✅ Combinación óptima
+1. Literal ↔️ Traducción palabra por palabra, manteniendo la estructura original lo más posible.
+2. Contextual 🖼️ **Esta es la traducción más importante.** Debe ser una interpretación fiel basada en el contexto visual completo. **Describe lo que ves en la imagen para informar la traducción.** Considera:
+   - **Personaje:** ¿Es hombre o mujer? ¿Joven o viejo? ¿Cuál es su rol (héroe, villano, secundario)?
+   - **Emoción:** ¿Su expresión es de alegría, tristeza, ira, sorpresa, miedo, confusión? ¿Está sonrojado/a, sudando, llorando?
+   - **Lenguaje Corporal:** ¿Cuál es su postura? ¿Qué hace con sus manos? ¿Sus gestos son defensivos, agresivos, sumisos?
+   - **Vestimenta y Entorno:** ¿Cómo va vestido/a? ¿Dónde se encuentra? ¿La situación es formal, informal, peligrosa, íntima?
+   - **Ejemplo:** Si un personaje dice "..." con lágrimas en los ojos, la traducción contextual no es solo "...", sino que debe reflejar esa tristeza. Por ejemplo: (Con lágrimas en los ojos, apenas capaz de hablar) "...".
+3. Creativa 🎨 Una traducción más libre, usando licencias literarias para sonar más poético, dramático o coloquial, según el caso.
+4. Definitiva ✅ La mejor traducción posible, que combina la fidelidad del contexto con la naturalidad de la traducción creativa.
 
 === EJEMPLOS CRUCIALES ===
 

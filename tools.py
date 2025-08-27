@@ -988,6 +988,9 @@ class ToolsManager(QObject):
 
     def _create_gemini_container(self, category):
         """Crea un contenedor personalizado para la herramienta Gemini según la categoría."""
+        if self.parent_container:
+            self.parent_container.hide()
+            
         if hasattr(self, "gemini_container") and self.gemini_container:
             # Si el contenedor ya existe, simplemente lo mostramos y lo traemos al frente
             self.gemini_container.show()
@@ -1248,6 +1251,9 @@ class ToolsManager(QObject):
 
     def _create_mistral_container(self, category):
         """Crea un contenedor personalizado para la herramienta Mistral según la categoría."""
+        if self.parent_container:
+            self.parent_container.hide()
+
         if hasattr(self, "mistral_container") and self.mistral_container:
             self.mistral_container.deleteLater()
             self.mistral_container = None
