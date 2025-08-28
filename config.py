@@ -51,6 +51,7 @@ class Config:
             "GEMINI_MODEL": "gemini-2.5-flash",
             "GEMINI_ENABLE_THINKING": True,
             "GEMINI_TEMPERATURE": 1.0,
+            "ENABLE_AUTO_MODEL_SWITCH": False, # Default to False
         }
         if os.path.exists(USER_SETTINGS_FILE):
             try:
@@ -76,6 +77,7 @@ class Config:
     GEMINI_MODEL = _user_settings["GEMINI_MODEL"]
     GEMINI_ENABLE_THINKING = _user_settings["GEMINI_ENABLE_THINKING"]
     GEMINI_TEMPERATURE = _user_settings["GEMINI_TEMPERATURE"]
+    ENABLE_AUTO_MODEL_SWITCH = _user_settings["ENABLE_AUTO_MODEL_SWITCH"] # Load new setting
     GEMINI_SYSTEM_INSTRUCTION = "You are a highly skilled assistant for text localization and translation. Your goal is to be extremely eloquent, expressive, and detailed. Provide translations that are not just literal, but also capture the cultural nuances and artistic intent of the original text. When describing scenes or characters, do so with rich, evocative language."
     MISTRAL_API_KEY = "KifJee4MUJJqQKB3Kj8Q00FjIFAQn7Sh"
     ICON_PATH = resource_path(os.path.join("app_media", "img-aux", "icono.ico"))

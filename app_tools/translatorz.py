@@ -257,10 +257,11 @@ def _check_yandex_compatibility(target_lang: str) -> str | None:
         return "Idioma escogido a traducir incompatible."
     return None
 
-def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str, delay: int = 1) -> str:
+async def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str, delay: int = 1) -> str:
     while True:
+        processed_result = ""
         try:
-            raw_result = _ensure_string_result(ts.translate_text(
+            raw_result = _ensure_string_result(await asyncio.to_thread(ts.translate_text,
                 text,
                 translator="baidu",
                 from_language=(
@@ -271,25 +272,53 @@ def _translate_baidu_with_retries(text: str, source_lang: str, target_lang: str,
                 to_language=obtener_codigo("baidu", target_lang),
             ))
             processed_result = str(raw_result)
-        except Exception as e:
-            pass
 
-            # Check for the specific "not certified" error
             specific_baidu_error = _check_baidu_compatibility(processed_result)
             if specific_baidu_error:
-                time.sleep(delay)
+                await asyncio.sleep(delay)
                 continue
 
-            # Check if the result is empty or identical to input (likely a failure)
             if not processed_result.strip() or processed_result.strip() == text.strip():
-                time.sleep(delay)
+                await asyncio.sleep(delay)
                 continue
 
-            
-            
             return processed_result
+        except Exception as e:
+            # If an exception occurs, check if it's a known retryable error
+            specific_baidu_error = _check_baidu_compatibility(str(e))
+            if specific_baidu_error:
+                await asyncio.sleep(delay)
+                continue
+            
+            # If it's not a retryable error, or if processed_result is still empty/same as input
+            # after an exception, then return the error message.
+            return f"Error en Baidu: {str(e)}"
 
         
+
+async def _translate_systran_with_retries(text: str, source_lang: str, target_lang: str, delay: int = 1) -> str:
+    while True:
+        try:
+            result = _ensure_string_result(await asyncio.to_thread(ts.translate_text,
+                text,
+                translator="sysTran",
+                from_language=(
+                    source_lang
+                    if source_lang != "auto"
+                    else detectar_idioma(text).split("_")[0]
+                ),
+                to_language=obtener_codigo("systran", target_lang),
+            ))
+            if "504 Server Error" in result or "Gateway Timeout" in result:
+                await asyncio.sleep(delay)
+                continue
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            if "504 Server Error" in error_msg or "Gateway Timeout" in error_msg:
+                await asyncio.sleep(delay)
+                continue
+            return f"Error en SysTran: {error_msg}"
 
 def _ensure_string_result(result) -> str:
     if isinstance(result, str):
@@ -406,9 +435,7 @@ async def translatorz(translator_name: str, text: str, source_lang: str, target_
             )(t)
         ),
         # Traductores con códigos especiales
-        "Baidu": lambda t: _ensure_string_result(
-            _translate_baidu_with_retries(t, source_lang, target_lang)
-        ),
+        "Baidu": lambda t: _translate_baidu_with_retries(t, source_lang, target_lang),
         "iTranslate": lambda t: _ensure_string_result(ts.translate_text(
             t,
             translator="itranslate",
@@ -446,16 +473,7 @@ async def translatorz(translator_name: str, text: str, source_lang: str, target_
             to_language=obtener_codigo("lingvanex", target_lang),
         )),
         # Traductores que usan detección directa
-        "SysTran": lambda t: _ensure_string_result(ts.translate_text(
-            t,
-            translator="sysTran",
-            from_language=(
-                source_lang
-                if source_lang != "auto"
-                else detectar_idioma(t).split("_")[0]
-            ),
-            to_language=obtener_codigo("systran", target_lang),
-        )),
+        "SysTran": lambda t: _translate_systran_with_retries(t, source_lang, target_lang),
         "TranSmart": lambda t: _ensure_string_result(ts.translate_text(
             t,
             translator="qqTranSmart",

@@ -802,7 +802,7 @@ class App(QMainWindow):
         )
         model_combo.setFont(self.roboto_black_font)
         model_combo.currentIndexChanged.connect(
-            lambda: self._save_gemini_settings(model_combo.currentText(), self.thinking_checkbox.isChecked())
+            lambda: self._save_gemini_settings(model_combo.currentText(), self.thinking_checkbox.isChecked(), self.temperature_slider.value() / 100.0, self.auto_switch_checkbox.isChecked())
         )
         model_layout.addWidget(model_label)
         model_layout.addWidget(model_combo)
@@ -816,7 +816,7 @@ class App(QMainWindow):
         self.thinking_checkbox.setStyleSheet("color: white;")
         self.thinking_checkbox.setFont(self.roboto_black_font)
         self.thinking_checkbox.stateChanged.connect(
-            lambda: self._save_gemini_settings(model_combo.currentText(), self.thinking_checkbox.isChecked())
+            lambda: self._save_gemini_settings(model_combo.currentText(), self.thinking_checkbox.isChecked(), self.temperature_slider.value() / 100.0, self.auto_switch_checkbox.isChecked())
         )
         thinking_layout.addWidget(self.thinking_checkbox)
         thinking_layout.addStretch(1)
@@ -832,13 +832,14 @@ class App(QMainWindow):
             self._delete_file_with_retries(file_path)
         self.temp_files.clear()
 
-    def _save_gemini_settings(self, model_name, enable_thinking, temperature):
+    def _save_gemini_settings(self, model_name, enable_thinking, temperature, enable_auto_switch):
         """Guarda la configuración de Gemini en el archivo de usuario."""
         try:
             settings = {
                 "GEMINI_MODEL": model_name,
                 "GEMINI_ENABLE_THINKING": enable_thinking,
                 "GEMINI_TEMPERATURE": temperature,
+                "ENABLE_AUTO_MODEL_SWITCH": enable_auto_switch, # Add this line
             }
             Config._save_user_settings(settings)
 
@@ -860,12 +861,14 @@ class App(QMainWindow):
         Config.GEMINI_MODEL = self._original_gemini_model
         Config.GEMINI_ENABLE_THINKING = self._original_gemini_thinking
         Config.GEMINI_TEMPERATURE = self._original_gemini_temperature
+        Config.ENABLE_AUTO_MODEL_SWITCH = self._original_auto_model_switch # Restore new setting
 
         # Actualizar la UI para reflejar los valores restaurados (opcional, pero buena práctica)
         self.gemini_model_combo.setCurrentText(Config.GEMINI_MODEL)
         self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
         self.temperature_slider.setValue(int(Config.GEMINI_TEMPERATURE * 100))
         self._update_gemini_temperature_label(int(Config.GEMINI_TEMPERATURE * 100))
+        self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH) # Update new checkbox
 
         # Ocultar la sección de configuración de Gemini
         self._hide_gemini_config_area()
@@ -1075,6 +1078,7 @@ class App(QMainWindow):
         self._original_gemini_model = Config.GEMINI_MODEL
         self._original_gemini_thinking = Config.GEMINI_ENABLE_THINKING
         self._original_gemini_temperature = Config.GEMINI_TEMPERATURE
+        self._original_auto_model_switch = Config.ENABLE_AUTO_MODEL_SWITCH # Store original state
 
         self.gemini_model_combo = QComboBox()
         models = {
@@ -1110,6 +1114,12 @@ class App(QMainWindow):
         self.gemini_thinking_cb.setFont(self.roboto_black_font)
         self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
 
+        self.auto_switch_checkbox = QCheckBox("Cambiar automáticamente de modelo en caso de error")
+        self.auto_switch_checkbox.setStyleSheet("color: white;")
+        self.auto_switch_checkbox.setFont(self.roboto_black_font)
+        # Need to load initial state from Config.ENABLE_AUTO_MODEL_SWITCH
+        self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
+
         self.temperature_slider = QSlider(Qt.Horizontal)
         self.temperature_slider.setRange(0, 100)
         self.temperature_slider.setValue(int(Config.GEMINI_TEMPERATURE * 100))
@@ -1118,12 +1128,17 @@ class App(QMainWindow):
         self.temperature_label.setFont(self.roboto_black_font)
         self.temperature_slider.valueChanged.connect(self._update_gemini_temperature_label)
 
+        self.auto_switch_checkbox.stateChanged.connect(
+            lambda: self._save_gemini_settings(self.gemini_model_combo.currentText(), self.gemini_thinking_cb.isChecked(), self.temperature_slider.value() / 100.0, self.auto_switch_checkbox.isChecked())
+        )
+
         model_label = QLabel("Modelo de Gemini:")
         model_label.setStyleSheet("color: white;")
         model_label.setFont(self.roboto_black_font)
         gemini_layout.addWidget(model_label, alignment=Qt.AlignLeft)
         gemini_layout.addWidget(self.gemini_model_combo)
         gemini_layout.addWidget(self.gemini_thinking_cb)
+        gemini_layout.addWidget(self.auto_switch_checkbox) # Add this line
         gemini_layout.addWidget(self.temperature_label)
         gemini_layout.addWidget(self.temperature_slider)
 
@@ -1315,7 +1330,8 @@ class App(QMainWindow):
         model = self.gemini_model_combo.currentText()
         is_thinking = self.gemini_thinking_cb.isChecked()
         temperature = self.temperature_slider.value() / 100.0
-        self._save_gemini_settings(model, is_thinking, temperature) # Reutilizar el método existente
+        enable_auto_switch = self.auto_switch_checkbox.isChecked() # Get new checkbox state
+        self._save_gemini_settings(model, is_thinking, temperature, enable_auto_switch) # Pass new state
         self._hide_gemini_config_area()
 
     def _hide_gemini_config_area(self):

@@ -17,8 +17,9 @@ import asyncio
 from PIL import Image
 
 # módulos (no tocar)
+from app_tools.gemini import GeminiProcessor, GeminiAPIError
 from app_tools import mistral, translatorz
-from app_tools.gemini import GeminiProcessor
+from app_tools.mistral import MistralAPIError
 from app_tools.haruneko import DownloadThread, HaruNekoManager
 from config import Config
 
@@ -67,40 +68,17 @@ class TranslationTask(QRunnable):
     def run(self):
         """Ejecuta la tarea de traducción en un hilo en segundo plano."""
         try:
-            if self.tool["name"] == "Baidu":
-                while True:
-                    try:
-                        translated_text_raw = asyncio.run(translatorz.translatorz(
-                            self.tool["name"], self.text, self.source_lang, self.target_lang
-                        ))
-                        translated_text = str(translated_text_raw) # Ensure it's a string
-                        
-                        if "Error en Baidu: Función no certificada o inestable." in translated_text:
-                            # Este error específico, reintentar silenciosamente
-                            time.sleep(1) # Pequeña pausa antes de reintentar
-                            continue # Ir a la siguiente iteración del bucle
-                        else:
-                            # Éxito o un error diferente, emitir y salir del bucle
-                            self.signals.finished.emit(self.tool["name"], translated_text, "")
-                            break
-                    except Exception as e: # pylint: disable=broad-exception-caught
-                        # Capturar cualquier excepción inesperada durante la llamada a Baidu
-                        error_msg = f"{str(e)}\n\n{traceback.format_exc()}"
-                        self.signals.finished.emit(self.tool["name"], "", error_msg)
-                        break # Salir del bucle en caso de error crítico
-            else:
-                # Lógica existente para otros traductores
-                translated_text_raw = asyncio.run(translatorz.translatorz(
-                    self.tool["name"], self.text, self.source_lang, self.target_lang
-                ))
-                translated_text = str(translated_text_raw) # Ensure it's a string
+            translated_text_raw = asyncio.run(translatorz.translatorz(
+                self.tool["name"], self.text, self.source_lang, self.target_lang
+            ))
+            translated_text = str(translated_text_raw) # Ensure it's a string
 
-                if "Idioma escogido a traducir incompatible." in translated_text:
-                    self.signals.finished.emit(self.tool["name"], "", translated_text)
-                elif "Papago no está operativo por el momento, se corregira en actualizaciones posteriores." in translated_text:
-                    self.signals.finished.emit(self.tool["name"], "", translated_text)
-                else:
-                    self.signals.finished.emit(self.tool["name"], translated_text, "")
+            if "Idioma escogido a traducir incompatible." in translated_text:
+                self.signals.finished.emit(self.tool["name"], "", translated_text)
+            elif "Papago no está operativo por el momento, se corregira en actualizaciones posteriores." in translated_text:
+                self.signals.finished.emit(self.tool["name"], "", translated_text)
+            else:
+                self.signals.finished.emit(self.tool["name"], translated_text, "")
         except Exception as e: # pylint: disable=broad-exception-caught
             error_msg = f"{str(e)}\n\n{traceback.format_exc()}"
             self.signals.finished.emit(self.tool["name"], "", error_msg)
@@ -215,7 +193,7 @@ class ExpandedTextEditorDialog(QDialog):
 # pylint: disable=too-many-instance-attributes, too-many-lines
 class ToolsManager(QObject):
     """Gestiona la creación y configuración de herramientas de la aplicación."""
-    processing_finished = pyqtSignal(str)
+    processing_finished = pyqtSignal(str, str) # Added second str for error_message
 
     def __init__(self, app):
         super().__init__()
@@ -391,6 +369,9 @@ class ToolsManager(QObject):
                 )
                 self.custom_text_input.setFixedSize(280, 35)
                 self.custom_text_input.setFont(self.app.roboto_black_font)
+                self.custom_text_input.mousePressEvent = lambda event: self._open_expanded_editor(
+                    self.custom_text_input, "Editar Texto Global"
+                )
             if not hasattr(self, "use_custom_button"):
                 self.use_custom_button = QPushButton("USAR", self.app.content_container)
                 self.use_custom_button.setStyleSheet(
@@ -507,8 +488,16 @@ class ToolsManager(QObject):
             output_field.clear()
             QApplication.processEvents()
             task = self._translate_text(input_field, output_field, container.tool)
-            task.signals.finished.connect(self._handle_global_translation_finish)
-            task.signals.error_occurred.connect(self._handle_global_translation_error)
+            if task:
+                task.signals.finished.connect(self._handle_global_translation_finish)
+                task.signals.error_occurred.connect(self._handle_global_translation_error)
+            else:
+                # If task is None, it means an error occurred or input was empty for this specific tool.
+                # We should still decrement the active_global_threads count to avoid the button getting stuck.
+                self.active_global_threads -= 1
+                if self.active_global_threads <= 0:
+                    self.use_custom_button.setEnabled(True)
+                    self.use_custom_button.setText("USAR")
 
     def _handle_global_translation_finish(self, name, result, error):
         self.active_global_threads -= 1
@@ -908,6 +897,7 @@ class ToolsManager(QObject):
             
             # Envía la tarea al pool de hilos para su ejecución
             QThreadPool.globalInstance().start(task)
+            return task
 
         except Exception as e:
             error_msg = f"Error al iniciar la traducción: {str(e)}"
@@ -917,6 +907,7 @@ class ToolsManager(QObject):
             if use_button:
                 use_button.setEnabled(True)
                 use_button.setText("Usar")
+            return None
 
     def _handle_translation_finish(self, name, result, error, output_container, use_button):
         """Maneja el resultado de una traducción una vez que ha finalizado."""
@@ -1634,7 +1625,7 @@ class ToolsManager(QObject):
         """Inicia la descarga e instalación de Hakuneko."""
         self.download_hakuneko()
 
-    def _start_gemini_processing(self):
+    def _start_gemini_processing(self, retry_from_mistral=False):
         """Inicia Gemini en segundo plano validando rutas y manejando cancelaciones."""
         try:
             if not self.output_directory: # output_directory is always required
@@ -1647,25 +1638,37 @@ class ToolsManager(QObject):
 
             self.cancel_event = threading.Event()
 
-            if hasattr(self, 'selected_files_for_processing') and self.selected_files_for_processing:
-                # Process selected files
-                self.processing_thread = threading.Thread(
-                    target=self.gemini_processor._process_selected_files_gemini,
-                    args=(self.selected_files_for_processing, self.output_directory, self.cancel_event, self._handle_processing_finished)
-                )
-                self.processing_thread.start()
-                # Clear selected files after starting processing
-                self.selected_files_for_processing = []
-            elif self.input_path:
-                # Process input directory
-                self.processing_thread = self.gemini_processor.start_processing_in_background(
-                    self.input_path,
-                    self.output_directory,
-                    self.cancel_event,
-                    callback=self._handle_processing_finished,
-                )
-            else:
-                raise ValueError("Las rutas de entrada o archivos seleccionados deben estar configurados.")
+            def processing_target_gemini():
+                try:
+                    if hasattr(self, 'selected_files_for_processing') and self.selected_files_for_processing:
+                        # Process selected files
+                        self.gemini_processor._process_selected_files_gemini(
+                            self.selected_files_for_processing, self.output_directory, self.cancel_event, 
+                            lambda status: self._handle_processing_finished(status, None) # Pass None for error_message initially
+                        )
+                        # Clear selected files after starting processing
+                        self.selected_files_for_processing = []
+                    elif self.input_path:
+                        # Process input directory
+                        self.gemini_processor.start_processing_in_background(
+                            self.input_path,
+                            self.output_directory,
+                            self.cancel_event,
+                            callback=lambda status: self._handle_processing_finished(status, None), # Pass None for error_message initially
+                        )
+                    else:
+                        raise ValueError("Las rutas de entrada o archivos seleccionados deben estar configurados.")
+                except GeminiAPIError as e:
+                    if retry_from_mistral:
+                        # If already retrying from Mistral and Gemini also fails, just show error and stop
+                        self._handle_processing_finished("error", f"Ambos modelos (Mistral y Gemini) fallaron: {e}")
+                    else:
+                        self._handle_processing_finished("error_gemini_api", str(e))
+                except Exception as e:
+                    self._handle_processing_finished("error", str(e))
+
+            self.processing_thread = threading.Thread(target=processing_target_gemini)
+            self.processing_thread.start()
 
             QMessageBox.information(
                 self.app,
@@ -1701,7 +1704,7 @@ class ToolsManager(QObject):
                 "No hay ningún procesamiento en curso para cancelar.",
             )
 
-    def _start_mistral_processing(self):
+    def _start_mistral_processing(self, retry_from_gemini=False):
         """Inicia Mistral en segundo plano validando rutas y manejando cancelaciones."""
         try:
             if not self.output_directory: # output_directory is always required
@@ -1714,25 +1717,37 @@ class ToolsManager(QObject):
 
             self.cancel_event = threading.Event()
 
-            if hasattr(self, 'selected_files_for_processing') and self.selected_files_for_processing:
-                # Process selected files
-                self.processing_thread = threading.Thread(
-                    target=self.mistral_processor._process_selected_files_mistral,
-                    args=(self.selected_files_for_processing, self.output_directory, self.cancel_event, self._handle_processing_finished)
-                )
-                self.processing_thread.start()
-                # Clear selected files after starting processing
-                self.selected_files_for_processing = []
-            elif self.input_path:
-                # Process input directory
-                self.processing_thread = self.mistral_processor.start_processing_in_background(
-                    self.input_path,
-                    self.output_directory,
-                    self.cancel_event,
-                    callback=self._handle_processing_finished,
-                )
-            else:
-                raise ValueError("Las rutas de entrada o archivos seleccionados deben estar configurados.")
+            def processing_target_mistral():
+                try:
+                    if hasattr(self, 'selected_files_for_processing') and self.selected_files_for_processing:
+                        # Process selected files
+                        self.mistral_processor._process_selected_files_mistral(
+                            self.selected_files_for_processing, self.output_directory, self.cancel_event, 
+                            lambda status: self._handle_processing_finished(status, None) # Pass None for error_message initially
+                        )
+                        # Clear selected files after starting processing
+                        self.selected_files_for_processing = []
+                    elif self.input_path:
+                        # Process input directory
+                        self.mistral_processor.start_processing_in_background(
+                            self.input_path,
+                            self.output_directory,
+                            self.cancel_event,
+                            callback=lambda status: self._handle_processing_finished(status, None), # Pass None for error_message initially
+                        )
+                    else:
+                        raise ValueError("Las rutas de entrada o archivos seleccionados deben estar configurados.")
+                except MistralAPIError as e:
+                    if retry_from_gemini:
+                        # If already retrying from Gemini and Mistral also fails, just show error and stop
+                        self._handle_processing_finished("error", f"Ambos modelos (Gemini y Mistral) fallaron: {e}")
+                    else:
+                        self._handle_processing_finished("error_mistral_api", str(e))
+                except Exception as e:
+                    self._handle_processing_finished("error", str(e))
+
+            self.processing_thread = threading.Thread(target=processing_target_mistral)
+            self.processing_thread.start()
 
             QMessageBox.information(
                 self.app,
@@ -1767,11 +1782,13 @@ class ToolsManager(QObject):
                 "No hay ningún procesamiento en curso para cancelar.",
             )
 
-    def _handle_processing_finished(self, status):
-        """Envía el resultado a través de la señal (seguro para hilos)"""
-        self.processing_finished.emit(status)
+    
 
-    def _show_completion_message(self, status):
+    def _handle_processing_finished(self, status, error_message=None):
+        """Envía el resultado a través de la señal (seguro para hilos)"""
+        self.processing_finished.emit(status, error_message)
+
+    def _show_completion_message(self, status, error_message=None):
         """Muestra el mensaje en el hilo principal"""
         title = ""
         message = ""
@@ -1781,9 +1798,14 @@ class ToolsManager(QObject):
         elif status == "cancelled":
             title = "Proceso Cancelado"
             message = "El procesamiento ha sido cancelado por el usuario."
+        elif status == "error_gemini_api" or status == "error_mistral_api":
+            self._show_model_switch_dialog(status, error_message)
+            return # Don't show generic error message here
         else:  # status == "error"
             title = "Error"
             message = "Ocurrió un error durante el procesamiento."
+            if error_message:
+                message += f"\nDetalles: {error_message}"
 
         QMessageBox.information(
             self.app,
@@ -1792,6 +1814,58 @@ class ToolsManager(QObject):
         )
 
         # RESET BUTTON STATES - ADDED FIX
+        if hasattr(self, 'gemini_start_button'):
+            self.gemini_start_button.setEnabled(True)
+        if hasattr(self, 'gemini_cancel_button'):
+            self.gemini_cancel_button.setEnabled(False)
+        
+        if hasattr(self, 'mistral_start_button'):
+            self.mistral_start_button.setEnabled(True)
+        if hasattr(self, 'mistral_cancel_button'):
+            self.mistral_cancel_button.setEnabled(False)
+
+    def _show_model_switch_dialog(self, error_status, error_message):
+        """
+        Muestra un diálogo al usuario cuando se produce un error de API,
+        ofreciendo la opción de cambiar de modelo o cancelar.
+        """
+        current_model_type = "Gemini" if error_status == "error_gemini_api" else "Mistral"
+        
+        msg_box = QMessageBox(self.app)
+        msg_box.setWindowTitle(f"Error de {current_model_type} API")
+        msg_box.setText(f"Se produjo un error con la API de {current_model_type}:\n\n{error_message}\n\n¿Deseas intentar con el otro modelo o cancelar el procesamiento?")
+        
+        switch_button = msg_box.addButton("Cambiar a otro modelo", QMessageBox.AcceptRole)
+        cancel_button = msg_box.addButton("Cancelar procesamiento", QMessageBox.RejectRole)
+        
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.exec_()
+
+        if msg_box.clickedButton() == switch_button:
+            self._switch_model_and_retry(current_model_type)
+        elif msg_box.clickedButton() == cancel_button:
+            self._reset_processing_buttons()
+            QMessageBox.information(self.app, "Proceso Cancelado", "El procesamiento ha sido cancelado.")
+
+    def _switch_model_and_retry(self, failed_model_type):
+        """
+        Cambia al modelo alternativo y reintenta el procesamiento.
+        """
+        if failed_model_type == "Gemini":
+            new_model_type = "Mistral"
+            # Set Mistral as the current model in Config (if applicable)
+            # This part needs to be handled carefully, as Config.GEMINI_MODEL is for Gemini
+            # and MistralProcessor uses its own self.model.
+            # For now, we'll just call the Mistral processing directly.
+            self._start_mistral_processing(retry_from_gemini=True) # Pass a flag to indicate retry
+        elif failed_model_type == "Mistral":
+            new_model_type = "Gemini"
+            self._start_gemini_processing(retry_from_mistral=True) # Pass a flag to indicate retry
+        
+        QMessageBox.information(self.app, "Cambiando Modelo", f"Intentando procesar con {new_model_type}...")
+
+    def _reset_processing_buttons(self):
+        """Resetea el estado de los botones de procesamiento."""
         if hasattr(self, 'gemini_start_button'):
             self.gemini_start_button.setEnabled(True)
         if hasattr(self, 'gemini_cancel_button'):

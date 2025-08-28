@@ -11,6 +11,10 @@ from google.genai import types
 from google.genai.types import HarmCategory, HarmBlockThreshold
 from PIL import Image
 
+class GeminiAPIError(Exception):
+    """Custom exception for Gemini API errors."""
+    pass
+
 # Configurar rutas del proyecto
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if root_dir not in sys.path:
@@ -100,12 +104,15 @@ class GeminiProcessor:
             if response and response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
                 return response.text
             else:
-                logging.warning("La respuesta de Gemini para la grilla no contiene texto o fue bloqueada.")
-                return "Sin datos de personajes (respuesta bloqueada o vacía)"
+                block_reason = response.candidates[0].finish_reason.name if response.candidates[0].finish_reason else "DESCONOCIDO"
+                error_msg = f"La respuesta de Gemini para la grilla no contiene texto o fue bloqueada. Razón: {block_reason}."
+                logging.warning(error_msg)
+                raise GeminiAPIError(error_msg)
 
         except Exception as e:
-            logging.error(f"Error generando grilla: {str(e)}")
-            return "Error al generar análisis de personajes"
+            error_msg = f"Error generando grilla: {str(e)}"
+            logging.error(error_msg)
+            raise GeminiAPIError(error_msg)
 
     def combine_texts(self, output_dir, combined_content, chapter_name, master_content=None):
         """Combina contenido y genera archivos finales con verificación de errores"""
@@ -242,7 +249,7 @@ class GeminiProcessor:
                         logging.warning(f"Error de conexión (intento {attempt+1}/{max_retries}): {e}. Reintentando en {wait_time:.1f} segundos...")
                         time.sleep(wait_time)
                     else:
-                        raise  # Relanza la excepción después del último intento
+                        raise GeminiAPIError(f"Error de conexión persistente con Gemini: {e}") # Relanza como GeminiAPIError
             
             ai_end_time = time.time()
             print(f"Tiempo de procesamiento de IA para {file_path}: {ai_end_time - ai_start_time:.4f} segundos")
@@ -258,11 +265,14 @@ class GeminiProcessor:
                     else:
                         # Esto maneja el caso donde el contenido es None o no tiene partes (bloqueado)
                         block_reason = candidate.finish_reason.name if candidate.finish_reason else "DESCONOCIDO"
-                        logging.warning(f"Contenido bloqueado por la API de Gemini para {file_path}. Razón: {block_reason}.")
-                        return f"ERROR_BLOQUEO_GEMINI: Contenido bloqueado - Razón: {block_reason}"
+                        error_msg = f"Contenido bloqueado por la API de Gemini para {file_path}. Razón: {block_reason}."
+                        logging.warning(error_msg)
+                        raise GeminiAPIError(error_msg)
             else:
                 # Esto maneja el caso donde la respuesta no tiene candidatos (muy raro)
-                logging.warning(f"No se encontraron candidatos en la respuesta de Gemini para {file_path}. Respuesta: {response}")
+                error_msg = f"No se encontraron candidatos en la respuesta de Gemini para {file_path}. Respuesta: {response}"
+                logging.warning(error_msg)
+                raise GeminiAPIError(error_msg)
 
             # Guardar archivo individual en /paginas
             base_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -277,6 +287,11 @@ class GeminiProcessor:
                 print(f"Tiempo total transcurrido: {total_elapsed_time:.2f}s | Imágenes procesadas: {self.image_count}")
             
             return "\n".join(translations)
+
+        except Exception as e:
+            error_msg = f"Error procesando {file_path}: {str(e)}"
+            logging.error(error_msg, exc_info=True)
+            raise GeminiAPIError(error_msg)
 
         except Exception as e:
             logging.error(f"Error procesando {file_path}: {str(e)}", exc_info=True)
@@ -325,9 +340,12 @@ class GeminiProcessor:
                     start_time = time.time()
 
                 print(f"Procesando imagen {i}/{len(image_files)}: {os.path.basename(image_path)}")
-                content = self.process_file(image_path, output_dir, input_base)
-                if content:
+                try:
+                    content = self.process_file(image_path, output_dir, input_base)
                     combined_content.append(content)
+                except GeminiAPIError as e:
+                    logging.error(f"Error de Gemini al procesar imagen {os.path.basename(image_path)} en capítulo {os.path.basename(chapter_path)}: {e}")
+                    return "error_gemini_api" # Return a specific status for Gemini API errors
 
             # Generar archivos combinados para el capítulo inmediatamente después de procesar las imágenes
             if combined_content:
@@ -385,7 +403,9 @@ class GeminiProcessor:
                 chapter_status = self.process_chapter(
                     chapter_path, output_dir, cancel_event, input_base
                 )
-                if chapter_status != "success":
+                if chapter_status == "error_gemini_api":
+                    return "error_gemini_api" # Propagate the specific error
+                elif chapter_status != "success":
                     status = chapter_status  # Marcar que hubo un error, pero continuar
 
             # Si se procesaron subdirectorios, crear los archivos consolidados para la serie
@@ -470,13 +490,13 @@ class GeminiProcessor:
                     callback("cancelled")
                     return
 
-                content = self.process_file(file_path, output_dir, common_input_base)
-                if content and not content.startswith("ERROR_BLOQUEO_GEMINI:"): # Only append if content is valid and not an error message
+                try:
+                    content = self.process_file(file_path, output_dir, common_input_base)
                     combined_content.append(content)
-                else: # If process_file returns empty string or error message, it indicates an error
+                except GeminiAPIError as e:
                     error_occurred = True
-                    # Log the error, but continue processing other files
-                    logging.error(f"Error al procesar {file_path}. Continuando con las demás imágenes.")
+                    logging.error(f"Error de Gemini al procesar {file_path}: {e}")
+                    # Continue processing other files, but mark that an error occurred
 
             # After processing all files, combine them and generate grid if there's content
             if combined_content:

@@ -14,6 +14,10 @@ pages_dir = os.path.join(os.path.dirname(__file__), "pages")
 from PIL import Image
 import requests
 
+class MistralAPIError(Exception):
+    """Custom exception for Mistral API errors."""
+    pass
+
 # Configurar rutas del proyecto
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if root_dir not in sys.path:
@@ -119,7 +123,7 @@ class MistralProcessor:
                         logging.warning(f"Error de conexión (intento {attempt+1}/{max_retries}): {e}. Reintentando en {wait_time:.1f} segundos...")
                         time.sleep(wait_time)
                     else:
-                        raise  # Relanza la excepción después del último intento
+                        raise MistralAPIError(f"Error de conexión persistente con Mistral: {e}") # Relanza como MistralAPIError
             
             ai_end_time = time.time()
             print(f"Tiempo de procesamiento de IA para {file_path}: {ai_end_time - ai_start_time:.4f} segundos")
@@ -142,12 +146,14 @@ class MistralProcessor:
                 return result_text
 
             else:
-                logging.error(f"Error en procesamiento: {response.text}")
-                return ""
+                error_msg = f"Error en procesamiento: {response.text}"
+                logging.error(error_msg)
+                raise MistralAPIError(error_msg)
 
         except Exception as e:
-            logging.error(f"Error procesando {file_path}: {str(e)}", exc_info=True)
-            return ""
+            error_msg = f"Error procesando {file_path}: {str(e)}"
+            logging.error(error_msg, exc_info=True)
+            raise MistralAPIError(error_msg)
 
     def generar_grilla(self, content):
         """Genera análisis de personajes con reintentos para errores de conexión."""
@@ -189,7 +195,7 @@ class MistralProcessor:
                         logging.warning(f"Error de conexión (intento {attempt+1}/{max_retries}): {e}. Reintentando en {wait_time:.1f} segundos...")
                         time.sleep(wait_time)
                     else:
-                        raise  # Relanza la excepción después del último intento
+                        raise MistralAPIError(f"Error de conexión persistente con Mistral: {e}") # Relanza como MistralAPIError
             
             ai_end_time = time.time()
             print(f"Tiempo de procesamiento de IA para grilla: {ai_end_time - ai_start_time:.4f} segundos")
@@ -197,12 +203,14 @@ class MistralProcessor:
             if response.status_code == 200:
                 return response.json()["choices"][0]["message"]["content"]
             else:
-                logging.error(f"Error en generación de grilla: {response.text}")
-                return "Error al generar análisis de personajes"
+                error_msg = f"Error en generación de grilla: {response.text}"
+                logging.error(error_msg)
+                raise MistralAPIError(error_msg)
 
         except Exception as e:
-            logging.error(f"Error generando grilla: {str(e)}")
-            return "Error al generar análisis de personajes"
+            error_msg = f"Error generando grilla: {str(e)}"
+            logging.error(error_msg)
+            raise MistralAPIError(error_msg)
 
     def combine_texts(self, output_dir, combined_content, chapter_name, master_content=None):
         """Combina contenido y genera archivos finales con verificación de errores"""
@@ -300,9 +308,12 @@ class MistralProcessor:
                     start_time = time.time()
 
                 print(f"Procesando imagen {i}/{len(image_files)}: {os.path.basename(image_path)}")
-                content = self.process_file(image_path, output_dir, input_base)
-                if content:
+                try:
+                    content = self.process_file(image_path, output_dir, input_base)
                     combined_content.append(content)
+                except MistralAPIError as e:
+                    logging.error(f"Error de Mistral al procesar imagen {os.path.basename(image_path)} en capítulo {os.path.basename(chapter_path)}: {e}")
+                    return "error_mistral_api" # Return a specific status for Mistral API errors
 
             # Generar archivos combinados para el capítulo
             if combined_content:
@@ -360,7 +371,9 @@ class MistralProcessor:
                 chapter_status = self.process_chapter(
                     chapter_path, output_dir, cancel_event, input_base
                 )
-                if chapter_status != "success":
+                if chapter_status == "error_mistral_api":
+                    return "error_mistral_api" # Propagate the specific error
+                elif chapter_status != "success":
                     status = chapter_status
 
             # Crear archivos consolidados para la serie
@@ -440,15 +453,19 @@ class MistralProcessor:
             if os.path.isfile(common_input_base):
                 common_input_base = os.path.dirname(common_input_base)
             
+            combined_content = [] # Initialize combined_content here
 
             for file_path in file_paths:
                 if cancel_event and cancel_event.is_set():
                     callback("cancelled")
                     return
 
-                content = self.process_file(file_path, output_dir, common_input_base)
-                if not content: # If process_file returns empty string, it indicates an error
-                    callback("error")
+                try:
+                    content = self.process_file(file_path, output_dir, common_input_base)
+                    combined_content.append(content)
+                except MistralAPIError as e:
+                    logging.error(f"Error de Mistral al procesar {file_path}: {e}")
+                    callback("error_mistral_api") # Indicate specific error
                     return
 
             callback("success")
