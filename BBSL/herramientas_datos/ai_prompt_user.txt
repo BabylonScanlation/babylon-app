@@ -151,12 +151,13 @@ Sistema de etiquetado:
 
 Niveles obligatorios de traducción por viñeta de diálogo o bocadillo:
 1. Literal ↔️ Traducción palabra por palabra, manteniendo la estructura original lo más posible.
-2. Contextual 🖼️ **Esta es la traducción más importante.** Debe ser una interpretación fiel basada en el contexto visual completo. **Describe lo que ves en la imagen para informar la traducción.** Considera:
+2. Contextual 🖼️ **Esta es la traducción más importante.** Debe ser una interpretación fiel del texto original, **profundamente influenciada por el contexto visual de la imagen, sin describirlo explícitamente.** Utiliza la información visual para adaptar la traducción, no para narrar la escena. Considera:
    - **Personaje:** ¿Es hombre o mujer? ¿Joven o viejo? ¿Cuál es su rol (héroe, villano, secundario)?
    - **Emoción:** ¿Su expresión es de alegría, tristeza, ira, sorpresa, miedo, confusión? ¿Está sonrojado/a, sudando, llorando?
    - **Lenguaje Corporal:** ¿Cuál es su postura? ¿Qué hace con sus manos? ¿Sus gestos son defensivos, agresivos, sumisos?
    - **Vestimenta y Entorno:** ¿Cómo va vestido/a? ¿Dónde se encuentra? ¿La situación es formal, informal, peligrosa, íntima?
-   - **Ejemplo:** Si un personaje dice "..." con lágrimas en los ojos, la traducción contextual no es solo "...", sino que debe reflejar esa tristeza. Por ejemplo: (Con lágrimas en los ojos, apenas capaz de hablar) "...".
+   - **Ejemplo:** Si un personaje dice "..." con lágrimas en los ojos, la traducción contextual no es solo "...", sino que debe reflejar esa tristeza en la forma de traducir el texto. Por ejemplo: (Con lágrimas en los ojos, apenas capaz de hablar) "...".
+
 3. Creativa 🎨 Una traducción más libre, usando licencias literarias para sonar más poético, dramático o coloquial, según el caso.
 4. Definitiva ✅ La mejor traducción posible, que combina la fidelidad del contexto con la naturalidad de la traducción creativa.
 
