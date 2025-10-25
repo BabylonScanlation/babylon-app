@@ -42,7 +42,7 @@ class Config:
     GENERAL_TOOLS_FOLDER = resource_path(os.path.join("BBSL", "herramientas"))
     WINDOW_TITLE = "Babylon Scanlation"
     WINDOW_SIZE = (1200, 600)
-    GEMINI_API_KEY = "AIzaSyBPNOkv5VEHwLiuyYsyVHHW6qKtQAWabj8"
+    GEMINI_API_KEY = "AIzaSyCjyPJZMGO89qaVzhgJhsC875D83Se8pAc"
     USER_SETTINGS_FILE = os.path.join(USER_DATA_DIR, "user_settings.json")
 
     @staticmethod
