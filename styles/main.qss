@@ -1,0 +1,163 @@
+/* --- AURA DESIGN SYSTEM: TACTICAL HOLOGRAPHIC V2 --- */
+
+QMainWindow {
+    background: transparent;
+}
+
+QWidget {
+    font-family: "Roboto", "Segoe UI", sans-serif;
+    color: #e0e0e0;
+}
+
+/* --- TEXTURA DE FONDO TECH (REJILLA HOLOGRÁFICA) --- */
+/* Aplicamos esto a los paneles principales para darles textura */
+#MenuPanel, 
+#OptionsMainPanel, 
+#GeminiConfigPanel, 
+#ToolCard, 
+#CyberFrame, 
+#LogConsoleFrame,
+#MistralProcessorPanel,
+QFrame#CyberFrame {
+    /* Fondo base oscuro + Rejilla sutil */
+    background-color: rgba(15, 17, 23, 235);
+    background-image: 
+        linear-gradient(rgba(157, 70, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(157, 70, 255, 0.03) 1px, transparent 1px);
+    background-size: 20px 20px; /* Tamaño de la cuadrícula */
+    background-position: center center;
+
+    /* Borde estilo cristal iluminado (arriba claro, abajo oscuro) */
+    border-top: 1px solid rgba(157, 70, 255, 0.6);
+    border-left: 1px solid rgba(157, 70, 255, 0.3);
+    border-right: 1px solid rgba(0, 0, 0, 0.5);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.8);
+    
+    border-radius: 12px;
+}
+
+/* --- Efecto Hover "High-Tech" para Tarjetas --- */
+#ToolCard:hover {
+    background-color: rgba(25, 27, 35, 240);
+    border: 1px solid #9d46ff; /* Borde completo neón al pasar el mouse */
+    box-shadow: 0 0 15px rgba(157, 70, 255, 0.3); /* (Nota: QSS no soporta box-shadow complejo, simulamos con borde) */
+}
+
+/* --- Botones Generales "Tactical" --- */
+QPushButton {
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(157, 70, 255, 0.3);
+    border-radius: 4px; /* Bordes más rectos = más técnico */
+    color: #b0b0b0;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase; /* TODO EN MAYÚSCULAS */
+    letter-spacing: 1px; /* Espaciado ancho */
+}
+
+QPushButton:hover {
+    background-color: rgba(157, 70, 255, 0.1);
+    border: 1px solid #bd7aff;
+    color: #ffffff;
+}
+
+QPushButton:pressed {
+    background-color: rgba(157, 70, 255, 0.25);
+    border-color: #bd7aff;
+}
+
+QPushButton:disabled {
+    background: transparent;
+    border: 1px dashed rgba(100, 100, 100, 0.5);
+    color: rgba(255, 255, 255, 0.2);
+}
+
+/* --- Inputs y Áreas de Texto (Terminal Style) --- */
+QLineEdit, QTextEdit {
+    background-color: rgba(5, 5, 8, 0.8);
+    border: 1px solid rgba(157, 70, 255, 0.2);
+    border-radius: 4px;
+    color: #00ffcc; /* Texto color cian neón para inputs (muy hacker) */
+    font-family: "Consolas", "Roboto Mono", monospace; /* Fuente monoespaciada */
+    padding: 8px;
+    selection-background-color: #9d46ff;
+    selection-color: white;
+}
+
+QLineEdit:focus, QTextEdit:focus {
+    border: 1px solid #00ffcc; /* Borde cian al enfocar */
+    background-color: rgba(5, 5, 8, 0.95);
+}
+
+QLineEdit::placeholder, QTextEdit::placeholder {
+    color: rgba(157, 70, 255, 0.4);
+    font-family: "Roboto"; /* Placeholder normal */
+    font-style: italic;
+    text-transform: none;
+}
+
+/* --- Combobox (Dropdowns Tecnológicos) --- */
+QComboBox {
+    background-color: rgba(10, 12, 16, 0.9);
+    border: 1px solid rgba(157, 70, 255, 0.4);
+    border-radius: 4px;
+    padding: 5px 10px;
+    color: #e0e0e0;
+    font-weight: bold;
+}
+
+QComboBox:hover {
+    border: 1px solid #00ffcc; /* Hover cian */
+    color: white;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 25px;
+    background: rgba(157, 70, 255, 0.1); /* Fondo sutil para la flecha */
+}
+
+QComboBox QAbstractItemView {
+    background-color: #0f1116;
+    border: 1px solid rgba(157, 70, 255, 0.6);
+    selection-background-color: rgba(157, 70, 255, 0.3);
+    color: white;
+    outline: none;
+}
+
+/* --- Scrollbars (Integradas) --- */
+QScrollBar:vertical {
+    border: none;
+    background-color: rgba(0, 0, 0, 0.2);
+    width: 6px; /* Más finas */
+    margin: 0px;
+    border-radius: 3px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #572364; /* Violeta oscuro base */
+    min-height: 20px;
+    border-radius: 3px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #bd7aff; /* Violeta brillante hover */
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* --- Tooltips --- */
+QToolTip {
+    background-color: #050508;
+    color: #00ffcc;
+    border: 1px solid #00ffcc;
+    font-family: "Roboto Mono";
+    padding: 4px;
+}

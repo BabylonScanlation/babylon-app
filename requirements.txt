@@ -1,0 +1,14 @@
+yt-dlp
+PySide6
+opencv-python
+requests
+httpx
+google-genai
+Pillow
+langid
+deepl
+translators
+mistralai
+pentago
+pyinstaller
+python-dotenv

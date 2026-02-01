@@ -1,0 +1,26 @@
+# TODO - Mejoras y Deuda Técnica
+
+## 1. Arquitectura y Refactorización
+- [ ] Refactorizar `bbsl_app.py`: La clase `App` es demasiado grande ("God Class"). Separar lógica de UI, negocio y controladores.
+- [ ] Implementar patrón MVC (Modelo-Vista-Controlador) o MVVM para desacoplar la lógica.
+- [ ] Modularizar widgets: Mover componentes personalizados (como `ClickableThumbnail`) a sus propios archivos/módulos.
+- [ ] Crear controladores dedicados por funcionalidad (ej: `OCRController`, `TranslationController`).
+
+## 2. Concurrencia y Performance
+- [ ] Auditar hilos (Threading): Asegurar que TODAS las llamadas a APIs (Gemini, Mistral, etc.) y procesos pesados (OCR, OpenCV) se ejecuten en `QThread` o `QThreadPool` para no congelar la GUI.
+- [ ] Evaluar integración de `asyncio` + `qasync` para manejar peticiones HTTP de forma asíncrona y eficiente.
+
+## 3. Calidad de Código y Testing
+- [ ] Crear suite de pruebas: Configurar `pytest` y crear la carpeta `tests/`.
+- [ ] Añadir pruebas unitarias para la lógica de negocio crítica (parsers, gestión de configuración, utilidades).
+- [ ] Reforzar Type Hinting: Aumentar la cobertura de tipos y usar `mypy` para análisis estático.
+
+## 4. Seguridad
+- [ ] Gestión segura de Credenciales: Evitar guardar API Keys en texto plano. Implementar `keyring` o cifrado para el archivo de configuración sensible.
+
+## 5. UI/UX (Interfaz y Experiencia)
+- [ ] Externalizar Estilos: Extraer el estilo visual (colores, fuentes, bordes) a archivos `.qss` (Qt Style Sheets) separados.
+- [ ] Consola de Logs Integrada: Crear un widget en la interfaz que muestre el progreso y errores en tiempo real, reemplazando la dependencia de la terminal.
+
+## 6. Distribución y Mantenimiento
+- [ ] Sistema de Auto-Update: Implementar un mecanismo para comprobar nuevas versiones (ej: vía GitHub Releases) y actualizar el ejecutable automáticamente.

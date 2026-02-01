@@ -1,0 +1,16 @@
+# Archivos de Python generados
+__pycache__/
+*.pyc
+build/
+dist/
+venv_lite/
+*.vscode
+dev_tools/
+*.env
+
+# Archivos de log
+*.log
+
+# Archivos específicos del proyecto que no deben subirse
+gemini.md
+.env
