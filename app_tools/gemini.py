@@ -11,12 +11,12 @@ from google import genai as _genai_module # type: ignore
 from google.genai import types as _types_module # type: ignore
 from PIL import Image
 
+from app_tools.ai_service import BaseAIProcessor, AIAPIError
+from config import Config
+
 # Re-export as Any to silence Pylance unknown type errors
 genai: Any = cast(Any, _genai_module)
 types: Any = cast(Any, _types_module)
-
-from app_tools.ai_service import BaseAIProcessor, AIAPIError
-from config import Config
 
 class GeminiAPIError(AIAPIError):
     pass
@@ -108,7 +108,8 @@ class GeminiProcessor(BaseAIProcessor):
 
             for model in models_iter:
                 model_name = getattr(model, 'name', '')
-                if not model_name: continue
+                if not model_name:
+                    continue
                 name: str = str(model_name).lower().replace("models/", "")
                 is_gemini_3 = "gemini-3" in name
                 
@@ -117,17 +118,22 @@ class GeminiProcessor(BaseAIProcessor):
                         pass 
                     else:
                         continue
-                if not any(good in name for good in ALLOWED_FAMILIES): continue
+                if not any(good in name for good in ALLOWED_FAMILIES):
+                    continue
                 available_models.append(name)
             
             def sort_priority(m_name: str) -> int:
-                if "gemini-3" in m_name: return 3
-                if "latest" in m_name: return 0 
-                if "lite" in m_name: return 1
+                if "gemini-3" in m_name:
+                    return 3
+                if "latest" in m_name:
+                    return 0 
+                if "lite" in m_name:
+                    return 1
                 return 2 
 
             available_models.sort(key=sort_priority, reverse=True)
-            if not available_models: return ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3-flash-preview"]
+            if not available_models:
+                return ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3-flash-preview"]
             return available_models
         except Exception as e:
             logging.error(f"Error obteniendo modelos: {e}")
@@ -255,7 +261,8 @@ class GeminiProcessor(BaseAIProcessor):
                 while top < height:
                     bottom = min(top + max_height, height)
                     slices_info.append((top, bottom, part))
-                    if bottom == height: break
+                    if bottom == height:
+                        break
                     top += (max_height - overlap)
                     part += 1
 
@@ -265,7 +272,8 @@ class GeminiProcessor(BaseAIProcessor):
                     t, b, p = info
                     with Image.open(img_path) as thread_img:
                         cropped = thread_img.crop((0, t, width, b))
-                        if cropped.mode in ("RGBA", "P"): cropped = cropped.convert("RGB")
+                        if cropped.mode in ("RGBA", "P"):
+                            cropped = cropped.convert("RGB")
                         s_path = os.path.join(temp_dir, f"temp_slice_{base_name}_{p}.jpg")
                         cropped.save(s_path, format="JPEG", quality=80, optimize=False)
                         if os.path.getsize(s_path) > 6.8 * 1024 * 1024:
@@ -283,7 +291,8 @@ class GeminiProcessor(BaseAIProcessor):
             return [img_path]
 
     def call_api_batch(self, prompt: str, images: List[str], cancel_event: Optional[threading.Event] = None) -> List[str]:
-        if not images: return []
+        if not images:
+            return []
         
         # Guardar el modelo preferido original para restaurarlo al rotar keys
         preferred_model = Config.GEMINI_MODEL
@@ -381,7 +390,8 @@ class GeminiProcessor(BaseAIProcessor):
             temp_slices: List[str] = []
 
             try:
-                if cancel_event and cancel_event.is_set(): return ["CANCELLED"] * len(images)
+                if cancel_event and cancel_event.is_set():
+                    return ["CANCELLED"] * len(images)
 
                 for img_p in images:
                     # Usamos el slice_height dinámico
@@ -454,9 +464,10 @@ class GeminiProcessor(BaseAIProcessor):
                                 # Reconstruir lote sin resolución
                                 current_contents_fallback = [current_contents[0]]
                                 for img_path in batch_slices:
-                                     with open(img_path, "rb") as f: data = f.read()
-                                     mime = "image/png" if img_path.lower().endswith(".png") else "image/jpeg"
-                                     current_contents_fallback.append(types.Part.from_bytes(data=data, mime_type=mime))
+                                    with open(img_path, "rb") as f:
+                                        data = f.read()
+                                    mime = "image/png" if img_path.lower().endswith(".png") else "image/jpeg"
+                                    current_contents_fallback.append(types.Part.from_bytes(data=data, mime_type=mime))
                                 config.media_resolution = types.MediaResolution.MEDIA_RESOLUTION_HIGH
                                 current_contents = current_contents_fallback
                                 fallback_applied = True
@@ -476,7 +487,8 @@ class GeminiProcessor(BaseAIProcessor):
                     if batch_response_text:
                         parts = [p.strip() for p in batch_response_text.split(img_sep) if p.strip()]
                         # Rellenar si faltan partes en la respuesta del modelo
-                        while len(parts) < len(batch_slices): parts.append("[Error: Respuesta parcial en lote]")
+                        while len(parts) < len(batch_slices):
+                            parts.append("[Error: Respuesta parcial en lote]")
                         aggregated_results.extend(parts[:len(batch_slices)])
                     else:
                         aggregated_results.extend(["[ERROR: Sin respuesta de lote]"] * len(batch_slices))
@@ -498,11 +510,13 @@ class GeminiProcessor(BaseAIProcessor):
                 # Limpiar temporales
                 for temp_file in temp_slices:
                     try: 
-                        if os.path.exists(temp_file): os.remove(temp_file)
-                    except: pass
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                    except Exception:
+                        pass
                 
                 if is_quota_error:
-                    self._report_status(f"Cuota agotada en Key actual. Intentando estrategias de recuperación...")
+                    self._report_status("Cuota agotada en Key actual. Intentando estrategias de recuperación...")
                     
                     # 1. Intentar cambiar de modelo en la misma Key (si está habilitado)
                     if Config.ENABLE_AUTO_MODEL_SWITCH:
@@ -525,10 +539,12 @@ class GeminiProcessor(BaseAIProcessor):
             finally:
                 for temp_file in temp_slices:
                     try:
-                        if os.path.exists(temp_file): os.remove(temp_file)
-                    except: pass
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                    except Exception:
+                        pass
         
-        return [f"[ERROR API: Todas las keys agotadas]"] * len(images)
+        return ["[ERROR API: Todas las keys agotadas]"] * len(images)
 
     def process_chapter(self, chapter_path: str, output_dir: str, cancel_event: Any, input_base: str) -> str:
         image_files: List[str] = []
@@ -538,20 +554,23 @@ class GeminiProcessor(BaseAIProcessor):
                     image_files.append(os.path.join(root, f))
         
         image_files.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])
-        if not image_files: return "error"
+        if not image_files:
+            return "error"
 
         chunk_size = 5
         logging.info(f"Procesando capítulo con {Config.GEMINI_MODEL} | Lote: {chunk_size}")
 
         all_texts: List[str] = []
         for i in range(0, len(image_files), chunk_size):
-            if cancel_event and cancel_event.is_set(): return "cancelled"
+            if cancel_event and cancel_event.is_set():
+                return "cancelled"
             
             chunk = image_files[i : i + chunk_size]
             results = self.call_api_batch("", chunk, cancel_event=cancel_event)
             
             # Verificación de fallo inmediato
-            if results and results[0] == "CANCELLED": return "cancelled"
+            if results and results[0] == "CANCELLED":
+                return "cancelled"
             if results and results[0].startswith("[ERROR"):
                 return f"Error: {results[0]}"
             
@@ -564,40 +583,88 @@ class GeminiProcessor(BaseAIProcessor):
             return "success"
         return "error"
 
-    def process_selected_files_gemini(self, file_paths: List[str], output_dir: str, cancel_event: Any, callback: Any):
-        if not file_paths: return
-        file_paths.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])
+        def process_selected_files_gemini(self, file_paths: List[str], output_dir: str, cancel_event: Any, callback: Any):
 
-        chunk_size = 5
-        all_texts: List[str] = []
-        success_status = "success"
+            if not file_paths:
 
-        for i in range(0, len(file_paths), chunk_size):
-            if cancel_event and cancel_event.is_set():
-                success_status = "cancelled"
-                break
-            
-            chunk = file_paths[i : i + chunk_size]
-            results = self.call_api_batch("", chunk, cancel_event=cancel_event)
-            
-            # Verificación de fallo inmediato
-            if results and results[0] == "CANCELLED":
-                success_status = "cancelled"
-                break
-            if results and results[0].startswith("[ERROR"):
-                success_status = "error"
-                # Pasamos el error real al callback
-                if callback: callback("error_gemini_api", results[0])
-                return # Salir inmediatamente
+                return
 
-            all_texts.extend(results)
+            file_paths.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])
 
-        if success_status == "success" and all_texts:
-            first_dir = os.path.dirname(file_paths[0])
-            chapter_name = os.path.basename(first_dir)
-            self.combine_texts(output_dir, cast(List[Optional[str]], all_texts), f"{chapter_name}_seleccion")
-            if callback: callback("success")
-        elif success_status == "cancelled":
-            if callback: callback("cancelled")
-        else:
-            if callback: callback("error", "No se generó contenido. Verifica que los archivos sean válidos.")
+    
+
+            chunk_size = 5
+
+            all_texts: List[str] = []
+
+            success_status = "success"
+
+    
+
+            for i in range(0, len(file_paths), chunk_size):
+
+                if cancel_event and cancel_event.is_set():
+
+                    success_status = "cancelled"
+
+                    break
+
+                
+
+                chunk = file_paths[i : i + chunk_size]
+
+                results = self.call_api_batch("", chunk, cancel_event=cancel_event)
+
+                
+
+                # Verificación de fallo inmediato
+
+                if results and results[0] == "CANCELLED":
+
+                    success_status = "cancelled"
+
+                    break
+
+                if results and results[0].startswith("[ERROR"):
+
+                    success_status = "error"
+
+                    # Pasamos el error real al callback
+
+                    if callback:
+
+                        callback("error_gemini_api", results[0])
+
+                    return # Salir inmediatamente
+
+    
+
+                all_texts.extend(results)
+
+    
+
+            if success_status == "success" and all_texts:
+
+                first_dir = os.path.dirname(file_paths[0])
+
+                chapter_name = os.path.basename(first_dir)
+
+                self.combine_texts(output_dir, cast(List[Optional[str]], all_texts), f"{chapter_name}_seleccion")
+
+                if callback:
+
+                    callback("success")
+
+            elif success_status == "cancelled":
+
+                if callback:
+
+                    callback("cancelled")
+
+            else:
+
+                if callback:
+
+                    callback("error", "No se generó contenido. Verifica que los archivos sean válidos.")
+
+    

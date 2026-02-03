@@ -4,9 +4,11 @@ import sys
 import time
 import langid  # type: ignore
 import asyncio
-from typing import Any, Dict, cast
+from typing import Any, Dict, cast, List, Optional
 import threading
 import subprocess
+
+from config import Config
 
 # --- Monkey Patch para suprimir ventanas de cscript.exe (execjs) en Windows ---
 if sys.platform == "win32":
@@ -14,12 +16,10 @@ if sys.platform == "win32":
 
     class _PopenNoWindow(_original_popen):
         def __init__(self, *args, **kwargs):
-            # Forzar CREATE_NO_WINDOW (0x08000000)
             creationflags = kwargs.get('creationflags', 0)
             if not (creationflags & 0x08000000):
                 kwargs['creationflags'] = creationflags | 0x08000000
             
-            # Asegurar startupinfo con SW_HIDE
             if 'startupinfo' not in kwargs:
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -61,13 +61,6 @@ try:
 except ImportError:
     Pentago = None
 
-# Configurar rutas
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
-
-from config import Config
-
 # --- CONFIGURACIÓN ---
 GEMINI_CHEAP_MODEL = "gemini-2.5-flash-lite"
 GEMMA_TEXT_MODEL = "gemma-3-27b-it"
@@ -79,27 +72,65 @@ PROMPT_IA = (
     "IMPORTANTE: Devuelve ÚNICAMENTE la traducción, sin textos adicionales, sin introducciones y sin explicaciones."
 )
 
-# --- MAPEOS PRECISOS ---
+# --- MAPEOS PRECISOS (Sincronizado con UlionTse/translators README) ---
 MAPEO_UNIVERSAL: Dict[str, Dict[str, str]] = {
-    "es": {"default": "es", "baidu": "spa", "itranslate": "es-ES", "modernmt": "es-ES", "lingvanex": "es_ES", "deepl": "ES", "systran": "es", "cloudtrans": "es"},
-    "en": {"default": "en", "itranslate": "en-US", "modernmt": "en-GB", "lingvanex": "en_GB", "deepl": "EN-US", "systran": "en", "cloudtrans": "en"},
+    "es": {
+        "default": "es", "baidu": "spa", "itranslate": "es-ES", "modernmt": "es-ES", 
+        "lingvanex": "es_ES", "deepl": "ES", "systran": "es", "cloudtrans": "es"
+    },
+    "en": {
+        "default": "en", "itranslate": "en-US", "modernmt": "en-GB", 
+        "lingvanex": "en_GB", "deepl": "EN-US", "systran": "en", "cloudtrans": "en"
+    },
     "ja": {"default": "ja", "baidu": "jp", "deepl": "JA", "lingvanex": "ja_JP", "systran": "ja"},
     "ko": {"default": "ko", "baidu": "kor", "deepl": "KO", "lingvanex": "ko_KR", "systran": "ko"},
-    "zh-TW": {"default": "zh-TW", "baidu": "cht", "lingvanex": "zh-Hant_TW", "systran": "zh", "cloudtrans": "zh-tw"},
-    "zh-CN": {"default": "zh-CN", "baidu": "zh", "lingvanex": "zh-Hans_CN", "systran": "zh", "cloudtrans": "zh-cn"},
+    
+    # Chino Simplificado
+    "zh": {
+        "default": "zh-CN", "google": "zh-CN", "bing": "zh-Hans", "yandex": "zh", 
+        "baidu": "zh", "itranslate": "zh-CN", "lingvanex": "zh-Hans_CN"
+    },
+    "zh-CN": {
+        "default": "zh-CN", "google": "zh-CN", "bing": "zh-Hans", "yandex": "zh", 
+        "baidu": "zh", "itranslate": "zh-CN", "lingvanex": "zh-Hans_CN"
+    },
+    
+    # Chino Tradicional
+    "zh-TW": {
+        "default": "zh-TW", "google": "zh-TW", "bing": "zh-Hant", "yandex": "zh-Hant", 
+        "baidu": "cht", "itranslate": "zh-TW", "lingvanex": "zh-Hant_TW"
+    },
 }
 
 def obtener_codigo(traductor: str, lang_code: str) -> str:
+    """Retorna el código de idioma específico para cada motor."""
+    if lang_code == "auto":
+        return "auto"
+        
     traductor = traductor.lower()
-    base_code = lang_code.split("-")[0].split("_")[0]
-    lang_map = MAPEO_UNIVERSAL.get(lang_code, MAPEO_UNIVERSAL.get(base_code, {}))
-    return str(lang_map.get(traductor, lang_map.get("default", base_code)))
+    
+    # Normalizar códigos de detección comunes
+    if lang_code == "zh": 
+        lang_code = "zh-CN"
+        
+    # Buscar en el mapa
+    lang_map = MAPEO_UNIVERSAL.get(lang_code)
+    if not lang_map:
+        # Intentar con el código base (ej: 'en-US' -> 'en')
+        base_code = lang_code.split("-")[0].split("_")[0]
+        lang_map = MAPEO_UNIVERSAL.get(base_code, {})
+    
+    return str(lang_map.get(traductor, lang_map.get("default", lang_code)))
 
 def detectar_idioma(texto: str) -> str:
     try:
-        if len(texto.split()) <= 2:
-            return "es" if any(c in texto.lower() for c in "áéíóúñ") else "en"
-        # Usamos type: ignore porque classify devuelve un tipo parcialmente desconocido para Pylance
+        # Prioridad a Chino/Japonés/Coreano por caracteres
+        if any('\u4e00' <= c <= '\u9fff' for c in texto):
+            tradicionales = "體國會斷廣惡顯現車貝門門"
+            return "zh-TW" if any(c in texto for c in tradicionales) else "zh-CN"
+        if any('\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff' for c in texto): return "ja"
+        if any('\uac00' <= c <= '\ud7af' for c in texto): return "ko"
+        
         res = langid.classify(texto) # type: ignore
         return str(res[0]).split("-")[0]
     except Exception:
@@ -109,30 +140,21 @@ def detectar_idioma(texto: str) -> str:
 
 def _translate_baidu_with_retries(text: str, from_l: str, to_l: str) -> str:
     if ts is None: return "Error: translators no disponible."
-    
-    # Aumentar intentos porque Baidu es inestable
     max_retries = 15 
-    
     for i in range(max_retries):
         try:
             res = cast(Any, ts).translate_text(text, translator='baidu', from_language=from_l, to_language=to_l, timeout=10)
             res_str = _ensure_string_result(res)
-            
-            # Si devuelve mensaje de no certificado o está vacío, reintentar
             if "not certified" in res_str or not res_str.strip():
                 if i < max_retries - 1:
-                    time.sleep(1.0 + (i * 0.2)) # Backoff ligero
+                    time.sleep(1.0 + (i * 0.2))
                     continue
-                else:
-                    return "Error Baidu: Servicio inestable o no certificado tras múltiples intentos."
-            
+                else: return "Error Baidu: Servicio inestable."
             return res_str
-            
         except Exception as e:
             if i == max_retries - 1: return f"Error Baidu: {str(e)}"
             time.sleep(1.5)
-            
-    return "Error Baidu: Fallo tras múltiples reintentos."
+    return "Error Baidu: Fallo reintentos."
 
 def _translate_papago_pentago(text: str, source_lang: str, target_lang: str) -> str:
     if Pentago is None: return "Error: pentago no instalado."
@@ -141,88 +163,74 @@ def _translate_papago_pentago(text: str, source_lang: str, target_lang: str) -> 
         p_map = {"es": lang.SPANISH, "en": lang.ENGLISH, "ja": lang.JAPANESE, "ko": lang.KOREAN, "auto": lang.AUTO}
         src = p_map.get(source_lang.split("-")[0], lang.AUTO)
         tgt = p_map.get(target_lang.split("-")[0], lang.SPANISH)
-        async def _do():
-            return await asyncio.wait_for(cast(Any, Pentago)(src, tgt).translate(text), timeout=15.0)
+        async def _do(): return await asyncio.wait_for(cast(Any, Pentago)(src, tgt).translate(text), timeout=15.0)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             res = cast(Dict[str, Any], loop.run_until_complete(_do()))
             return str(res.get('translatedText', text))
-        finally:
-            loop.close()
-    except Exception as e:
-        return f"Error Papago: {str(e)}"
+        finally: loop.close()
+    except Exception as e: return f"Error Papago: {str(e)}"
 
 def _ensure_string_result(result: Any) -> str:
     if isinstance(result, str): return result.strip()
-    if isinstance(result, (list, tuple)):
-        # type: ignore silencia advertencias sobre p y str() en generadores con tipos desconocidos
-        return " ".join(str(p) for p in result if p).strip() # type: ignore
+    if isinstance(result, (list, tuple)): return " ".join(str(p) for p in result if p).strip() # type: ignore
     if isinstance(result, dict):
         res_dict = cast(Dict[str, Any], result)
-        # Intentar extraer de forma segura sin asumir estructura fija
         data = res_dict.get('data')
         if isinstance(data, dict):
             if 'content' in data: return str(data['content']).strip()
             if 'translation' in data: return str(data['translation']).strip()
-        
         if 'translateText' in res_dict: return str(res_dict['translateText']).strip()
         if 'translation' in res_dict: return str(res_dict['translation']).strip()
-        
-        # Si es un dict pero no reconocemos la clave, devolver el primer valor que parezca texto
         for val in res_dict.values():
             if isinstance(val, str) and val.strip(): return val.strip()
-            
         return str(result).strip()
     return str(result).strip() if result is not None else ""
 
 def translatorz(translator_name: str, text: str, source_lang: str, target_lang: str) -> str:
     if not text.strip(): return ""
-    
     with _global_lock:
         try:
-            # 1. Especiales
             if translator_name == "Papago": return _translate_papago_pentago(text, source_lang, target_lang)
-            
             if translator_name == "DeepL":
                 if deepl is None: return "Error: deepl no instalado."
                 t = cast(Any, deepl).Translator(Config.DEEPL_API_KEY)
                 res = t.translate_text(text, target_lang=obtener_codigo("deepl", target_lang))
                 return str(getattr(res, 'text', res))
-                
             if translator_name == "Gemini":
                 if genai is None: return "Error: google-genai no instalado."
                 client = cast(Any, genai).Client(api_key=Config.GEMINI_API_KEY)
-                prompt = PROMPT_IA.format(idioma=MAPEO_UNIVERSAL.get(target_lang, {}).get("default", "Español"))
-                
-                # Intentar primero con Gemma (Modelo de texto puro de alta calidad)
+                prompt = PROMPT_IA.format(idioma=obtener_codigo("default", target_lang))
                 try:
                     res = client.models.generate_content(model=GEMMA_TEXT_MODEL, contents=[f"{prompt}\n\nTexto: {text}"])
                     return str(res.text).strip()
                 except Exception:
-                    # Fallback a Gemini Flash Lite si Gemma falla (por cuota o disponibilidad)
                     res = client.models.generate_content(model=GEMINI_CHEAP_MODEL, contents=[f"{prompt}\n\nTexto: {text}"])
                     return str(res.text).strip()
-                
             if translator_name == "Mistral":
                 if Mistral is None: return "Error: mistralai no instalado."
                 client = cast(Any, Mistral)(api_key=Config.MISTRAL_API_KEY)
-                prompt = PROMPT_IA.format(idioma=MAPEO_UNIVERSAL.get(target_lang, {}).get("default", "Español"))
+                prompt = PROMPT_IA.format(idioma=obtener_codigo("default", target_lang))
                 res = client.chat.complete(model=Config.MISTRAL_MODEL, messages=[{"role": "user", "content": f"{prompt}\n\nTexto: {text}"}])
                 return str(res.choices[0].message.content).strip()
 
-            # 2. Librería 'translators'
             if ts is None: return "Error: translators no disponible."
             
             lib_name = translator_name.lower() if translator_name != "iTranslate" else "itranslate"
             if lib_name == "transmart": lib_name = "qqTranSmart"
-            if lib_name == "systran": lib_name = "sysTran"
-            if lib_name == "cloudtrans": lib_name = "cloudTranslation"
+            elif lib_name == "systran": lib_name = "sysTran"
+            elif lib_name == "cloudtrans": lib_name = "cloudTranslation"
             
-            from_l = source_lang
-            if from_l == "auto": from_l = detectar_idioma(text)
+            # --- MANEJO DE AUTO Y MAPEO ---
+            if source_lang == "auto":
+                # README UlionTse: from_language defaults to 'auto'.
+                # Detectamos internamente para poder mapear zh-CN/zh-TW si el motor es estricto.
+                from_l = detectar_idioma(text)
+                from_l_mapped = obtener_codigo(lib_name, from_l)
+            else:
+                from_l_mapped = obtener_codigo(lib_name, source_lang)
             
-            from_l_mapped = obtener_codigo(lib_name, from_l)
             to_l_mapped = obtener_codigo(lib_name, target_lang)
             
             if lib_name == "baidu":
@@ -240,5 +248,5 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
         except Exception as e:
             error_str = str(e)
             if translator_name == "Yandex" and "Unsupported from_language[ko]" in error_str:
-                return "Error: Yandex Translate no soporta Coreano como idioma de origen."
+                return "Error: Yandex no soporta Coreano origen."
             return f"Error en {translator_name}: {error_str}"

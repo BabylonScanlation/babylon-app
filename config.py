@@ -30,7 +30,7 @@ def global_exception_handler(exc_type: Type[BaseException], exc_value: BaseExcep
         QMessageBox.critical(
             None, "Error Crítico", f"Se produjo un error inesperado:\n\n{error_message}"
         )
-    except:
+    except Exception:
         # Si falla la UI, al menos ya está en el log
         pass
 
@@ -124,7 +124,8 @@ class Config:
     @classmethod
     def get_next_gemini_key(cls, current_key: str) -> str:
         """Rota a la siguiente API Key disponible."""
-        if not cls.GEMINI_API_KEYS: return current_key
+        if not cls.GEMINI_API_KEYS:
+            return current_key
         try:
             idx = cls.GEMINI_API_KEYS.index(current_key)
             return cls.GEMINI_API_KEYS[(idx + 1) % len(cls.GEMINI_API_KEYS)]

@@ -1,5 +1,4 @@
-import os
-from typing import Optional, List, Dict, Any, cast
+from typing import Any, cast
 from PySide6.QtCore import Qt, Signal, QThreadPool
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
@@ -360,11 +359,13 @@ class GeminiConfigPanel(QWidget):
             "GEMINI_TEMPERATURE": 1.0
         }
         api_key = self.gemini_api_input.text().strip()
-        if api_key: settings["GEMINI_API_KEY"] = api_key
+        if api_key:
+            settings["GEMINI_API_KEY"] = api_key
         
         Config.save_user_settings(settings)
         # Update Config in memory
-        for k, v in settings.items(): setattr(Config, k, v)
+        for k, v in settings.items():
+            setattr(Config, k, v)
         
         self.hide()
         self.closed.emit()

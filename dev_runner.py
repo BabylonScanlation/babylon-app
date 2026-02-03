@@ -5,11 +5,12 @@ import subprocess
 import glob
 from pathlib import Path
 import threading
+from typing import Any, cast
 
 # Forzar salida UTF-8 en la consola de Windows para este script
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
+    cast(Any, sys.stdout).reconfigure(encoding='utf-8')
+    cast(Any, sys.stderr).reconfigure(encoding='utf-8')
 
 # Configuración
 MAIN_SCRIPT = "bbsl_app.py"
@@ -94,7 +95,7 @@ def main():
                             process = None # Reset para reiniciar
                             break
                 else:
-                    print(f"\n✅ La aplicación se cerró correctamente.")
+                    print("\n✅ La aplicación se cerró correctamente.")
                     # Si se cerró bien, ¿quizás el usuario la cerró? Esperamos cambios o reiniciamos?
                     # Asumimos que si la cerró el usuario, quiere esperar.
                     while True:

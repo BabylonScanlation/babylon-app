@@ -1,7 +1,7 @@
 import os
 import cv2
-from typing import Optional, List
-from PySide6.QtCore import QTimer, QPropertyAnimation, Qt
+from typing import Optional, List, Any, cast
+from PySide6.QtCore import QTimer, QPropertyAnimation
 from PySide6.QtWidgets import QLabel, QGraphicsOpacityEffect, QWidget
 from PySide6.QtGui import QPixmap, QImage
 from config import Config
@@ -55,7 +55,7 @@ class BackgroundManager:
         if self.carousel_timer.isActive():
             self.carousel_timer.stop()
         
-        if self._initialize_video_capture():
+        if self._initialize_video_capture() and self.cap:
             self.background_label.hide()
             self.video_label.show()
             fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -97,7 +97,7 @@ class BackgroundManager:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame = cv2.resize(frame, Config.WINDOW_SIZE)
             h, w, ch = frame.shape
-            q_img = QImage(frame.data, w, h, ch * w, QImage.Format.Format_RGB888)
+            q_img = QImage(cast(Any, frame.data), w, h, ch * w, QImage.Format.Format_RGB888)
             self.video_label.setPixmap(QPixmap.fromImage(q_img))
         else:
             # Reiniciar video (loop)

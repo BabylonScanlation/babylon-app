@@ -1,6 +1,6 @@
 import sys
 import traceback
-from typing import Callable, Any, Tuple
+from typing import Callable
 from PySide6.QtCore import QRunnable, QObject, Signal, Slot
 
 class WorkerSignals(QObject):
@@ -35,7 +35,7 @@ class Worker(QRunnable):
         """
         try:
             result = self.fn(*self.args, **self.kwargs)
-        except:
+        except Exception:
             # Capturar excepción completa
             traceback.print_exc()
             exctype, value = sys.exc_info()[:2]

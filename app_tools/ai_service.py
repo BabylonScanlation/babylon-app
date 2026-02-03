@@ -161,7 +161,8 @@ class BaseAIProcessor:
             chapter_name = os.path.basename(chapter_path)
             rel_path = os.path.relpath(chapter_path, input_base)
             # Evitar salirnos del directorio si rel_path empieza con ..
-            if rel_path.startswith(".."): rel_path = chapter_name
+            if rel_path.startswith(".."):
+                rel_path = chapter_name
             
             chapter_output_dir = os.path.join(output_dir, rel_path)
             self.combine_texts(chapter_output_dir, combined_content, chapter_name)
@@ -191,12 +192,14 @@ class BaseAIProcessor:
                 status = "success"
                 for root, dirs, _ in os.walk(input_path):
                     for d in dirs:
-                        if cancel_event.is_set(): return "cancelled"
+                        if cancel_event.is_set():
+                            return "cancelled"
                         chapter_path = os.path.join(root, d)
                         # Verificar si tiene imágenes
                         if any(f.lower().endswith(Config.SUPPORTED_FORMATS) for f in os.listdir(chapter_path)):
                             res = self.process_chapter(chapter_path, output_dir, cancel_event, input_base)
-                            if res != "success": status = res
+                            if res != "success":
+                                status = res
                 return status
 
         except Exception as e:
@@ -204,17 +207,21 @@ class BaseAIProcessor:
             return "error"
 
     def start_processing_in_background(self, input_path: str, output_dir: str, cancel_event: Optional[threading.Event] = None, callback: Optional[Callable[[str], None]] = None):
-        if cancel_event is None: self.cancel_event = Event()
-        else: self.cancel_event = cancel_event
+        if cancel_event is None:
+            self.cancel_event = Event()
+        else:
+            self.cancel_event = cancel_event
             
         def _run():
             try:
                 # self.cancel_event no será None aquí debido a la lógica anterior
                 assert self.cancel_event is not None
                 result = self.process_input_path(input_path, output_dir, self.cancel_event)
-                if callback: callback(result)
+                if callback:
+                    callback(result)
             except Exception as e:
                 logging.error(f"Error en background thread: {e}", exc_info=True)
-                if callback: callback("error")
+                if callback:
+                    callback("error")
                 
         Thread(target=_run, daemon=True).start()

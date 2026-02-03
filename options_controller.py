@@ -1,5 +1,5 @@
 import os
-from typing import TYPE_CHECKING, List, Union, cast
+from typing import TYPE_CHECKING, List, Union, cast, Any
 
 import cv2
 import requests
@@ -58,13 +58,14 @@ class OptionsController(QObject):
 
     def pause_resume_video(self):
         """Pausa o reanuda la reproducción del video."""
-        if self.app.cap is not None and self.app.cap.isOpened():
-            if self.app.timer is not None:
-                if self.app.timer.isActive():
-                    self.app.timer.stop()
+        app_any = cast(Any, self.app)
+        if app_any.cap is not None and app_any.cap.isOpened():
+            if app_any.timer is not None:
+                if app_any.timer.isActive():
+                    app_any.timer.stop()
                 else:
-                    self.app.timer.start(
-                        int(1000 / self.app.cap.get(cv2.CAP_PROP_FPS))
+                    app_any.timer.start(
+                        int(1000 / app_any.cap.get(cv2.CAP_PROP_FPS))
                     )  # pylint: disable=no-member
 
     def set_background_type(self, bg_type: str):
@@ -84,9 +85,10 @@ class OptionsController(QObject):
                 if self.app.audio_player is not None:
                     # En PySide6 manejamos la lista manualmente si es necesario, 
                     # o simplemente cargamos el archivo seleccionado.
-                    self.app.playlist_files = [QUrl.fromLocalFile(file_path)]
-                    self.app.current_audio_index = 0
-                    self.app.audio_player.setSource(self.app.playlist_files[0])
+                    app_any = cast(Any, self.app)
+                    app_any.playlist_files = [QUrl.fromLocalFile(file_path)]
+                    app_any.current_audio_index = 0
+                    self.app.audio_player.setSource(app_any.playlist_files[0])
                     self.app.audio_player.play()
             except (FileNotFoundError, ValueError) as e:
                 QMessageBox.critical(
@@ -111,9 +113,10 @@ class OptionsController(QObject):
             return
         try:
             if self.app.audio_player is not None:
-                self.app.playlist_files = [QUrl(url)]
-                self.app.current_audio_index = 0
-                self.app.audio_player.setSource(self.app.playlist_files[0])
+                app_any = cast(Any, self.app)
+                app_any.playlist_files = [QUrl(url)]
+                app_any.current_audio_index = 0
+                self.app.audio_player.setSource(app_any.playlist_files[0])
                 self.app.audio_player.play()
         except (FileNotFoundError, ValueError):
             msg = QMessageBox(self.app)
@@ -188,26 +191,27 @@ class OptionsController(QObject):
 
     def update_video_source(self, source: str):
         """Actualizar la fuente del video y liberar recursos previos."""
-        if self.app.cap is not None:
-            if self.app.cap.isOpened():
-                self.app.cap.release()
-            if self.app.timer is not None:
-                self.app.timer.stop()
+        app_any = cast(Any, self.app)
+        if app_any.cap is not None:
+            if app_any.cap.isOpened():
+                app_any.cap.release()
+            if app_any.timer is not None:
+                app_any.timer.stop()
         try:
-            self.app.cap = cv2.VideoCapture(source)  # pylint: disable=no-member
-            if self.app.cap.isOpened():
-                if self.app.timer is not None:
-                    self.app.timer.start(
-                        int(1000 / self.app.cap.get(cv2.CAP_PROP_FPS))
+            app_any.cap = cv2.VideoCapture(source)  # pylint: disable=no-member
+            if app_any.cap.isOpened():
+                if app_any.timer is not None:
+                    app_any.timer.start(
+                        int(1000 / app_any.cap.get(cv2.CAP_PROP_FPS))
                     )  # pylint: disable=no-member
-                if self.app.background_label is not None:
-                    self.app.background_label.hide()
+                if app_any.background_label is not None:
+                    app_any.background_label.hide()
             else:
-                if self.app.background_label is not None:
-                    self.app.background_label.show()
+                if app_any.background_label is not None:
+                    app_any.background_label.show()
         except (IOError, OSError, ValueError):
-            if self.app.background_label is not None:
-                self.app.background_label.show()
+            if app_any.background_label is not None:
+                app_any.background_label.show()
 
     def load_local_image(self):
         """Cargar imagen local para fondo."""
@@ -244,34 +248,35 @@ class OptionsController(QObject):
 
     def update_image_source(self, source: Union[str, QPixmap]):
         """Actualizar la fuente de la imagen."""
+        app_any = cast(Any, self.app)
         if isinstance(source, str):
             pixmap = QPixmap(source)
         else:
             pixmap = source
         if not pixmap.isNull():
             scaled_pixmap = pixmap.scaled(
-                self.app.width(),
-                self.app.height(),
+                app_any.width(),
+                app_any.height(),
                 Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            if self.app.background_label is not None:
-                self.app.background_label.setPixmap(scaled_pixmap)
-                self.app.background_label.show()
-            if self.app.cap is not None:
-                if self.app.cap.isOpened():
-                    self.app.cap.release()
-                if self.app.timer is not None:
-                    self.app.timer.stop()
+            if app_any.background_label is not None:
+                app_any.background_label.setPixmap(scaled_pixmap)
+                app_any.background_label.show()
+            if app_any.cap is not None:
+                if app_any.cap.isOpened():
+                    app_any.cap.release()
+                if app_any.timer is not None:
+                    app_any.timer.stop()
         else:
-            if self.app.background_label is not None:
-                self.app.background_label.setStyleSheet("background-color: black;")
-                self.app.background_label.show()
-            if self.app.cap is not None:
-                if self.app.cap.isOpened():
-                    self.app.cap.release()
-                if self.app.timer is not None:
-                    self.app.timer.stop()
+            if app_any.background_label is not None:
+                app_any.background_label.setStyleSheet("background-color: black;")
+                app_any.background_label.show()
+            if app_any.cap is not None:
+                if app_any.cap.isOpened():
+                    app_any.cap.release()
+                if app_any.timer is not None:
+                    app_any.timer.stop()
 
     def handle_bg_type_change(self, bg_type: str):
         """Manejar cambio de tipo de fondo."""

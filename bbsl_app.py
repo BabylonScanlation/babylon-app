@@ -3,54 +3,40 @@ Proporciona una interfaz gráfica para acceder a diversas herramientas y gestion
 """
 
 import logging
-
-# bibliotecas nativas
 import os
 import sys
-
-# 1. INICIALIZAR LOGGING GLOBAL INMEDIATAMENTE
-# Esto asegura que capturemos TODO desde el primer milisegundo
-from log_console import LogConsole, init_global_logging
-init_global_logging()
-
-# Silenciar logs ruidosos de librerías externas (después de init para que hereden config)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-# urllib3 también suele ser ruidoso
-logging.getLogger("urllib3").setLevel(logging.WARNING) 
-
 import webbrowser
+import time
 from typing import Optional, List, Dict, Any, cast
-from config import USER_DATA_DIR, DEFAULT_GEMINI_SYSTEM_INSTRUCTION
-from PySide6.QtCore import QTimer, QPropertyAnimation
-from PySide6.QtWidgets import QGraphicsOpacityEffect
-
-# git fetch --all
-# git reset --hard origin/main
 
 # bibliotecas no nativas
 import cv2
 import requests
-import time
 
-# pylint: disable=no-name-in-module
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal, QSharedMemory
-from PySide6.QtGui import QFont, QFontDatabase, QIcon, QImage, QPixmap, QCursor, QMouseEvent, QShowEvent, QCloseEvent
+from PySide6.QtCore import Qt, QUrl, Signal, QSharedMemory, QTimer
+from PySide6.QtGui import QFont, QFontDatabase, QIcon, QPixmap, QMouseEvent, QCloseEvent
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtWidgets import (
     QApplication, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QPushButton, QScrollArea, QTextEdit, QVBoxLayout,
-    QWidget, QComboBox, QCheckBox, QMessageBox, QLineEdit, QFrame
+    QWidget, QComboBox, QCheckBox, QLineEdit, QFrame
 )
 
+from log_console import LogConsole, init_global_logging
+from config import USER_DATA_DIR, Config, resource_path, global_exception_handler
 from project_manager import ProjectManager
 from tools import ToolsManager
-from config import Config, resource_path, global_exception_handler
 from options_menu import OptionsMenu
-from log_console import LogConsole
 from ui_components import ClickableThumbnail
 from gemini_config_panel import GeminiConfigPanel
 from background_manager import BackgroundManager
 
+# 1. INICIALIZAR LOGGING GLOBAL INMEDIATAMENTE
+init_global_logging()
+
+# Silenciar logs ruidosos de librerías externas
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING) 
 
 sys.excepthook = global_exception_handler
 
@@ -168,12 +154,12 @@ class App(QMainWindow):
         env_mistral = os.getenv("MISTRAL_API_KEY")
         if env_mistral:
             Config.MISTRAL_API_KEY = env_mistral
-            print(f"✅ MISTRAL: Clave cargada.")
+            print("✅ MISTRAL: Clave cargada.")
             
         env_deepl = os.getenv("DEEPL_API_KEY")
         if env_deepl:
             Config.DEEPL_API_KEY = env_deepl
-            print(f"✅ DEEPL: Clave cargada.")
+            print("✅ DEEPL: Clave cargada.")
         print("--------------------------------------\n")
 
     def _setup_main_window(self):
@@ -252,12 +238,12 @@ class App(QMainWindow):
         if self.timer:
             self.timer.timeout.connect(self._update_frame)
         if self.background_label:
-            self.background_label.hide()
+            cast(Any, self).background_label.hide()
 
     def _start_video_playback(self):
         """Inicia la reproducción de video."""
         if self.cap and self.cap.isOpened() and self.timer:
-            fps = self.cap.get(cv2.CAP_PROP_FPS)  # pylint: disable=no-member
+            fps = cast(Any, self).cap.get(cv2.CAP_PROP_FPS)  # pylint: disable=no-member
             if fps > 0:
                 self.timer.start(int(1000 / fps))
 

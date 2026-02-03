@@ -1,11 +1,9 @@
 import logging
-import sys
 import os
 import threading
 import codecs
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QFrame
-from PySide6.QtCore import Signal, QObject, Qt, QCoreApplication
-from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QVBoxLayout, QTextEdit, QFrame
+from PySide6.QtCore import Signal, QObject
 
 # --- Sistema Global de Logging ---
 class LogSignal(QObject):
@@ -129,7 +127,7 @@ def init_global_logging():
 
 def init_signals():
     """Inicializa las señales Qt (Fase 2: Conectar UI). Llamar DESPUÉS de crear QApplication."""
-    global LOG_SIGNAL, UI_HANDLER
+    global LOG_SIGNAL
     if UI_HANDLER:
         LOG_SIGNAL = LogSignal()
         UI_HANDLER.set_emitter(LOG_SIGNAL)

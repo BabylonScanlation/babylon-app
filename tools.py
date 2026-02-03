@@ -340,13 +340,15 @@ class ToolsManager(QObject):
                 self.source_combo = QComboBox(self.header_panel)
                 # ... (resto de configuración del combo igual)
                 langs_origen = [("Auto", "auto"), ("Chino Tradicional", "zh-TW"), ("Chino Simplificado", "zh-CN"), ("Coreano", "ko"), ("Japonés", "ja"), ("Inglés", "en"), ("Español", "es")]
-                for lang_name, lang_code in langs_origen: self.source_combo.addItem(lang_name, lang_code)
+                for lang_name, lang_code in langs_origen:
+                    self.source_combo.addItem(lang_name, lang_code)
                 self.source_combo.setGeometry(120, 2, 120, 35)
 
             if not self.target_combo:
                 self.target_combo = QComboBox(self.header_panel)
                 langs_destino = [("Chino Tradicional", "zh-TW"), ("Chino Simplificado", "zh-CN"), ("Coreano", "ko"), ("Japonés", "ja"), ("Inglés", "en"), ("Español", "es")]
-                for lang_name, lang_code in langs_destino: self.target_combo.addItem(lang_name, lang_code)
+                for lang_name, lang_code in langs_destino:
+                    self.target_combo.addItem(lang_name, lang_code)
                 self.target_combo.setGeometry(245, 2, 120, 35)
                 self.target_combo.setCurrentIndex(5)
 
@@ -814,7 +816,8 @@ class ToolsManager(QObject):
             image_label.setPixmap(pixmap.scaled(50, 50, qt_any.KeepAspectRatio, qt_any.SmoothTransformation))
         
         def open_tool_site(_event: Any):
-            if tool["name"] in Config.TOOL_URLS: webbrowser.open(Config.TOOL_URLS[tool["name"]])
+            if tool["name"] in Config.TOOL_URLS:
+                webbrowser.open(Config.TOOL_URLS[tool["name"]])
         image_label.mousePressEvent = open_tool_site
         image_label.setCursor(qt_any.PointingHandCursor)
         right_side_layout.addWidget(image_label, alignment=qt_any.AlignCenter)
@@ -1079,10 +1082,12 @@ class ToolsManager(QObject):
         if self.utilities_area:
             if "scroll" in self.utilities_area:
                 scroll_widget = cast(QWidget, self.utilities_area["scroll"])
-                if scroll_widget: scroll_widget.hide()
+                if scroll_widget:
+                    scroll_widget.hide()
             if "footer" in self.utilities_area:
                 footer_widget = cast(QWidget, self.utilities_area["footer"])
-                if footer_widget: footer_widget.hide()
+                if footer_widget:
+                    footer_widget.hide()
 
         if self.gemini_container:
             self.gemini_container.show()
@@ -1916,8 +1921,10 @@ class ToolsManager(QObject):
             
         except ValueError as e:
             QMessageBox.critical(self.app, "Error", f"Error durante el procesamiento: {e}")
-            if hasattr(self, 'gemini_start_button'): self.gemini_start_button.setEnabled(True)
-            if hasattr(self, 'gemini_cancel_button'): self.gemini_cancel_button.setEnabled(False)
+            if hasattr(self, 'gemini_start_button'):
+                self.gemini_start_button.setEnabled(True)
+            if hasattr(self, 'gemini_cancel_button'):
+                self.gemini_cancel_button.setEnabled(False)
 
     def _cancel_gemini_processing(self):
         """Cancela el procesamiento en curso de Gemini."""
@@ -2194,7 +2201,8 @@ class ToolsManager(QObject):
     def _process_selected_files_gemini(self, file_paths: List[str], output_dir: Optional[str], cancel_event: threading.Event, callback: Optional[Callable[[str, Optional[str]], None]] = None):
         """Procesa una lista de archivos seleccionados delegando en el procesador especializado."""
         if not output_dir:
-            if callback: callback("error", "No se ha configurado el directorio de salida.")
+            if callback:
+                callback("error", "No se ha configurado el directorio de salida.")
             return
 
         # Delegar en el método de GeminiProcessor que ya tiene lógica de lotes y guardado
@@ -2207,7 +2215,8 @@ class ToolsManager(QObject):
             )
         except Exception as e:
             logging.error(f"Error delegando procesamiento Gemini: {e}")
-            if callback: callback("error", str(e))
+            if callback:
+                callback("error", str(e))
 
     def open_path_for_prompt(self, text_box: QLineEdit):
         """Abre un cuadro de diálogo para seleccionar un archivo .txt y actualiza la ruta."""

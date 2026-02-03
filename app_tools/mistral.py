@@ -81,7 +81,8 @@ class MistralProcessor(BaseAIProcessor):
         """Compatibilidad con firma antigua."""
         self.reset_counters()
         input_base = os.path.commonpath(file_paths)
-        if os.path.isfile(input_base): input_base = os.path.dirname(input_base)
+        if os.path.isfile(input_base):
+            input_base = os.path.dirname(input_base)
         
         try:
             for f in file_paths:
