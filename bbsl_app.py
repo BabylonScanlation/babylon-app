@@ -73,7 +73,7 @@ class App(QMainWindow):
         self.timer: Optional[QTimer] = None # Inicialización temprana para evitar errores en _check_single_instance
 
         if not self._check_single_instance():
-            print("INFO: Ya hay una instancia de la aplicación ejecutándose. Cerrando...")
+            logging.info("Ya hay una instancia de la aplicación ejecutándose. Cerrando...")
             if hasattr(self, 'timer') and self.timer is not None and self.timer.isActive():
                 self.timer.stop()
             if hasattr(self, 'cap') and self.cap is not None and self.cap.isOpened():
@@ -138,29 +138,29 @@ class App(QMainWindow):
 
     def _sync_env_to_config(self):
         """Si existen claves en .env, forzar su uso en Config."""
-        print("\n--- Sincronización de Credenciales ---")
+        logging.info("--- Sincronización de Credenciales ---")
         env_gemini = os.getenv("GEMINI_API_KEY")
         if env_gemini:
             keys = [k.strip() for k in env_gemini.split(",") if k.strip()]
             Config.GEMINI_API_KEY = keys[0] if keys else ""
             Config.GEMINI_API_KEYS = list(dict.fromkeys(keys))
-            print(f"✅ GEMINI: Se cargaron {len(Config.GEMINI_API_KEYS)} claves desde .env")
+            logging.info(f"✅ GEMINI: Se cargaron {len(Config.GEMINI_API_KEYS)} claves desde .env")
             for i, k in enumerate(Config.GEMINI_API_KEYS):
                 masked = k[:4] + "..." + k[-4:] if len(k) > 8 else "???"
-                print(f"   [{i+1}] {masked}")
+                logging.info(f"   [{i+1}] {masked}")
         else:
-            print("⚠️ GEMINI: No se encontraron claves en .env")
+            logging.warning("⚠️ GEMINI: No se encontraron claves en .env")
 
         env_mistral = os.getenv("MISTRAL_API_KEY")
         if env_mistral:
             Config.MISTRAL_API_KEY = env_mistral
-            print("✅ MISTRAL: Clave cargada.")
+            logging.info("✅ MISTRAL: Clave cargada.")
             
         env_deepl = os.getenv("DEEPL_API_KEY")
         if env_deepl:
             Config.DEEPL_API_KEY = env_deepl
-            print("✅ DEEPL: Clave cargada.")
-        print("--------------------------------------\n")
+            logging.info("✅ DEEPL: Clave cargada.")
+        logging.info("--------------------------------------")
 
     def _setup_main_window(self):
         """Configura la ventana principal con video o imagen de fondo."""

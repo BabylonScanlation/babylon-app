@@ -152,23 +152,12 @@ class Config:
     MISTRAL_PROMPT: str = resource_path(os.path.join("BBSL", "herramientas_datos", "ai_prompt_user.txt"))
     
     ICON_PATH = resource_path(os.path.join("app_media", "img-aux", "icono.ico"))
-    CAROUSEL_IMAGES = [
-        resource_path(os.path.join("app_media", "img-aux", f"carousel_{i:02d}.jpg")) for i in range(1, 19) if os.path.exists(resource_path(os.path.join("app_media", "img-aux", f"carousel_{i:02d}.jpg")))
-    ] + [
-        resource_path(os.path.join("app_media", "img-aux", f"carousel_{i:02d}.png")) for i in range(1, 19) if os.path.exists(resource_path(os.path.join("app_media", "img-aux", f"carousel_{i:02d}.png")))
-    ]
+    CAROUSEL_IMAGES = []
     CAROUSEL_INTERVAL = 60000 
     LOGO_PATH = resource_path(os.path.join("app_media", "img-aux", "logo.png"))
-    VIDEO_PATH = resource_path(os.path.join("app_media", "vid-aux", "video.mp4"))
-    BACKGROUND_PATH = resource_path(os.path.join("app_media", "img-aux", "carousel_01.jpg"))
-    AUDIO_FILES = [
-        resource_path(os.path.join("app_media", "aud-aux", "walls.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "YrGGFK.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "russian_roulette.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "fairytale.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "echo.mp3")),
-        resource_path(os.path.join("app_media", "aud-aux", "devil_eyes.mp3"))
-    ]
+    VIDEO_PATH = "" # Video eliminado para reducir tamaño
+    BACKGROUND_PATH = "" 
+    AUDIO_FILES = [] # Audios eliminados para reducir tamaño
     HELP_VIDEOS = [
         {'id': 'QwxG2S_PCMQ', 'title': 'Guía sobre TyperTools'},
         {'id': 'q94bCgsk3_Q', 'title': 'Cómo usar TyperTools'},

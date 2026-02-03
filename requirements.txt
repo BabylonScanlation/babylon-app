@@ -1,6 +1,6 @@
 yt-dlp
 PySide6
-opencv-python
+opencv-python-headless
 requests
 httpx
 google-genai
