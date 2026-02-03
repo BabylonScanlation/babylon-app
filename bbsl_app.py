@@ -76,8 +76,9 @@ class App(QMainWindow):
             logging.info("Ya hay una instancia de la aplicación ejecutándose. Cerrando...")
             if hasattr(self, 'timer') and self.timer is not None and self.timer.isActive():
                 self.timer.stop()
-            if hasattr(self, 'cap') and self.cap is not None and self.cap.isOpened():
-                self.cap.release()
+            cap_any = cast(Any, getattr(self, 'cap', None))
+            if cap_any and cap_any.isOpened():
+                cap_any.release()
 
             QApplication.quit()
             sys.exit(0) # Fallback exit
@@ -222,7 +223,8 @@ class App(QMainWindow):
         """Inicializa o detiene el vídeo según elección del usuario."""
         try:
             self.cap = cv2.VideoCapture(Config.VIDEO_PATH)  # pylint: disable=no-member
-            if not self.cap or not self.cap.isOpened():
+            cap_any = cast(Any, self.cap)
+            if not cap_any or not cap_any.isOpened():
                 raise ValueError("No se pudo abrir el archivo de video")
             return True
         except (IOError, OSError, ValueError):
@@ -242,10 +244,11 @@ class App(QMainWindow):
 
     def _start_video_playback(self):
         """Inicia la reproducción de video."""
-        if self.cap and self.cap.isOpened() and self.timer:
-            fps = cast(Any, self).cap.get(cv2.CAP_PROP_FPS)  # pylint: disable=no-member
-            if fps > 0:
-                self.timer.start(int(1000 / fps))
+        cap_any = cast(Any, self.cap)
+        if cap_any and cap_any.isOpened() and self.timer:
+            self.timer.start(30)
+            if self.video_label:
+                self.video_label.show()
 
     def closeEvent(self, a0: QCloseEvent):  # pylint: disable=invalid-name, unused-argument
         """Liberar recursos al cerrar la aplicación."""
@@ -274,12 +277,17 @@ class App(QMainWindow):
         """Load custom fonts from specified paths."""
         custom_fonts: List[QFont] = []
         for font_path in Config.FONT_PATHS:
-            if os.path.exists(font_path):
-                font_id = QFontDatabase.addApplicationFont(font_path)
+            # Forzar el uso de resource_path para el ejecutable
+            abs_path = resource_path(font_path)
+            if os.path.exists(abs_path):
+                font_id = QFontDatabase.addApplicationFont(abs_path)
                 if font_id != -1:
                     families = QFontDatabase.applicationFontFamilies(font_id)
                     if families:
+                        logging.info(f"✅ Fuente cargada: {families[0]}")
                         custom_fonts.append(QFont(families[0]))
+                else:
+                    logging.warning(f"❌ Error al cargar fuente: {abs_path}")
         return custom_fonts
 
     def _set_custom_fonts(self):
@@ -1052,8 +1060,8 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
     
-    # Cargar estilos globales
-    qss_path = os.path.join("styles", "main.qss")
+    # Cargar y aplicar estilos QSS
+    qss_path = resource_path(os.path.join("styles", "main.qss"))
     if os.path.exists(qss_path):
         with open(qss_path, "r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())

@@ -583,88 +583,48 @@ class GeminiProcessor(BaseAIProcessor):
             return "success"
         return "error"
 
-        def process_selected_files_gemini(self, file_paths: List[str], output_dir: str, cancel_event: Any, callback: Any):
+    def process_selected_files_gemini(self, file_paths: List[str], output_dir: str, cancel_event: Any, callback: Any):
+        if not file_paths:
+            return
 
-            if not file_paths:
+        file_paths.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])
 
-                return
+        chunk_size = 5
+        all_texts: List[str] = []
+        success_status = "success"
 
-            file_paths.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])
-
-    
-
-            chunk_size = 5
-
-            all_texts: List[str] = []
-
-            success_status = "success"
-
-    
-
-            for i in range(0, len(file_paths), chunk_size):
-
-                if cancel_event and cancel_event.is_set():
-
-                    success_status = "cancelled"
-
-                    break
-
-                
-
-                chunk = file_paths[i : i + chunk_size]
-
-                results = self.call_api_batch("", chunk, cancel_event=cancel_event)
-
-                
-
-                # Verificación de fallo inmediato
-
-                if results and results[0] == "CANCELLED":
-
-                    success_status = "cancelled"
-
-                    break
-
-                if results and results[0].startswith("[ERROR"):
-
-                    success_status = "error"
-
-                    # Pasamos el error real al callback
-
-                    if callback:
-
-                        callback("error_gemini_api", results[0])
-
-                    return # Salir inmediatamente
-
-    
-
-                all_texts.extend(results)
-
-    
-
-            if success_status == "success" and all_texts:
-
-                first_dir = os.path.dirname(file_paths[0])
-
-                chapter_name = os.path.basename(first_dir)
-
-                self.combine_texts(output_dir, cast(List[Optional[str]], all_texts), f"{chapter_name}_seleccion")
-
+        for i in range(0, len(file_paths), chunk_size):
+            if cancel_event and cancel_event.is_set():
+                success_status = "cancelled"
+                break
+            
+            chunk = file_paths[i : i + chunk_size]
+            results = self.call_api_batch("", chunk, cancel_event=cancel_event)
+            
+            # Verificación de fallo inmediato
+            if results and results[0] == "CANCELLED":
+                success_status = "cancelled"
+                break
+            if results and results[0].startswith("[ERROR"):
+                success_status = "error"
+                # Pasamos el error real al callback
                 if callback:
+                    callback("error_gemini_api", results[0])
+                return # Salir inmediatamente
 
-                    callback("success")
+            all_texts.extend(results)
 
-            elif success_status == "cancelled":
-
-                if callback:
-
-                    callback("cancelled")
-
-            else:
-
-                if callback:
-
-                    callback("error", "No se generó contenido. Verifica que los archivos sean válidos.")
+        if success_status == "success" and all_texts:
+            first_dir = os.path.dirname(file_paths[0])
+            chapter_name = os.path.basename(first_dir)
+            self.combine_texts(output_dir, cast(List[Optional[str]], all_texts), f"{chapter_name}_seleccion")
+            if callback:
+                callback("success")
+        elif success_status == "cancelled":
+            if callback:
+                callback("cancelled")
+        else:
+            if callback:
+                callback("error", "No se generó contenido. Verifica que los archivos sean válidos.")
 
     

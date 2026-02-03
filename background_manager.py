@@ -1,8 +1,8 @@
 import random
 from typing import List, Dict, Any
-from PySide6.QtCore import Qt, QTimer, QPointF, QRectF
+from PySide6.QtCore import Qt, QTimer, QPointF
 from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QPainter, QRadialGradient, QColor, QPen, QBrush
+from PySide6.QtGui import QPainter, QRadialGradient, QColor, QPen
 from config import Config
 
 class UniverseWidget(QWidget):

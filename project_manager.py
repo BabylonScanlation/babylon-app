@@ -135,8 +135,8 @@ class ProjectManager:
                 description_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
                 # Eventos de hover (ahora mucho más simples)
-                image_label.enterEvent = lambda a0, lbl=image_label, desc=description_label: enter_handler(lbl, desc)
-                image_label.leaveEvent = lambda a0, lbl=image_label, desc=description_label: leave_handler(lbl, desc)
+                image_label.enterEvent = lambda a0, lbl=image_label, desc=description_label: enter_handler(lbl, desc) # type: ignore
+                image_label.leaveEvent = lambda a0, lbl=image_label, desc=description_label: leave_handler(lbl, desc) # type: ignore
                 
                 row, col = divmod(i, cols)
                 layout.addWidget(image_label, row, col)

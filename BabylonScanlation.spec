@@ -21,8 +21,8 @@ excluded_modules = [
     'PySide6.QtSerialBus', 'PySide6.QtSerialPort', 'PySide6.QtStateMachine',
     'PySide6.QtTextToSpeech', 'PySide6.QtUiTools',
     'PySide6.QtOpenGL', 'PySide6.QtOpenGLWidgets', 'OpenGL',
-    'PySide6.QtNetwork', 'PySide6.QtSvg', 'PySide6.QtSvgWidgets',
-    'shiboken6.QtNetwork', 'shiboken6.QtSvg',
+    'PySide6.QtSvg', 'PySide6.QtSvgWidgets',
+    'shiboken6.QtSvg',
     'shiboken6.QtWebEngineCore', 'shiboken6.QtWebEngineWidgets',
     'shiboken6.QtQuick', 'shiboken6.QtQml', 'shiboken6.Qt3DCore',
     'shiboken6.Qt3DRender', 'shiboken6.QtCharts'
@@ -34,6 +34,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('BBSL', 'BBSL'),
+        ('styles', 'styles'),
         ('app_media/img-aux/logo.png', 'app_media/img-aux'),
         ('app_media/img-aux/icono.ico', 'app_media/img-aux'),
         ('.env', '.')
@@ -47,12 +48,12 @@ a = Analysis(
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
-    optimize=2, # Optimización de bytecode (elimina docstrings y asserts)
+    optimize=1, # Cambiado de 2 a 1 para evitar errores con Numpy
 )
 
 # FILTRO AGRESIVO DE BINARIOS (Nuestro "strip" manual)
 binaries_to_remove = [
-    'opengl32sw', 'Qt6Pdf', 'Qt6Network', 'Qt6Svg', 'Qt6WebEngine', 
+    'opengl32sw', 'Qt6Pdf', 'Qt6Svg', 'Qt6WebEngine', 
     'Qt6Quick', 'Qt6Qml', 'Qt63D', 'Qt6Designer', 'Qt6Sql',
     'libcrypto-3-x64', 'libssl-3-x64',
     'playwright', 'node.exe', 'ffmpeg' # Eliminamos drivers pesados de Playwright y FFmpeg si se cuelan

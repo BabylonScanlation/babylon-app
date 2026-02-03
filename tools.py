@@ -27,6 +27,7 @@ from app_tools.gemini import GeminiAPIError, GeminiProcessor
 from app_tools.haruneko import DownloadThread, HaruNekoManager
 from app_tools.mistral import MistralAPIError
 from config import Config
+import shiboken6
 
 # bibliotecas no nativas
 # pylint: disable=no-name-in-module
@@ -363,7 +364,7 @@ class ToolsManager(QObject):
             self.header_panel.raise_()
 
             if not self.toggle_ai_button:
-                self.toggle_ai_button = QPushButton("Mostrar IAs", self.header_panel)
+                self.toggle_ai_button = QPushButton("IAs", self.header_panel)
                 self.toggle_ai_button.setFont(self.app.adventure_font)
                 self.toggle_ai_button.setCursor(Qt.CursorShape.PointingHandCursor)
                 self.toggle_ai_button.clicked.connect(self.toggle_ai_tools)
@@ -406,7 +407,7 @@ class ToolsManager(QObject):
                 self.custom_text_input.setFixedSize(325, 35)
                 self.custom_text_input.setFont(self.app.roboto_black_font)
                 # Cast para asegurar que Pylance no se queje del tipo opcional
-                self.custom_text_input.mousePressEvent = (
+                self.custom_text_input.mousePressEvent = ( # type: ignore
                     lambda a0: self.open_expanded_editor(
                         cast(QLineEdit, self.custom_text_input), "Editar Texto Global"
                     )
@@ -597,9 +598,7 @@ class ToolsManager(QObject):
             self.parent_container = None
         self.show_tool_details("traductor")
         if self.toggle_ai_button is not None:
-            self.toggle_ai_button.setText(
-                "Ocultar IAs" if self.show_ai_tools else "Mostrar IAs"
-            )
+            self.toggle_ai_button.setText("IAs" if self.show_ai_tools else "IAs")
 
     def _create_tool_container(self, tool: Dict[str, Any], category: str) -> QWidget:
         """Crea un contenedor individual para una herramienta con diseño moderno."""
@@ -801,7 +800,7 @@ class ToolsManager(QObject):
             qt_any = cast(Any, Qt)
             input_container.setAlignment(qt_any.AlignLeft | qt_any.AlignTop)
             # Make input_container clickable to open expanded editor
-            input_container.mousePressEvent = lambda a0: self.open_expanded_editor(
+            input_container.mousePressEvent = lambda a0: self.open_expanded_editor( # type: ignore
                 input_container, "Editar Texto de Entrada"
             )
             left_layout.addWidget(input_container)
@@ -838,7 +837,7 @@ class ToolsManager(QObject):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
             )
             # Make output_container clickable to open expanded editor
-            output_container.mousePressEvent = lambda event: self.open_expanded_editor(
+            output_container.mousePressEvent = lambda event: self.open_expanded_editor( # type: ignore
                 output_container, "Editar Texto de Salida"
             )
             left_layout.addWidget(output_container)
@@ -901,7 +900,6 @@ class ToolsManager(QObject):
         )
 
         # OPTIMIZACIÓN: Cargar la imagen ya escalada desde disco para ahorrar RAM y CPU
-        from PySide6.QtCore import QSize
         from PySide6.QtGui import QImageReader
 
         reader = QImageReader(tool["image_path"])
@@ -919,7 +917,7 @@ class ToolsManager(QObject):
             if tool["name"] in Config.TOOL_URLS:
                 webbrowser.open(Config.TOOL_URLS[tool["name"]])
 
-        image_label.mousePressEvent = open_tool_site
+        image_label.mousePressEvent = open_tool_site # type: ignore
         image_label.setCursor(qt_any.PointingHandCursor)
         right_side_layout.addWidget(image_label, alignment=qt_any.AlignCenter)
 
@@ -1123,9 +1121,7 @@ class ToolsManager(QObject):
         """Maneja el resultado de una traducción una vez que ha finalizado."""
         try:
             # Verificar si los widgets aún existen antes de intentar usarlos
-            import shiboken6
-
-            if not shiboken6.isValid(output_container):
+            if not shiboken6.shiboken.isValid(output_container):
                 logging.warning(
                     f"Traducción terminada para '{name}', pero el widget de destino ya no existe."
                 )
@@ -1136,9 +1132,9 @@ class ToolsManager(QObject):
             else:
                 output_container.setText(result)
 
-            if use_button and shiboken6.isValid(use_button):
+            if use_button and shiboken6.shiboken.isValid(use_button):
                 use_button.setEnabled(True)
-                use_button.setText("Usar")
+                use_button.setText("USAR")
 
         except RuntimeError:
             # Captura "Internal C++ object already deleted"

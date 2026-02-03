@@ -152,12 +152,12 @@ class Config:
     MISTRAL_PROMPT: str = resource_path(os.path.join("BBSL", "herramientas_datos", "ai_prompt_user.txt"))
     
     ICON_PATH = resource_path(os.path.join("app_media", "img-aux", "icono.ico"))
-    CAROUSEL_IMAGES = []
+    CAROUSEL_IMAGES: List[str] = []
     CAROUSEL_INTERVAL = 60000 
     LOGO_PATH = resource_path(os.path.join("app_media", "img-aux", "logo.png"))
     VIDEO_PATH = "" # Video eliminado para reducir tamaño
     BACKGROUND_PATH = "" 
-    AUDIO_FILES = [] # Audios eliminados para reducir tamaño
+    AUDIO_FILES: List[str] = [] # Audios eliminados para reducir tamaño
     HELP_VIDEOS = [
         {'id': 'QwxG2S_PCMQ', 'title': 'Guía sobre TyperTools'},
         {'id': 'q94bCgsk3_Q', 'title': 'Cómo usar TyperTools'},

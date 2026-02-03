@@ -4,7 +4,7 @@ import sys
 import time
 import langid  # type: ignore
 import asyncio
-from typing import Any, Dict, cast, List, Optional
+from typing import Any, Dict, cast
 import threading
 import subprocess
 
@@ -28,7 +28,7 @@ if sys.platform == "win32":
                 
             super().__init__(*args, **kwargs)
 
-    subprocess.Popen = _PopenNoWindow
+    subprocess.Popen = _PopenNoWindow # type: ignore
 
 # Bloqueo global para asegurar que las llamadas a las APIs sean secuenciales
 _global_lock = threading.Lock()
@@ -44,22 +44,22 @@ except Exception:
 try:
     from google import genai
 except ImportError:
-    genai = None
+    genai = None # type: ignore
 
 try:
     import deepl
 except ImportError:
-    deepl = None
+    deepl = None # type: ignore
 
 try:
     from mistralai import Mistral
 except ImportError:
-    Mistral = None
+    Mistral = None # type: ignore
 
 try:
     from pentago import Pentago  # type: ignore
 except ImportError:
-    Pentago = None
+    Pentago = None # type: ignore
 
 # --- CONFIGURACIÓN ---
 GEMINI_CHEAP_MODEL = "gemini-2.5-flash-lite"
@@ -128,8 +128,10 @@ def detectar_idioma(texto: str) -> str:
         if any('\u4e00' <= c <= '\u9fff' for c in texto):
             tradicionales = "體國會斷廣惡顯現車貝門門"
             return "zh-TW" if any(c in texto for c in tradicionales) else "zh-CN"
-        if any('\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff' for c in texto): return "ja"
-        if any('\uac00' <= c <= '\ud7af' for c in texto): return "ko"
+        if any('\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff' for c in texto):
+            return "ja"
+        if any('\uac00' <= c <= '\ud7af' for c in texto):
+            return "ko"
         
         res = langid.classify(texto) # type: ignore
         return str(res[0]).split("-")[0]
@@ -139,7 +141,8 @@ def detectar_idioma(texto: str) -> str:
 # --- SERVICIOS ---
 
 def _translate_baidu_with_retries(text: str, from_l: str, to_l: str) -> str:
-    if ts is None: return "Error: translators no disponible."
+    if ts is None:
+        return "Error: translators no disponible."
     max_retries = 15 
     for i in range(max_retries):
         try:
@@ -149,57 +152,74 @@ def _translate_baidu_with_retries(text: str, from_l: str, to_l: str) -> str:
                 if i < max_retries - 1:
                     time.sleep(1.0 + (i * 0.2))
                     continue
-                else: return "Error Baidu: Servicio inestable."
+                else:
+                    return "Error Baidu: Servicio inestable."
             return res_str
         except Exception as e:
-            if i == max_retries - 1: return f"Error Baidu: {str(e)}"
+            if i == max_retries - 1:
+                return f"Error Baidu: {str(e)}"
             time.sleep(1.5)
     return "Error Baidu: Fallo reintentos."
 
 def _translate_papago_pentago(text: str, source_lang: str, target_lang: str) -> str:
-    if Pentago is None: return "Error: pentago no instalado."
+    if Pentago is None:
+        return "Error: pentago no instalado."
     try:
         from pentago import lang # type: ignore
         p_map = {"es": lang.SPANISH, "en": lang.ENGLISH, "ja": lang.JAPANESE, "ko": lang.KOREAN, "auto": lang.AUTO}
         src = p_map.get(source_lang.split("-")[0], lang.AUTO)
         tgt = p_map.get(target_lang.split("-")[0], lang.SPANISH)
-        async def _do(): return await asyncio.wait_for(cast(Any, Pentago)(src, tgt).translate(text), timeout=15.0)
+        async def _do():
+            return await asyncio.wait_for(cast(Any, Pentago)(src, tgt).translate(text), timeout=15.0)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             res = cast(Dict[str, Any], loop.run_until_complete(_do()))
             return str(res.get('translatedText', text))
-        finally: loop.close()
-    except Exception as e: return f"Error Papago: {str(e)}"
+        finally:
+            loop.close()
+    except Exception as e:
+        return f"Error Papago: {str(e)}"
 
 def _ensure_string_result(result: Any) -> str:
-    if isinstance(result, str): return result.strip()
-    if isinstance(result, (list, tuple)): return " ".join(str(p) for p in result if p).strip() # type: ignore
+    if isinstance(result, str):
+        return result.strip()
+    if isinstance(result, (list, tuple)):
+        return " ".join(str(p) for p in result if p).strip() # type: ignore
     if isinstance(result, dict):
         res_dict = cast(Dict[str, Any], result)
         data = res_dict.get('data')
         if isinstance(data, dict):
-            if 'content' in data: return str(data['content']).strip()
-            if 'translation' in data: return str(data['translation']).strip()
-        if 'translateText' in res_dict: return str(res_dict['translateText']).strip()
-        if 'translation' in res_dict: return str(res_dict['translation']).strip()
+            if 'content' in data:
+                return str(data['content']).strip()
+            if 'translation' in data:
+                return str(data['translation']).strip()
+        if 'translateText' in res_dict:
+            return str(res_dict['translateText']).strip()
+        if 'translation' in res_dict:
+            return str(res_dict['translation']).strip()
         for val in res_dict.values():
-            if isinstance(val, str) and val.strip(): return val.strip()
+            if isinstance(val, str) and val.strip():
+                return val.strip()
         return str(result).strip()
     return str(result).strip() if result is not None else ""
 
 def translatorz(translator_name: str, text: str, source_lang: str, target_lang: str) -> str:
-    if not text.strip(): return ""
+    if not text.strip():
+        return ""
     with _global_lock:
         try:
-            if translator_name == "Papago": return _translate_papago_pentago(text, source_lang, target_lang)
+            if translator_name == "Papago":
+                return _translate_papago_pentago(text, source_lang, target_lang)
             if translator_name == "DeepL":
-                if deepl is None: return "Error: deepl no instalado."
+                if deepl is None:
+                    return "Error: deepl no instalado."
                 t = cast(Any, deepl).Translator(Config.DEEPL_API_KEY)
                 res = t.translate_text(text, target_lang=obtener_codigo("deepl", target_lang))
                 return str(getattr(res, 'text', res))
             if translator_name == "Gemini":
-                if genai is None: return "Error: google-genai no instalado."
+                if genai is None:
+                    return "Error: google-genai no instalado."
                 client = cast(Any, genai).Client(api_key=Config.GEMINI_API_KEY)
                 prompt = PROMPT_IA.format(idioma=obtener_codigo("default", target_lang))
                 try:
@@ -209,18 +229,23 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
                     res = client.models.generate_content(model=GEMINI_CHEAP_MODEL, contents=[f"{prompt}\n\nTexto: {text}"])
                     return str(res.text).strip()
             if translator_name == "Mistral":
-                if Mistral is None: return "Error: mistralai no instalado."
+                if Mistral is None:
+                    return "Error: mistralai no instalado."
                 client = cast(Any, Mistral)(api_key=Config.MISTRAL_API_KEY)
                 prompt = PROMPT_IA.format(idioma=obtener_codigo("default", target_lang))
                 res = client.chat.complete(model=Config.MISTRAL_MODEL, messages=[{"role": "user", "content": f"{prompt}\n\nTexto: {text}"}])
                 return str(res.choices[0].message.content).strip()
 
-            if ts is None: return "Error: translators no disponible."
+            if ts is None:
+                return "Error: translators no disponible."
             
             lib_name = translator_name.lower() if translator_name != "iTranslate" else "itranslate"
-            if lib_name == "transmart": lib_name = "qqTranSmart"
-            elif lib_name == "systran": lib_name = "sysTran"
-            elif lib_name == "cloudtrans": lib_name = "cloudTranslation"
+            if lib_name == "transmart":
+                lib_name = "qqTranSmart"
+            elif lib_name == "systran":
+                lib_name = "sysTran"
+            elif lib_name == "cloudtrans":
+                lib_name = "cloudTranslation"
             
             # --- MANEJO DE AUTO Y MAPEO ---
             if source_lang == "auto":
