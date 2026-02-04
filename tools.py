@@ -275,6 +275,9 @@ class ToolsManager(QObject):
         self._current_global_handler: Optional[Callable[[str, str, str], None]] = None
         # Lista para mantener vivas las tareas activas y evitar "Signal source has been deleted"
         self._active_tasks: List[TranslationTask] = []
+        # Cache para persistir resultados de traducción si el widget se destruye temporalmente
+        self.translation_cache: Dict[str, str] = {}
+        self.last_global_text: str = ""
 
         if not os.path.exists(Config.AI_PROMPT_USER):
             try:
@@ -336,10 +339,31 @@ class ToolsManager(QObject):
             if "footer" in self.utilities_area:
                 cast(QWidget, self.utilities_area["footer"]).hide()
 
+        # Si ya existe un contenedor para esta categoría, simplemente lo mostramos
         if self.parent_container:
-            self.parent_container.deleteLater()
-            self.parent_container = None
+            # Si el contenedor actual es de una categoría diferente, lo borramos
+            # Pero si es la misma, lo reutilizamos para no matar las tareas en curso
+            current_cat = getattr(self.parent_container, "category", None)
+            if current_cat == category:
+                self.parent_container.show()
+                self.parent_container.raise_()
+                if category == "traductor":
+                    if self.header_panel:
+                        self.header_panel.show()
+                        self.header_panel.raise_()
+                        # Asegurar que los hijos del header también se muestren
+                        for child in self.header_panel.findChildren(QWidget):
+                            child.show()
+                    if self.footer_panel:
+                        self.footer_panel.show()
+                        self.footer_panel.raise_()
+                return
+            else:
+                self.parent_container.deleteLater()
+                self.parent_container = None
+
         self.parent_container = QWidget(self.app.content_container)
+        setattr(self.parent_container, "category", category)
         self.parent_container.setGeometry(50, 50, 780, 500)
         self.parent_container.setStyleSheet(
             """
@@ -406,6 +430,10 @@ class ToolsManager(QObject):
                 self.custom_text_input.setPlaceholderText("Introduce texto aquí...")
                 self.custom_text_input.setFixedSize(325, 35)
                 self.custom_text_input.setFont(self.app.roboto_black_font)
+                # Restaurar texto previo si existe
+                if self.last_global_text:
+                    self.custom_text_input.setText(self.last_global_text)
+                
                 # Cast para asegurar que Pylance no se queje del tipo opcional
                 self.custom_text_input.mousePressEvent = ( # type: ignore
                     lambda a0: self.open_expanded_editor(
@@ -419,6 +447,12 @@ class ToolsManager(QObject):
                 self.use_custom_button.setFixedSize(75, 35)
                 self.use_custom_button.setFont(self.app.adventure_font)
                 self.use_custom_button.setCursor(Qt.CursorShape.PointingHandCursor)
+                
+                # Restaurar estado si hay hilos activos
+                if self.active_global_threads > 0:
+                    self.use_custom_button.setEnabled(False)
+                    self.use_custom_button.setText("Traduciendo")
+                
                 self.use_custom_button.clicked.connect(
                     lambda: self.ejecutar_traducciones_globales()
                 )
@@ -499,6 +533,8 @@ class ToolsManager(QObject):
         texto = self.custom_text_input.text().strip()
         if not texto:
             return
+        
+        self.last_global_text = texto # Guardar para persistencia
         self.use_custom_button.setEnabled(False)
         self.use_custom_button.setText("Traduciendo")
         QApplication.processEvents()
@@ -539,6 +575,12 @@ class ToolsManager(QObject):
 
         self.active_global_threads = len(tool_containers)
         self._current_global_handler = self._handle_global_translation_finish
+        
+        # Limpiar caché para los traductores que vamos a ejecutar ahora
+        for container in tool_containers:
+            t_name = cast(Any, container).tool.get("name")
+            if t_name in self.translation_cache:
+                del self.translation_cache[t_name]
 
         if self.active_global_threads <= 0:
             self.use_custom_button.setEnabled(True)
@@ -594,8 +636,14 @@ class ToolsManager(QObject):
         """Alterna la visibilidad de las herramientas de IA en la categoría 'traductor'."""
         self.show_ai_tools = not self.show_ai_tools
         if self.parent_container:
+            # Forzamos eliminación aquí para que se redibuje con el nuevo filtro de IAs
             self.parent_container.deleteLater()
             self.parent_container = None
+        
+        # También ocultamos los paneles para que show_tool_details los recree si es necesario
+        if self.header_panel: self.header_panel.hide()
+        if self.footer_panel: self.footer_panel.hide()
+            
         self.show_tool_details("traductor")
         if self.toggle_ai_button is not None:
             self.toggle_ai_button.setText("IAs" if self.show_ai_tools else "IAs")
@@ -803,6 +851,10 @@ class ToolsManager(QObject):
             input_container.mousePressEvent = lambda a0: self.open_expanded_editor( # type: ignore
                 input_container, "Editar Texto de Entrada"
             )
+            # Restaurar el texto global si estamos en la vista de traductores
+            if category == "traductor" and self.last_global_text:
+                input_container.setText(self.last_global_text)
+                
             left_layout.addWidget(input_container)
 
             output_container = QTextEdit()
@@ -837,9 +889,14 @@ class ToolsManager(QObject):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
             )
             # Make output_container clickable to open expanded editor
-            output_container.mousePressEvent = lambda event: self.open_expanded_editor( # type: ignore
-                output_container, "Editar Texto de Salida"
+            output_container.mousePressEvent = lambda a0: self.open_expanded_editor( # type: ignore
+                output_container, "Editar Traducción"
             )
+            
+            # Restaurar desde caché si existe un resultado previo
+            if tool["name"] in self.translation_cache:
+                output_container.setText(self.translation_cache[tool["name"]])
+                
             left_layout.addWidget(output_container)
 
         tool_layout.addWidget(left_container)
@@ -1058,6 +1115,10 @@ class ToolsManager(QObject):
                     use_button.setEnabled(False)
                     use_button.setText("Traduciendo...")
 
+                # Limpiar caché previo para este traductor al iniciar uno nuevo
+                if tool["name"] in self.translation_cache:
+                    del self.translation_cache[tool["name"]]
+
                 output_container.clear()
                 QApplication.processEvents()
 
@@ -1120,10 +1181,14 @@ class ToolsManager(QObject):
     ):
         """Maneja el resultado de una traducción una vez que ha finalizado."""
         try:
+            # Siempre guardamos el resultado en caché por si el widget se ha destruido
+            if not error and result:
+                self.translation_cache[name] = result
+
             # Verificar si los widgets aún existen antes de intentar usarlos
-            if not shiboken6.shiboken.isValid(output_container):
-                logging.warning(
-                    f"Traducción terminada para '{name}', pero el widget de destino ya no existe."
+            if not shiboken6.isValid(output_container):
+                logging.debug(
+                    f"Traducción terminada para '{name}', pero el widget de destino ya no existe. El resultado se guardó en caché."
                 )
                 return
 
@@ -1132,7 +1197,7 @@ class ToolsManager(QObject):
             else:
                 output_container.setText(result)
 
-            if use_button and shiboken6.shiboken.isValid(use_button):
+            if use_button and shiboken6.isValid(use_button):
                 use_button.setEnabled(True)
                 use_button.setText("USAR")
 

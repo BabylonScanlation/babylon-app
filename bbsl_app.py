@@ -38,6 +38,13 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING) 
 
+# Filtro para ignorar el error de downgrade de HTTP/3 que es ruidoso y se maneja solo con reintentos
+class Http3DowngradeFilter(logging.Filter):
+    def filter(self, record):
+        return "MustDowngradeError" not in record.getMessage()
+
+logging.getLogger("httpcore").addFilter(Http3DowngradeFilter())
+
 sys.excepthook = global_exception_handler
 
 
@@ -907,8 +914,16 @@ class App(QMainWindow):
             self.gemini_config_area.show()
 
     def _hide_special_containers(self):
-        """Maneja la ocultación de contenedores especializados."""
-        self._hide_and_delete_containers()
+        """Maneja la ocultación de contenedores especializados preservando el estado."""
+        # Preservar contenedores de herramientas (solo ocultar) para que las tareas en background no se pierdan
+        self._hide_container_only("parent_container", None)
+        self._hide_container_only("details_container", None)
+        self._hide_container_only("parent_container", self.tools_manager)
+        
+        # Preservar contenedores de IA
+        self._hide_container_only("gemini_container", None)
+        self._hide_container_only("gemini_container", self.tools_manager)
+        self._hide_container_only("mistral_container", self.tools_manager)
 
     def _hide_widgets(self, widget_attrs: List[str]):
         """Oculta varios adminículos si existen."""

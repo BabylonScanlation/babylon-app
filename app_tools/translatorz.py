@@ -7,8 +7,13 @@ import asyncio
 from typing import Any, Dict, cast
 import threading
 import subprocess
+import warnings
 
 from config import Config
+
+# Suprimir avisos de Brotli de la librería translators que son ruidosos
+warnings.filterwarnings("ignore", message=".*Received response with content-encoding: br.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="translators.server")
 
 # --- Monkey Patch para suprimir ventanas de cscript.exe (execjs) en Windows ---
 if sys.platform == "win32":
@@ -87,18 +92,22 @@ MAPEO_UNIVERSAL: Dict[str, Dict[str, str]] = {
     
     # Chino Simplificado
     "zh": {
-        "default": "zh-CN", "google": "zh-CN", "bing": "zh-Hans", "yandex": "zh", 
-        "baidu": "zh", "itranslate": "zh-CN", "lingvanex": "zh-Hans_CN"
+        "default": "zh", "google": "zh-CN", "bing": "zh-Hans", "yandex": "zh", 
+        "baidu": "zh", "itranslate": "zh-CN", "lingvanex": "zh-Hans_CN",
+        "sogou": "zh-CHS", "caiyun": "zh", "alibaba": "zh", "systran": "zh"
     },
     "zh-CN": {
-        "default": "zh-CN", "google": "zh-CN", "bing": "zh-Hans", "yandex": "zh", 
-        "baidu": "zh", "itranslate": "zh-CN", "lingvanex": "zh-Hans_CN"
+        "default": "zh", "google": "zh-CN", "bing": "zh-Hans", "yandex": "zh", 
+        "baidu": "zh", "itranslate": "zh-CN", "lingvanex": "zh-Hans_CN",
+        "sogou": "zh-CHS", "caiyun": "zh"
     },
     
     # Chino Tradicional
     "zh-TW": {
-        "default": "zh-TW", "google": "zh-TW", "bing": "zh-Hant", "yandex": "zh-Hant", 
-        "baidu": "cht", "itranslate": "zh-TW", "lingvanex": "zh-Hant_TW"
+        "default": "zh", "google": "zh-TW", "bing": "zh-Hant", "yandex": "zh", 
+        "baidu": "cht", "itranslate": "zh-TW", "lingvanex": "zh-Hant_TW",
+        "sogou": "zh-CHS", "caiyun": "zh", "alibaba": "zh", "systran": "zh",
+        "cloudtrans": "zh", "qqtransmart": "zh"
     },
 }
 
@@ -120,7 +129,13 @@ def obtener_codigo(traductor: str, lang_code: str) -> str:
         base_code = lang_code.split("-")[0].split("_")[0]
         lang_map = MAPEO_UNIVERSAL.get(base_code, {})
     
-    return str(lang_map.get(traductor, lang_map.get("default", lang_code)))
+    # Si es Chino Tradicional y el traductor no tiene entrada específica, 
+    # intentamos caer a 'zh' genérico antes que al default del mapa
+    res = lang_map.get(traductor)
+    if not res and (lang_code == "zh-TW" or lang_code == "zh-Hant"):
+        return "zh"
+        
+    return str(res if res else lang_map.get("default", lang_code))
 
 def detectar_idioma(texto: str) -> str:
     try:
@@ -143,22 +158,23 @@ def detectar_idioma(texto: str) -> str:
 def _translate_baidu_with_retries(text: str, from_l: str, to_l: str) -> str:
     if ts is None:
         return "Error: translators no disponible."
-    max_retries = 15 
+    max_retries = 20 
     for i in range(max_retries):
         try:
             res = cast(Any, ts).translate_text(text, translator='baidu', from_language=from_l, to_language=to_l, timeout=10)
             res_str = _ensure_string_result(res)
             if "not certified" in res_str or not res_str.strip():
                 if i < max_retries - 1:
-                    time.sleep(1.0 + (i * 0.2))
+                    # Espera exponencial ligera
+                    time.sleep(0.5 + (i * 0.1))
                     continue
                 else:
-                    return "Error Baidu: Servicio inestable."
+                    return "Error Baidu: Servicio no certificado (reintentos agotados)."
             return res_str
         except Exception as e:
             if i == max_retries - 1:
                 return f"Error Baidu: {str(e)}"
-            time.sleep(1.5)
+            time.sleep(1.0)
     return "Error Baidu: Fallo reintentos."
 
 def _translate_papago_pentago(text: str, source_lang: str, target_lang: str) -> str:

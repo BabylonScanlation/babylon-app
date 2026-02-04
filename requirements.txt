@@ -3,6 +3,7 @@ PySide6
 opencv-python-headless
 requests
 httpx
+brotli
 google-genai
 Pillow
 langid
