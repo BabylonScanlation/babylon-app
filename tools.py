@@ -275,6 +275,8 @@ class ToolsManager(QObject):
         self._current_global_handler: Optional[Callable[[str, str, str], None]] = None
         # Lista para mantener vivas las tareas activas y evitar "Signal source has been deleted"
         self._active_tasks: List[TranslationTask] = []
+        # Estado para rastrear herramientas activas (Persistencia UI)
+        self._active_tool_names = set()
         # Cache para persistir resultados de traducción si el widget se destruye temporalmente
         self.translation_cache: Dict[str, str] = {}
         self.last_global_text: str = ""
@@ -1066,6 +1068,12 @@ class ToolsManager(QObject):
             }
         """)  # Resetear estilo para usar Global pero con padding mínimo
         use_button.setObjectName(f"use_btn_{tool['name']}")
+        
+        # Recuperar estado visual si la herramienta está ocupada
+        if tool["name"] in self._active_tool_names:
+            use_button.setText("Traduciendo...")
+            use_button.setEnabled(False)
+
         if tool["name"] == "Gemini" and category == "ai":
             use_button.clicked.connect(
                 lambda checked=False, cat=category: self._create_gemini_container(cat)
@@ -1114,6 +1122,9 @@ class ToolsManager(QObject):
                 if use_button:
                     use_button.setEnabled(False)
                     use_button.setText("Traduciendo...")
+
+                # Marcar herramienta como activa
+                self._active_tool_names.add(tool["name"])
 
                 # Limpiar caché previo para este traductor al iniciar uno nuevo
                 if tool["name"] in self.translation_cache:
@@ -1181,6 +1192,10 @@ class ToolsManager(QObject):
     ):
         """Maneja el resultado de una traducción una vez que ha finalizado."""
         try:
+            # Liberar estado de herramienta
+            if name in self._active_tool_names:
+                self._active_tool_names.remove(name)
+
             # Siempre guardamos el resultado en caché por si el widget se ha destruido
             if not error and result:
                 self.translation_cache[name] = result
@@ -1197,17 +1212,19 @@ class ToolsManager(QObject):
             else:
                 output_container.setText(result)
 
-            if use_button and shiboken6.isValid(use_button):
-                use_button.setEnabled(True)
-                use_button.setText("USAR")
+            # Restaurar botón (intentar recuperar si la referencia original murió)
+            btn_to_restore = use_button
+            if not btn_to_restore or not shiboken6.isValid(btn_to_restore):
+                # Buscar en la UI actual (necesitamos acceder al contenedor correcto)
+                if self.parent_container and shiboken6.isValid(self.parent_container):
+                     btn_to_restore = self.parent_container.findChild(QPushButton, f"use_btn_{name}")
 
-        except RuntimeError:
-            # Captura "Internal C++ object already deleted"
-            logging.warning(
-                f"Intento de actualizar UI eliminada tras traducción de '{name}'."
-            )
+            if btn_to_restore and shiboken6.isValid(btn_to_restore):
+                btn_to_restore.setText("Usar")
+                btn_to_restore.setEnabled(True)
+
         except Exception as e:
-            logging.error(f"Error al actualizar UI de traducción: {e}")
+            logging.error(f"Error handling translation finish: {e}")
 
     def _handle_translation_result(
         self,

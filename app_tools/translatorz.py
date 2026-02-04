@@ -10,25 +10,46 @@ import subprocess
 import warnings
 import logging
 
-# --- PATCH CRÍTICO: HTTPCORE / HTTPX ---
-# Evita el error 'MustDowngradeError' forzando HTTP/1.1 y deshabilitando HTTP/3.
-# Esto es necesario porque algunos servidores (Google/Bing) anuncian HTTP/3 vía Alt-Svc
-# pero la negociación falla en ciertos entornos de Windows/Python.
+# --- PATCH CRÍTICO: HTTPCORE / HTTPX (Global Force HTTP/1.1) ---
 try:
     import httpcore
-    # Forzar que la propiedad 'http3' sea siempre False en las conexiones
-    original_init = httpcore.ConnectionPool.__init__
-    def patched_init(self, *args, **kwargs):
-        kwargs['http1'] = True
-        kwargs['http2'] = False # Desactivar también HTTP/2 para máxima estabilidad en scraping
-        if 'http3' in kwargs:
-            kwargs['http3'] = False
-        original_init(self, *args, **kwargs)
-    httpcore.ConnectionPool.__init__ = patched_init
-    logging.info("✅ Parche aplicado: httpcore forzado a HTTP/1.1 (Fix MustDowngradeError)")
-except ImportError:
-    pass
-# ---------------------------------------
+    import httpx
+    import inspect
+    
+    # Parche para httpcore
+    _original_pool_init = httpcore.ConnectionPool.__init__
+    _original_async_pool_init = httpcore.AsyncConnectionPool.__init__
+
+    def _safe_patch_init(original_init, self, *args, **kwargs):
+        sig = inspect.signature(original_init)
+        params = sig.parameters
+        
+        if 'http1' in params: kwargs['http1'] = True
+        if 'http2' in params: kwargs['http2'] = False
+        if 'http3' in params: kwargs['http3'] = False
+        
+        return original_init(self, *args, **kwargs)
+
+    httpcore.ConnectionPool.__init__ = lambda self, *args, **kwargs: _safe_patch_init(_original_pool_init, self, *args, **kwargs)
+    httpcore.AsyncConnectionPool.__init__ = lambda self, *args, **kwargs: _safe_patch_init(_original_async_pool_init, self, *args, **kwargs)
+
+    # Parche para httpx
+    _original_client_init = httpx.Client.__init__
+    _original_async_client_init = httpx.AsyncClient.__init__
+
+    def _safe_patch_httpx(original_init, self, *args, **kwargs):
+        sig = inspect.signature(original_init)
+        if 'http2' in sig.parameters:
+            kwargs['http2'] = False
+        return original_init(self, *args, **kwargs)
+
+    httpx.Client.__init__ = lambda self, *args, **kwargs: _safe_patch_httpx(_original_client_init, self, *args, **kwargs)
+    httpx.AsyncClient.__init__ = lambda self, *args, **kwargs: _safe_patch_httpx(_original_async_client_init, self, *args, **kwargs)
+        
+    print("✅ Red: Forzado HTTP/1.1 (Safe Patch) activo")
+except Exception as e:
+    print(f"⚠️ No se pudo aplicar el parche de red: {e}")
+# --------------------------------------------------------------
 
 from config import Config
 

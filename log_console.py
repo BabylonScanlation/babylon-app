@@ -27,6 +27,12 @@ class QtLogHandler(logging.Handler):
     def emit(self, record):
         try:
             msg = self.format(record)
+            
+            # Filtro de seguridad para mensajes ruidosos conocidos (HTTP/3 Downgrade)
+            noise_keywords = ["MustDowngradeError", "HttpVersion.h3", "Alt-Svc"]
+            if any(kw in msg for kw in noise_keywords):
+                return
+
             # 1. Guardar siempre en buffer (historial)
             LOG_BUFFER.append(msg)
             

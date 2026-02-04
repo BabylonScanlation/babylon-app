@@ -38,13 +38,6 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING) 
 
-# Filtro para ignorar el error de downgrade de HTTP/3 que es ruidoso y se maneja solo con reintentos
-class Http3DowngradeFilter(logging.Filter):
-    def filter(self, record):
-        return "MustDowngradeError" not in record.getMessage()
-
-logging.getLogger("httpcore").addFilter(Http3DowngradeFilter())
-
 sys.excepthook = global_exception_handler
 
 
@@ -392,8 +385,8 @@ class App(QMainWindow):
             padding: 0;
         }
         """
-        version_label = QLabel("Versión: 2.5")
-        snapshot_label = QLabel("Snapshot: U12012026")
+        version_label = QLabel("Versión: 2.5.6")
+        snapshot_label = QLabel("Snapshot: U04022026")
         for label in (version_label, snapshot_label):
             label.setStyleSheet(label_style)
             label.setFont(self.roboto_black_font)
