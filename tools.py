@@ -1592,14 +1592,9 @@ class ToolsManager(QObject):
 
     def _update_processing_status(self, message: str):
         """Actualiza la barra de estado con colores y sonido."""
-        # MEDIDA DEFENSIVA BUG UI: Asegurar que el contenedor principal siga visible
-        if (
-            hasattr(self, "gemini_container")
-            and self.gemini_container
-            and not self.gemini_container.isVisible()
-        ):
-            self.gemini_container.show()
-            self.gemini_container.raise_()
+        # BLOQUE ELIMINADO: La "medida defensiva" anterior forzaba el foco
+        # en la ventana de Gemini interrumpiendo al usuario si estaba en la consola.
+        # Ahora solo actualizamos la etiqueta si existe, sin cambiar de vista.
 
         if hasattr(self, "status_label") and self.status_label:
             self.status_label.show()

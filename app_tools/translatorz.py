@@ -8,6 +8,27 @@ from typing import Any, Dict, cast
 import threading
 import subprocess
 import warnings
+import logging
+
+# --- PATCH CRÍTICO: HTTPCORE / HTTPX ---
+# Evita el error 'MustDowngradeError' forzando HTTP/1.1 y deshabilitando HTTP/3.
+# Esto es necesario porque algunos servidores (Google/Bing) anuncian HTTP/3 vía Alt-Svc
+# pero la negociación falla en ciertos entornos de Windows/Python.
+try:
+    import httpcore
+    # Forzar que la propiedad 'http3' sea siempre False en las conexiones
+    original_init = httpcore.ConnectionPool.__init__
+    def patched_init(self, *args, **kwargs):
+        kwargs['http1'] = True
+        kwargs['http2'] = False # Desactivar también HTTP/2 para máxima estabilidad en scraping
+        if 'http3' in kwargs:
+            kwargs['http3'] = False
+        original_init(self, *args, **kwargs)
+    httpcore.ConnectionPool.__init__ = patched_init
+    logging.info("✅ Parche aplicado: httpcore forzado a HTTP/1.1 (Fix MustDowngradeError)")
+except ImportError:
+    pass
+# ---------------------------------------
 
 from config import Config
 
