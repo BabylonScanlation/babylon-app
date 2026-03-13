@@ -19,6 +19,7 @@ from typing import (
     cast,
 )
 
+import shiboken6
 from app_tools import mistral, translatorz
 
 # bibliotecas no nativas
@@ -26,8 +27,8 @@ from app_tools import mistral, translatorz
 from app_tools.gemini import GeminiAPIError, GeminiProcessor
 from app_tools.haruneko import DownloadThread, HaruNekoManager
 from app_tools.mistral import MistralAPIError
+from babylon_panel import BabylonPanel
 from config import Config
-import shiboken6
 
 # bibliotecas no nativas
 # pylint: disable=no-name-in-module
@@ -39,7 +40,7 @@ from PySide6.QtCore import (
     QThreadPool,
     Signal,
 )
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -244,6 +245,7 @@ class ToolsManager(QObject):
         self.details_container: Optional[QWidget] = None
         self.gemini_container: Optional[QWidget] = None
         self.mistral_container: Optional[QWidget] = None
+        self.babylon_panel: Optional[BabylonPanel] = None
         self.haruneko_manager = HaruNekoManager(self.app)
         self.input_path: Optional[str] = None
         self.output_directory: Optional[str] = None
@@ -398,7 +400,6 @@ class ToolsManager(QObject):
 
             if not self.source_combo:
                 self.source_combo = QComboBox(self.header_panel)
-                # ... (resto de configuración del combo igual)
                 langs_origen = [
                     ("Auto", "auto"),
                     ("Chino Tradicional", "zh-TW"),
@@ -432,12 +433,10 @@ class ToolsManager(QObject):
                 self.custom_text_input.setPlaceholderText("Introduce texto aquí...")
                 self.custom_text_input.setFixedSize(325, 35)
                 self.custom_text_input.setFont(self.app.roboto_black_font)
-                # Restaurar texto previo si existe
                 if self.last_global_text:
                     self.custom_text_input.setText(self.last_global_text)
-                
-                # Cast para asegurar que Pylance no se queje del tipo opcional
-                self.custom_text_input.mousePressEvent = ( # type: ignore
+
+                self.custom_text_input.mousePressEvent = (  # type: ignore
                     lambda a0: self.open_expanded_editor(
                         cast(QLineEdit, self.custom_text_input), "Editar Texto Global"
                     )
@@ -449,12 +448,11 @@ class ToolsManager(QObject):
                 self.use_custom_button.setFixedSize(75, 35)
                 self.use_custom_button.setFont(self.app.adventure_font)
                 self.use_custom_button.setCursor(Qt.CursorShape.PointingHandCursor)
-                
-                # Restaurar estado si hay hilos activos
+
                 if self.active_global_threads > 0:
                     self.use_custom_button.setEnabled(False)
                     self.use_custom_button.setText("Traduciendo")
-                
+
                 self.use_custom_button.clicked.connect(
                     lambda: self.ejecutar_traducciones_globales()
                 )
@@ -507,23 +505,136 @@ class ToolsManager(QObject):
         scroll_area.setStyleSheet(
             "background: transparent; border: none;"
         )  # Quitar bordes internos
+
         details_container = QWidget()
         details_container.setStyleSheet("background: transparent; border: none;")
-        details_layout = QVBoxLayout(details_container)
-        details_layout.setContentsMargins(10, 10, 10, 10)
-        details_layout.setSpacing(10)
-        tools = Config.SPECIFIED_TOOLS.get(category, [])
-        for tool in tools:
-            if (
-                category == "traductor"
-                and tool["name"] in ["Gemini", "Mistral"]
-                and not self.show_ai_tools
-            ):
-                continue
-            tool_container = self._create_tool_container(tool, category)
-            details_layout.addWidget(
-                tool_container, alignment=Qt.AlignmentFlag.AlignTop
-            )
+
+        if category == "traductor":
+            details_layout = QVBoxLayout(details_container)
+            details_layout.setContentsMargins(10, 10, 10, 10)
+            details_layout.setSpacing(10)
+            tools = Config.SPECIFIED_TOOLS.get(category, [])
+            for tool in tools:
+                if tool["name"] in ["Gemini", "Mistral"] and not self.show_ai_tools:
+                    continue
+                tool_container = self._create_tool_container(tool, category)
+                details_layout.addWidget(
+                    tool_container, alignment=Qt.AlignmentFlag.AlignTop
+                )
+        else:
+            # Diseño en Grid (Cuadrícula) para OCR, AI y Downloaders
+            details_layout = QGridLayout(details_container)
+            qt_any = cast(Any, Qt)
+            details_layout.setAlignment(qt_any.AlignLeft | qt_any.AlignTop)
+            details_layout.setSpacing(4)
+            details_layout.setContentsMargins(10, 10, 10, 10)
+
+            tools = Config.SPECIFIED_TOOLS.get(category, [])
+
+            base_style = "border: 1px solid rgba(150, 0, 150, 50); border-radius: 8px; background-color: rgba(30, 30, 30, 150);"
+            hover_style = "border: 2px solid #960096; border-radius: 8px; background-color: rgba(150, 0, 150, 30);"
+
+            def enter_handler(label: QLabel, desc: QLabel):
+                label.setStyleSheet(hover_style)
+                desc.show()
+
+            def leave_handler(label: QLabel, desc: QLabel):
+                label.setStyleSheet(base_style)
+                desc.hide()
+
+            cols = 6
+            size = (122, 122)
+            margin = 20
+
+            for i, tool in enumerate(tools):
+                try:
+                    pixmap = QPixmap(tool["image_path"])
+                    if pixmap.isNull():
+                        continue
+
+                    scaled_pixmap = pixmap.scaled(
+                        size[0] - margin,
+                        size[1] - margin,
+                        qt_any.AspectRatioMode.KeepAspectRatio,
+                        qt_any.TransformationMode.SmoothTransformation,
+                    )
+
+                    image_label = QLabel()
+                    image_label.setPixmap(scaled_pixmap)
+                    image_label.setFixedSize(size[0], size[1])
+                    image_label.setAlignment(qt_any.AlignCenter)
+                    image_label.setStyleSheet(base_style)
+                    image_label.setCursor(qt_any.PointingHandCursor)
+
+                    # Descripción en Hover
+                    desc_text = f"<b>{tool['name']}</b><br>{tool['description']}"
+                    description_label = QLabel(desc_text, image_label)
+                    description_label.setFixedSize(size[0], size[1])
+                    description_label.setWordWrap(True)
+                    description_label.setAlignment(qt_any.AlignCenter)
+                    description_label.setStyleSheet(
+                        """
+                        color: white;
+                        background-color: rgba(0, 0, 0, 200);
+                        font-size: 11px;
+                        padding: 8px;
+                        border-radius: 8px;
+                        """
+                    )
+                    description_label.hide()
+                    description_label.setAttribute(
+                        qt_any.WidgetAttribute.WA_TransparentForMouseEvents, True
+                    )
+
+                    # Eventos Hover
+                    image_label.enterEvent = (
+                        lambda a0,
+                        lbl=image_label,
+                        desc=description_label: enter_handler(lbl, desc)
+                    )  # type: ignore
+                    image_label.leaveEvent = (
+                        lambda a0,
+                        lbl=image_label,
+                        desc=description_label: leave_handler(lbl, desc)
+                    )  # type: ignore
+
+                    # Acción de Click
+                    def make_click_handler(t_name=tool["name"], cat=category):
+                        def on_click(event):
+                            if t_name == "Gemini":
+                                self._create_gemini_container(cat)
+                            elif t_name == "Mistral":
+                                self._create_mistral_container(cat)
+                            elif t_name == "HaruNeko":
+                                hakuneko_path = os.path.join(
+                                    os.getcwd(), "app_tools", "HaruNeko"
+                                )
+                                if os.path.exists(hakuneko_path):
+                                    self.start_hakuneko()
+                                else:
+                                    reply = QMessageBox.question(
+                                        self.app.content_container,
+                                        "Descargar HaruNeko",
+                                        "HaruNeko no está instalado. ¿Deseas descargarlo ahora?",
+                                        QMessageBox.StandardButton.Yes
+                                        | QMessageBox.StandardButton.No,
+                                    )
+                                    if reply == QMessageBox.StandardButton.Yes:
+                                        self.download_hakuneko()
+                            elif t_name == "Babylon":
+                                self._create_babylon_panel()
+                            else:
+                                if t_name in Config.TOOL_URLS:
+                                    webbrowser.open(Config.TOOL_URLS[t_name])
+
+                        return on_click
+
+                    image_label.mousePressEvent = make_click_handler()  # type: ignore
+
+                    row, col = divmod(i, cols)
+                    details_layout.addWidget(image_label, row, col)
+                except Exception as e:
+                    logging.error(f"Error cargando herramienta en grid: {e}")
 
         scroll_area.setWidget(details_container)
         if self.parent_container:
@@ -535,8 +646,8 @@ class ToolsManager(QObject):
         texto = self.custom_text_input.text().strip()
         if not texto:
             return
-        
-        self.last_global_text = texto # Guardar para persistencia
+
+        self.last_global_text = texto  # Guardar para persistencia
         self.use_custom_button.setEnabled(False)
         self.use_custom_button.setText("Traduciendo")
         QApplication.processEvents()
@@ -577,7 +688,7 @@ class ToolsManager(QObject):
 
         self.active_global_threads = len(tool_containers)
         self._current_global_handler = self._handle_global_translation_finish
-        
+
         # Limpiar caché para los traductores que vamos a ejecutar ahora
         for container in tool_containers:
             t_name = cast(Any, container).tool.get("name")
@@ -593,7 +704,7 @@ class ToolsManager(QObject):
         for container in tool_containers:
             input_field = container.findChild(QLineEdit)
             output_field = container.findChild(QTextEdit)
-            use_button = container.findChild(QPushButton)
+            use_button = container.findChild(QPushButton, f"use_btn_{cast(Any, container).tool['name']}")
 
             if (
                 not isinstance(input_field, QLineEdit)
@@ -641,21 +752,27 @@ class ToolsManager(QObject):
             # Forzamos eliminación aquí para que se redibuje con el nuevo filtro de IAs
             self.parent_container.deleteLater()
             self.parent_container = None
-        
+
         # También ocultamos los paneles para que show_tool_details los recree si es necesario
-        if self.header_panel: self.header_panel.hide()
-        if self.footer_panel: self.footer_panel.hide()
-            
+        if self.header_panel:
+            self.header_panel.hide()
+        if self.footer_panel:
+            self.footer_panel.hide()
+
         self.show_tool_details("traductor")
         if self.toggle_ai_button is not None:
             self.toggle_ai_button.setText("IAs" if self.show_ai_tools else "IAs")
 
     def _create_tool_container(self, tool: Dict[str, Any], category: str) -> QWidget:
-        """Crea un contenedor individual para una herramienta con diseño moderno."""
-        tool_container = QWidget()
+        """Crea un contenedor individual para una herramienta con diseño moderno de tarjetas horizontales."""
+        tool_container = QFrame()
         cast(Any, tool_container).tool = tool
-        tool_container.setFixedSize(740, 250)
         tool_container.setObjectName("ToolCard")
+        tool_container.setFrameShape(QFrame.Shape.StyledPanel)
+        tool_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+        )
+        tool_container.setMinimumHeight(120)
         tool_container.setStyleSheet(
             """
             #ToolCard {
@@ -669,96 +786,189 @@ class ToolsManager(QObject):
             }
             """
         )
-        tool_layout = QHBoxLayout(tool_container)
-        tool_layout.setContentsMargins(9, 9, 9, 9)
-        tool_layout.setSpacing(10)
-        left_container = QWidget()
-        left_layout = QVBoxLayout(left_container)
-        left_layout.setContentsMargins(9, 9, 9, 9)
-        left_layout.setSpacing(10)
-        description_scroll_area = QScrollArea()
-        description_scroll_area.setWidgetResizable(True)
-        description_scroll_area.setStyleSheet(
-            """
-        QScrollArea {
-        background: transparent;
-        border: none;
-        }
-        QScrollBar:vertical {
-        background: rgba(0, 0, 0, 30);
-        border-radius: 2px;
-        width: 10px;
-        }
-        QScrollBar::handle:vertical {
-        background: rgba(0, 0, 0, 100);
-        border-radius: 2px;
-        }
-        """
-        )
-        description_label = QLabel(tool["description"])
-        description_label.setStyleSheet(
-            """
-        font-size: 14px;
-        color: white;
-        background: transparent;
-        qproperty-alignment: AlignLeft;
-        padding: 5px;
-        """
-        )
-        description_label.setFont(self.app.roboto_black_font)
-        description_label.setWordWrap(True)
-        description_scroll_area.setWidget(description_label)
-        if category == "ai":
-            description_scroll_area.setFixedHeight(100)
-        elif category == "traductor":
-            description_scroll_area.setFixedHeight(100)
-        else:
-            description_scroll_area.setFixedHeight(184)
 
-        left_layout.addWidget(description_scroll_area)
+        qt_any = cast(Any, Qt)
+        lay = QHBoxLayout(tool_container)
+        lay.setContentsMargins(15, 12, 15, 12)
+        lay.setSpacing(15)
+
+        # 1. Left container (Rating, Icon, Button)
+        left_lay = QVBoxLayout()
+        left_lay.setSpacing(8)
+        left_lay.setAlignment(qt_any.AlignCenter)
+
+        # Puntuación (Chip de Neón)
+        rating_label = QLabel(f"⭐ {tool['rating']}")
+        rating_label.setFixedSize(60, 22)
+        rating = tool["rating"]
+        if rating >= 9:
+            bg_color = "rgba(0, 255, 128, 0.2)"
+            border_color = "#00ff80"
+        elif rating >= 5:
+            bg_color = "rgba(255, 165, 0, 0.2)"
+            border_color = "#ffaa00"
+        else:
+            bg_color = "rgba(255, 50, 50, 0.2)"
+            border_color = "#ff3333"
+
+        rating_label.setStyleSheet(
+            f"""
+            background-color: {bg_color};
+            border: 1px solid {border_color};
+            border-radius: 11px;
+            color: white;
+            font-weight: bold;
+            font-size: 11px;
+            """
+        )
+        rating_label.setAlignment(qt_any.AlignCenter)
+        rating_label.setFont(self.app.roboto_black_font)
+        left_lay.addWidget(rating_label, alignment=qt_any.AlignCenter)
+
+        # Ícono Circular
+        lbl_icon = QLabel()
+        lbl_icon.setFixedSize(70, 70)
+
+        icon_path = tool["image_path"]
+        if os.path.exists(icon_path):
+            pix = QPixmap(icon_path).scaled(
+                55,
+                55,
+                qt_any.AspectRatioMode.KeepAspectRatio,
+                qt_any.TransformationMode.SmoothTransformation,
+            )
+            lbl_icon.setPixmap(pix)
+        else:
+            lbl_icon.setText("🌐")
+
+        lbl_icon.setAlignment(qt_any.AlignCenter)
+        lbl_icon.setStyleSheet(
+            """
+            background-color: rgba(0, 0, 0, 0.6);
+            border: 2px solid rgba(157, 70, 255, 0.5);
+            border-radius: 35px; /* Circular */
+            color: white;
+            """
+        )
+
+        def open_tool_site(_event: Any):
+            if tool["name"] in Config.TOOL_URLS:
+                webbrowser.open(Config.TOOL_URLS[tool["name"]])
+
+        lbl_icon.mousePressEvent = open_tool_site  # type: ignore
+        lbl_icon.setCursor(qt_any.PointingHandCursor)
+
+        left_lay.addWidget(lbl_icon, alignment=qt_any.AlignCenter)
+
+        # Botón Usar
+        use_button = QPushButton("Usar")
+        use_button.setFixedSize(80, 28)
+        use_button.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #00c6ff, stop:1 #0072ff);
+                color: white; border: 1px solid #00ffff; border-radius: 14px;
+                font-weight: 900; text-transform: uppercase; letter-spacing: 1px; font-size: 11px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #55d4ff, stop:1 #2b8cff);
+                border: 1px solid white; box-shadow: 0 0 10px #00c6ff;
+            }
+            QPushButton:pressed { background-color: #005bb5; margin-top: 2px; }
+            QPushButton:disabled {
+                background: transparent; color: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+        """)
+        use_button.setObjectName(f"use_btn_{tool['name']}")
+        use_button.setCursor(qt_any.PointingHandCursor)
+
+        if tool["name"] in self._active_tool_names:
+            use_button.setText("...")
+            use_button.setEnabled(False)
+
+        left_lay.addWidget(use_button, alignment=qt_any.AlignCenter)
+
+        # Botón Instalar (si aplica)
+        install_button = QPushButton(
+            "Descargar" if tool["name"] == "HaruNeko" else "Instalar"
+        )
+        install_button.setFixedSize(80, 24)
+        install_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(30, 30, 30, 200); color: #e0e0e0; font-size: 10px;
+                border: 1px solid rgba(150, 0, 150, 100); border-radius: 12px;
+            }
+            QPushButton:hover {
+                background-color: rgba(60, 60, 60, 220); border: 1px solid #960096; color: white;
+            }
+            QPushButton:disabled {
+                background-color: rgba(10, 10, 10, 150); color: rgba(150, 150, 150, 100); border: 1px solid rgba(150, 0, 150, 30);
+            }
+        """)
+
+        if category in ["traductor", "ai"] and tool["name"] != "HaruNeko":
+            install_button.hide()
+
+        if tool["name"] == "HaruNeko":
+            self.install_button = install_button
+            hakuneko_path = os.path.join(os.getcwd(), "app_tools", "HaruNeko")
+            if os.path.exists(hakuneko_path):
+                install_button.setText("Instalado")
+                install_button.setEnabled(False)
+            else:
+                install_button.clicked.connect(self.download_hakuneko)
+            left_lay.addWidget(install_button, alignment=qt_any.AlignCenter)
+        elif tool["name"] in ["Gemini", "Mistral"]:
+            install_button.setEnabled(False)
+
+        lay.addLayout(left_lay)
+
+        # 2. Info container (Right/Center)
+        info_lay = QVBoxLayout()
+        info_lay.setSpacing(6)
+        info_lay.setAlignment(qt_any.AlignTop)
+
+        lbl_name = QLabel(tool["name"])
+        lbl_name.setStyleSheet("color: white; border: none; font-weight: bold;")
+        f_title = QFont(self.app.super_cartoon_font)
+        f_title.setPointSize(max(f_title.pointSize() - 2, 15))
+        lbl_name.setFont(f_title)
+        info_lay.addWidget(lbl_name)
+
+        lbl_desc = QLabel(tool["description"])
+        lbl_desc.setStyleSheet("color: #cccccc; border: none;")
+        f_body = QFont(self.app.roboto_black_font)
+        f_body.setPointSize(max(f_body.pointSize() - 1, 10))
+        lbl_desc.setFont(f_body)
+        lbl_desc.setWordWrap(True)
+        info_lay.addWidget(lbl_desc)
+
         if category == "ai":
             routes_container = QWidget()
             routes_layout = QVBoxLayout(routes_container)
-            routes_layout.setContentsMargins(5, 5, 5, 5)
-            routes_layout.setSpacing(2)
+            routes_layout.setContentsMargins(0, 5, 0, 0)
+            routes_layout.setSpacing(4)
             config_label = QLabel("CONFIGURACIÓN PREVIA:")
             config_label.setFont(self.app.roboto_black_font)
             config_label.setStyleSheet(
-                """
-            font-size: 14px;
-            color: white;
-            background: transparent;
-            border: none;
-            padding: 0px;
-            """
-            )
-            config_label.setAlignment(
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+                "font-size: 11px; color: #a0a0a0; border: none; padding: 0px; font-weight: bold;"
             )
             routes_layout.addWidget(config_label)
+
             access_paths = tool.get("access_paths", [])
             for idx, path_info in enumerate(access_paths):
                 route_layout = QHBoxLayout()
-                route_layout.setContentsMargins(0, 2, 0, 2)
+                route_layout.setContentsMargins(0, 0, 0, 0)
                 route_layout.setSpacing(5)
-                label_text = ""
-                if tool["name"] in ["Gemini", "Mistral"]:
-                    label_text = "PROMPT:" if idx == 0 else "API:"
+
+                label_text = "PROMPT:" if idx == 0 else "API:"
                 label = QLabel(label_text)
-                label.setFixedWidth(70)
+                label.setFixedWidth(55)
                 label.setFont(self.app.roboto_black_font)
                 label.setStyleSheet(
-                    """
-                font-size: 14px;
-                color: white;
-                background: transparent;
-                border: none;
-                padding: 0px;
-                """
+                    "font-size: 12px; color: white; border: none; padding: 0px;"
                 )
                 route_layout.addWidget(label)
 
-                # Usar el valor actual de Config si es una API Key, de lo contrario usar el del path_info
                 current_path = path_info["path"]
                 if label_text == "API:":
                     if tool["name"] == "Gemini":
@@ -767,25 +977,18 @@ class ToolsManager(QObject):
                         current_path = Config.MISTRAL_API_KEY
 
                 route_input = QLineEdit(current_path)
-                route_input.setReadOnly(False)  # Permitir edición
                 route_input.setObjectName(f"route_input_{tool['name']}_{label_text}")
                 route_input.setStyleSheet(
                     """
-                QLineEdit {
-                    font-size: 12px;
-                    color: white;
-                    background-color: rgba(20, 20, 20, 200);
-                    border: 1px solid #572364;
-                    border-radius: 4px;
-                    padding: 5px;
-                }
-                QLineEdit:focus {
-                    border: 1px solid #960096;
-                }
-                """
+                    QLineEdit {
+                        font-size: 12px; color: white;
+                        background-color: rgba(20, 20, 20, 200);
+                        border: 1px solid #572364; border-radius: 4px; padding: 4px;
+                    }
+                    QLineEdit:focus { border: 1px solid #960096; }
+                    """
                 )
 
-                # Conectar el cambio de texto para actualizar la API Key y guardarla permanentemente
                 if label_text == "API:":
 
                     def save_api_key(text: str, t_name: str = tool["name"]):
@@ -804,276 +1007,79 @@ class ToolsManager(QObject):
                     QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
                 )
                 route_layout.addWidget(route_input)
+
                 if label_text != "API:":
                     browse_button = QPushButton("Examinar")
-                    browse_button.setFixedWidth(80)
+                    browse_button.setFixedWidth(70)
                     browse_button.clicked.connect(
                         lambda checked=False,
                         input_box=route_input: self.open_path_for_prompt(input_box)
                     )
                     browse_button.setFont(self.app.adventure_font)
-                    browse_button.setCursor(Qt.CursorShape.PointingHandCursor)
+                    browse_button.setCursor(qt_any.PointingHandCursor)
                     browse_button.setStyleSheet(
-                        "QPushButton { color: white; padding-left: 2px; padding-right: 2px; }"
+                        "QPushButton { font-size: 11px; background-color: rgba(40,40,40,200); color: white; border: 1px solid #572364; border-radius: 4px; padding: 4px; }"
                     )
                     route_layout.addWidget(browse_button)
                 routes_layout.addLayout(route_layout)
-            left_layout.addWidget(routes_container)
-        if category == "traductor":
+            info_lay.addWidget(routes_container)
+
+        elif category == "traductor":
+            traductor_container = QWidget()
+            traductor_layout = QVBoxLayout(traductor_container)
+            traductor_layout.setContentsMargins(0, 5, 0, 0)
+            traductor_layout.setSpacing(5)
+
             input_container = QLineEdit()
-            input_container.setFrame(False)  # Quitar marco cuadrado por defecto
             input_container.setPlaceholderText("Introduce el texto a traducir...")
             input_container.setStyleSheet(
                 """
                 QLineEdit {
-                    font-size: 14px;
-                    color: white;
+                    font-size: 13px; color: white;
                     background-color: rgba(10, 12, 16, 0.6);
                     border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 8px;
-                    margin-top: 10px;
-                    padding-left: 8px;
+                    border-radius: 6px; padding: 6px;
                 }
-                QLineEdit::placeholder {
-                    color: rgba(255, 255, 255, 0.3);
-                    font-style: italic;
-                }
-                QLineEdit:focus {
-                    border: 1px solid #9d46ff;
-                    background-color: rgba(10, 12, 16, 0.8);
-                }
-            """
+                QLineEdit::placeholder { color: rgba(255, 255, 255, 0.3); font-style: italic; }
+                QLineEdit:focus { border: 1px solid #9d46ff; background-color: rgba(10, 12, 16, 0.8); }
+                """
             )
             input_container.setFont(self.app.roboto_black_font)
-            input_container.setFixedHeight(55)
-            # Casting Qt itself to Any resolves issues with dynamic members like AlignLeft
-            qt_any = cast(Any, Qt)
-            input_container.setAlignment(qt_any.AlignLeft | qt_any.AlignTop)
-            # Make input_container clickable to open expanded editor
-            input_container.mousePressEvent = lambda a0: self.open_expanded_editor( # type: ignore
+            input_container.mousePressEvent = lambda a0: self.open_expanded_editor(
                 input_container, "Editar Texto de Entrada"
-            )
-            # Restaurar el texto global si estamos en la vista de traductores
-            if category == "traductor" and self.last_global_text:
+            )  # type: ignore
+            if self.last_global_text:
                 input_container.setText(self.last_global_text)
-                
-            left_layout.addWidget(input_container)
+            traductor_layout.addWidget(input_container)
 
             output_container = QTextEdit()
-            output_container.setFrameShape(
-                QFrame.Shape.NoFrame
-            )  # Quitar marco cuadrado por defecto
-            output_container.setReadOnly(False)  # Allow editing
+            output_container.setFrameShape(QFrame.Shape.NoFrame)
             output_container.setPlaceholderText("La traducción aparecerá aquí...")
             output_container.setStyleSheet(
                 """
                 QTextEdit {
-                    font-size: 14px;
-                    color: white;
+                    font-size: 13px; color: white;
                     background-color: rgba(10, 12, 16, 0.6);
                     border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 8px;
-                    padding: 8px;
+                    border-radius: 6px; padding: 6px;
                 }
-                QTextEdit::placeholder {
-                    color: rgba(255, 255, 255, 0.3);
-                    font-style: italic;
-                }
-                QTextEdit:focus {
-                    border: 1px solid #9d46ff;
-                    background-color: rgba(10, 12, 16, 0.8);
-                }
-            """
+                QTextEdit::placeholder { color: rgba(255, 255, 255, 0.3); font-style: italic; }
+                QTextEdit:focus { border: 1px solid #9d46ff; background-color: rgba(10, 12, 16, 0.8); }
+                """
             )
             output_container.setFont(self.app.roboto_black_font)
             output_container.setFixedHeight(45)
-            output_container.setAlignment(
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
-            )
-            # Make output_container clickable to open expanded editor
-            output_container.mousePressEvent = lambda a0: self.open_expanded_editor( # type: ignore
+            output_container.mousePressEvent = lambda a0: self.open_expanded_editor(
                 output_container, "Editar Traducción"
-            )
-            
-            # Restaurar desde caché si existe un resultado previo
+            )  # type: ignore
             if tool["name"] in self.translation_cache:
                 output_container.setText(self.translation_cache[tool["name"]])
-                
-            left_layout.addWidget(output_container)
+            traductor_layout.addWidget(output_container)
+            info_lay.addWidget(traductor_container)
 
-        tool_layout.addWidget(left_container)
+        lay.addLayout(info_lay, 1)
 
-        # Elementos de la derecha añadidos directamente al layout principal
-        right_side_layout = QVBoxLayout()
-        right_side_layout.setContentsMargins(5, 5, 5, 5)
-        right_side_layout.setSpacing(5)
-        right_side_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # Puntuación (Chip de Neón)
-        rating_label = QLabel(f"{tool['rating']}")
-        rating_label.setFixedSize(80, 24)
-        rating = tool["rating"]
-        # Colores más vibrantes para el fondo del chip
-        if rating >= 9:
-            bg_color = "rgba(0, 255, 128, 0.2)"
-            border_color = "#00ff80"
-        elif rating >= 5:
-            bg_color = "rgba(255, 165, 0, 0.2)"
-            border_color = "#ffaa00"
-        else:
-            bg_color = "rgba(255, 50, 50, 0.2)"
-            border_color = "#ff3333"
-
-        qt_any = cast(Any, Qt)
-        rating_label.setStyleSheet(
-            f"""
-            background-color: {bg_color};
-            border: 1px solid {border_color};
-            border-radius: 12px;
-            color: white;
-            font-weight: bold;
-            qproperty-alignment: AlignCenter;
-            """
-        )
-        rating_label.setFont(self.app.roboto_black_font)
-        right_side_layout.addWidget(rating_label, alignment=qt_any.AlignCenter)
-
-        # Nombre
-        name_label = QLabel(tool["name"])
-        name_label.setStyleSheet(
-            "font-size: 16px; color: white; border: none; qproperty-alignment: AlignCenter;"
-        )
-        name_label.setFont(self.app.super_cartoon_font)
-        right_side_layout.addWidget(name_label)
-
-        # Imagen (Icono Circular)
-        image_label = QLabel()
-        image_label.setFixedSize(80, 80)
-        image_label.setAlignment(qt_any.AlignCenter)
-        image_label.setStyleSheet(
-            """
-            background-color: rgba(0, 0, 0, 0.6);
-            border: 2px solid rgba(157, 70, 255, 0.5);
-            border-radius: 40px; /* Circular */
-            """
-        )
-
-        # OPTIMIZACIÓN: Cargar la imagen ya escalada desde disco para ahorrar RAM y CPU
-        from PySide6.QtGui import QImageReader
-
-        reader = QImageReader(tool["image_path"])
-        orig_size = reader.size()
-        if orig_size.isValid():
-            # Escalar manteniendo el aspecto original dentro de un máximo de 50x50
-            orig_size.scale(50, 50, Qt.AspectRatioMode.KeepAspectRatio)
-            reader.setScaledSize(orig_size)
-        pixmap = QPixmap.fromImage(reader.read())
-
-        if not pixmap.isNull():
-            image_label.setPixmap(pixmap)
-
-        def open_tool_site(_event: Any):
-            if tool["name"] in Config.TOOL_URLS:
-                webbrowser.open(Config.TOOL_URLS[tool["name"]])
-
-        image_label.mousePressEvent = open_tool_site # type: ignore
-        image_label.setCursor(qt_any.PointingHandCursor)
-        right_side_layout.addWidget(image_label, alignment=qt_any.AlignCenter)
-
-        # Contenedor para botones (UNICO CONTENEDOR VISIBLE)
-        buttons_container = QWidget()
-        buttons_container.setObjectName("ButtonsBox")
-        buttons_container.setStyleSheet(
-            """
-            #ButtonsBox {
-                background-color: transparent;
-                border: none;
-            }
-            """
-        )
-        buttons_layout = QVBoxLayout(buttons_container)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(8)
-        buttons_layout.setAlignment(qt_any.AlignCenter)
-
-        # Botón Instalar
-        install_button = QPushButton(
-            "Descargar" if tool["name"] == "HaruNeko" else "Instalar"
-        )
-        install_button.setFixedSize(110, 28)
-        install_button.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(30, 30, 30, 200);
-                color: #e0e0e0;
-                border: 1px solid rgba(150, 0, 150, 100);
-                border-radius: 4px;
-                padding: 2px;
-            }
-            QPushButton:hover {
-                background-color: rgba(60, 60, 60, 220);
-                border: 1px solid #960096;
-                color: white;
-            }
-            QPushButton:disabled {
-                background-color: rgba(10, 10, 10, 150);
-                color: rgba(150, 150, 150, 100);
-                border: 1px solid rgba(150, 0, 150, 30);
-            }
-        """)
-
-        # Lógica de visibilidad: Solo mostrar si es HaruNeko o requiere instalación real
-        if category in ["traductor", "ai"] and tool["name"] != "HaruNeko":
-            install_button.hide()
-
-        if tool["name"] == "HaruNeko":
-            self.install_button = install_button
-            # Configurar el estado inicial del botón según si ya existe la carpeta
-            hakuneko_path = os.path.join(os.getcwd(), "app_tools", "HaruNeko")
-            if os.path.exists(hakuneko_path):
-                install_button.setText("Instalado")
-                install_button.setEnabled(False)
-            else:
-                install_button.clicked.connect(self.download_hakuneko)
-        elif tool["name"] in ["Gemini", "Mistral"]:
-            install_button.setEnabled(False)
-
-        buttons_layout.addWidget(install_button, alignment=qt_any.AlignCenter)
-
-        # Botón Usar
-        use_button = QPushButton("Usar")
-        use_button.setFixedSize(110, 32)  # Un poco más alto
-        use_button.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #00c6ff, stop:1 #0072ff); /* Cian a Azul eléctrico */
-                color: white;
-                border: 1px solid #00ffff;
-                border-radius: 16px; /* Pastilla completa */
-                font-weight: 900;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #55d4ff, stop:1 #2b8cff);
-                border: 1px solid white;
-                box-shadow: 0 0 10px #00c6ff;
-            }
-            QPushButton:pressed {
-                background-color: #005bb5;
-                margin-top: 2px;
-            }
-            QPushButton:disabled {
-                background: transparent;
-                color: rgba(255, 255, 255, 0.2);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-            }
-        """)  # Resetear estilo para usar Global pero con padding mínimo
-        use_button.setObjectName(f"use_btn_{tool['name']}")
-        
-        # Recuperar estado visual si la herramienta está ocupada
-        if tool["name"] in self._active_tool_names:
-            use_button.setText("Traduciendo...")
-            use_button.setEnabled(False)
-
+        # Conectar el botón Usar creado al principio
         if tool["name"] == "Gemini" and category == "ai":
             use_button.clicked.connect(
                 lambda checked=False, cat=category: self._create_gemini_container(cat)
@@ -1084,18 +1090,17 @@ class ToolsManager(QObject):
             )
         elif tool["name"] == "HaruNeko":
             use_button.clicked.connect(self.start_hakuneko)
+        elif tool["name"] == "Babylon":
+            use_button.clicked.connect(self._create_babylon_panel)
         elif category == "traductor":
-            input_field = tool_container.findChild(QLineEdit)
-            output_field = tool_container.findChild(QTextEdit)
-            if input_field and output_field:
+            if "input_container" in locals() and "output_container" in locals():
                 use_button.clicked.connect(
-                    lambda: self._translate_text(input_field, output_field, tool)
+                    lambda _=False,
+                    inc=input_container,
+                    outc=output_container,
+                    t=tool: self._translate_text(inc, outc, t)
                 )
 
-        buttons_layout.addWidget(use_button, alignment=qt_any.AlignCenter)
-        right_side_layout.addWidget(buttons_container, alignment=qt_any.AlignCenter)
-
-        tool_layout.addLayout(right_side_layout)
         return tool_container
 
     def _translate_text(
@@ -1119,60 +1124,59 @@ class ToolsManager(QObject):
                         QPushButton, f"use_btn_{tool['name']}"
                     )
 
+            if use_button:
+                use_button.setEnabled(False)
+                use_button.setText("Traduciendo...")
+
+            # Marcar herramienta como activa
+            self._active_tool_names.add(tool["name"])
+
+            # Limpiar caché previo para este traductor al iniciar uno nuevo
+            if tool["name"] in self.translation_cache:
+                del self.translation_cache[tool["name"]]
+
+            output_container.clear()
+            QApplication.processEvents()
+
+            s_combo = self.source_combo
+            t_combo = self.target_combo
+            if not s_combo or not t_combo:
                 if use_button:
-                    use_button.setEnabled(False)
-                    use_button.setText("Traduciendo...")
+                    use_button.setEnabled(True)
+                    use_button.setText("Usar")
+                return None
 
-                # Marcar herramienta como activa
-                self._active_tool_names.add(tool["name"])
+            task = TranslationTask(
+                tool,
+                input_text,
+                s_combo.currentData(),
+                t_combo.currentData(),
+            )
 
-                # Limpiar caché previo para este traductor al iniciar uno nuevo
-                if tool["name"] in self.translation_cache:
-                    del self.translation_cache[tool["name"]]
+            # Mantener viva la tarea para evitar "Signal source has been deleted"
+            self._active_tasks.append(task)
 
-                output_container.clear()
-                QApplication.processEvents()
-
-                s_combo = self.source_combo
-                t_combo = self.target_combo
-                if not s_combo or not t_combo:
-                    if use_button:
-                        use_button.setEnabled(True)
-                        use_button.setText("Usar")
-                    return None
-
-                task = TranslationTask(
-                    tool,
-                    input_text,
-                    s_combo.currentData(),
-                    t_combo.currentData(),
+            def on_finished(name: str, result: str, error: str):
+                # Eliminar de la lista de tareas activas al terminar
+                if task in self._active_tasks:
+                    self._active_tasks.remove(task)
+                self._handle_translation_finish(
+                    name, result, error, output_container, use_button
                 )
 
-                # Mantener viva la tarea para evitar "Signal source has been deleted"
-                self._active_tasks.append(task)
+            # Conectar las señales del trabajador para manejar el resultado
+            task.signals.finished.connect(on_finished)
 
-                def on_finished(name: str, result: str, error: str):
-                    # Eliminar de la lista de tareas activas al terminar
-                    if task in self._active_tasks:
-                        self._active_tasks.remove(task)
-                    self._handle_translation_finish(
-                        name, result, error, output_container, use_button
-                    )
+            # Para la traducción global, conectamos aquí también ANTES de empezar
+            handler: Optional[Callable[[str, str, str], None]] = (
+                self._current_global_handler
+            )
+            if handler is not None:
+                task.signals.finished.connect(handler)
 
-                # Conectar las señales del trabajador para manejar el resultado
-                task.signals.finished.connect(on_finished)
-
-                # Para la traducción global, conectamos aquí también ANTES de empezar
-                handler: Optional[Callable[[str, str, str], None]] = (
-                    self._current_global_handler
-                )
-                if handler is not None:
-                    task.signals.finished.connect(handler)
-
-                # Envía la tarea al pool de hilos para su ejecución
-                QThreadPool.globalInstance().start(task)
-                return task
-            return None
+            # Envía la tarea al pool de hilos para su ejecución
+            QThreadPool.globalInstance().start(task)
+            return task
 
         except Exception as e:
             error_msg = f"Error al iniciar la traducción: {str(e)}"
@@ -1217,7 +1221,9 @@ class ToolsManager(QObject):
             if not btn_to_restore or not shiboken6.isValid(btn_to_restore):
                 # Buscar en la UI actual (necesitamos acceder al contenedor correcto)
                 if self.parent_container and shiboken6.isValid(self.parent_container):
-                     btn_to_restore = self.parent_container.findChild(QPushButton, f"use_btn_{name}")
+                    btn_to_restore = self.parent_container.findChild(
+                        QPushButton, f"use_btn_{name}"
+                    )
 
             if btn_to_restore and shiboken6.isValid(btn_to_restore):
                 btn_to_restore.setText("Usar")
@@ -1677,6 +1683,40 @@ class ToolsManager(QObject):
                 )
             else:
                 self.gemini_browse_folders_button.setToolTip("")
+
+    def _create_babylon_panel(self):
+        """Muestra el panel de Babylon Downloader."""
+        # Ocultar todo lo demás
+        cast(Any, self.app)._hide_all_sections()
+
+        # Reutilizar si ya existe
+        if self.babylon_panel and shiboken6.isValid(self.babylon_panel):
+            self.babylon_panel._show_grid()
+            self.babylon_panel.show()
+            self.babylon_panel.raise_()
+            return
+
+        self.babylon_panel = BabylonPanel(
+            parent=self.app.content_container,
+            title_font=self.app.super_cartoon_font,
+            body_font=self.app.roboto_black_font,
+            adventure_font=self.app.adventure_font,
+        )
+        self.babylon_panel.setObjectName("BabylonPanelWidget")
+        self.babylon_panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.babylon_panel.setStyleSheet(
+            """
+            #BabylonPanelWidget {
+                background-color: rgba(20, 22, 28, 220);
+                border: 1px solid rgba(157, 70, 255, 0.3);
+                border-radius: 15px;
+            }
+            """
+        )
+        self.babylon_panel.setGeometry(50, 50, 780, 500)
+        self.babylon_panel.show()
+        self.babylon_panel.raise_()
+        QApplication.processEvents()
 
     def _create_mistral_container(self, category: str):
         """Crea el contenedor específico para Mistral."""

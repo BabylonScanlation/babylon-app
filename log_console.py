@@ -28,8 +28,14 @@ class QtLogHandler(logging.Handler):
         try:
             msg = self.format(record)
             
-            # Filtro de seguridad para mensajes ruidosos conocidos (HTTP/3 Downgrade)
-            noise_keywords = ["MustDowngradeError", "HttpVersion.h3", "Alt-Svc"]
+            # Filtro de seguridad para mensajes ruidosos conocidos
+            noise_keywords = [
+                "MustDowngradeError", 
+                "HttpVersion.h3", 
+                "Alt-Svc",
+                "encoding error : input conversion failed",
+                "I/O error : encoder error"
+            ]
             if any(kw in msg for kw in noise_keywords):
                 return
 

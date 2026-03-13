@@ -8,6 +8,7 @@ excluded_modules = [
     'matplotlib', 'pandas', 'scipy', 
     'notebook', 'share', 'curses',
     'playwright', 'node', 'PIL.SpiderImagePlugin',
+    'encodings.cp037', 'encodings.cp424', 'execjs',
     'PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets',
     'PySide6.QtQuick', 'PySide6.QtQml', 'PySide6.Qt3DCore',
     'PySide6.Qt3DRender', 'PySide6.Qt3DInput', 'PySide6.Qt3DLogic',
@@ -82,7 +83,14 @@ exe = EXE(
     strip=False, # Desactivado por falta de herramientas en el sistema
     upx=True,
     upx_path='dev_tools/upx-5.0.2-win64', 
-    upx_exclude=[],
+    upx_exclude=[
+        'python3*.dll',
+        'vcruntime*.dll', 
+        '_ssl.pyd',
+        'Qt6Core.dll',
+        'Qt6Gui.dll',
+        'Qt6Widgets.dll',
+    ],
     runtime_tmpdir=None,
     console=False, 
     disable_windowed_traceback=False,

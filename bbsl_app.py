@@ -10,7 +10,6 @@ import time
 from typing import Optional, List, Dict, Any, cast
 
 # bibliotecas no nativas
-import cv2
 import requests
 
 from PySide6.QtCore import Qt, QUrl, Signal, QSharedMemory, QTimer
@@ -36,7 +35,7 @@ init_global_logging()
 # Silenciar logs ruidosos de librerías externas
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING) 
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 sys.excepthook = global_exception_handler
 
@@ -69,7 +68,7 @@ class App(QMainWindow):
     def __init__(self):
         """Iniciador de funciones."""
         super().__init__()
-        
+
         self.timer: Optional[QTimer] = None # Inicialización temprana para evitar errores en _check_single_instance
 
         if not self._check_single_instance():
@@ -94,9 +93,9 @@ class App(QMainWindow):
         self.configuration_area: Optional[QWidget] = None # New configuration area
         self.gemini_config_area: Optional[QWidget] = None # Gemini specific configuration area
         self.container: Optional[QWidget] = None
-        
+
         self.background_manager: Optional[BackgroundManager] = None
-        
+
         self.custom_fonts: List[QFont] = []
         self.super_cartoon_font = QFont("Arial")
         self.adventure_font = QFont("Arial")
@@ -106,20 +105,20 @@ class App(QMainWindow):
         self.options_menu.controller.fullscreen_toggled.connect(self._toggle_fullscreen)
         self.options_menu.controller.background_type_changed.connect(self._handle_bg_type_change)
         self.options_menu.controller.music_toggled.connect(self._toggle_music)
-        
+
         self.project_manager = ProjectManager(USER_DATA_DIR)
         self.tools_manager = ToolsManager(self)
-        
+
         self.temp_files: List[str] = []
         self.audio_player: Optional[QMediaPlayer] = None
         self.audio_output: Optional[QAudioOutput] = None
         self.session_tokens = 0
-        
+
         self._original_gemini_model: str = ""
         self._original_gemini_thinking: bool = False
         self._original_auto_model_switch: bool = False
         self._original_gemini_api_key: str = ""
-        
+
         self.gemini_model_combo: Optional[QComboBox] = None
         self.gemini_thinking_cb: Optional[QCheckBox] = None
         self.auto_switch_checkbox: Optional[QCheckBox] = None
@@ -133,7 +132,7 @@ class App(QMainWindow):
         self._load_fonts()
         self._create_layout()
         self._setup_audio()
-        
+
         # Sincronizar entorno
         self._sync_env_to_config()
 
@@ -156,7 +155,7 @@ class App(QMainWindow):
         if env_mistral:
             Config.MISTRAL_API_KEY = env_mistral
             logging.info("✅ MISTRAL: Clave cargada.")
-            
+
         env_deepl = os.getenv("DEEPL_API_KEY")
         if env_deepl:
             Config.DEEPL_API_KEY = env_deepl
@@ -168,10 +167,10 @@ class App(QMainWindow):
         self.setWindowTitle(Config.WINDOW_TITLE)
         self.setFixedSize(*Config.WINDOW_SIZE)
         self.setWindowIcon(QIcon(Config.ICON_PATH))
-        
+
         # Inicializar gestor de fondo
         self.background_manager = BackgroundManager(self)
-        
+
         # self.container NO se crea aquí, se crea una sola vez en _create_layout o viceversa.
         # Vamos a unificarlo para que se cree SOLO AQUÍ.
         self.container = QWidget(self)
@@ -179,11 +178,11 @@ class App(QMainWindow):
         self.container.setGeometry(0, 0, *Config.WINDOW_SIZE)
         self.container.setStyleSheet("#MasterContainer { background: transparent; border: none; }")
         self.container.raise_()
-        
+
         # INICIAR VIDEO Y AUDIO
         self.background_manager.start_background("Video")
         self._start_audio_playback()
-    
+
     def _setup_audio(self):
         # Configura el reproductor de audio en bucle con múltiples archivos.
         self.audio_player = QMediaPlayer()
@@ -219,46 +218,17 @@ class App(QMainWindow):
 
 
 
-    def _initialize_video_capture(self) -> bool:
-        """Inicializa o detiene el vídeo según elección del usuario."""
-        try:
-            self.cap = cv2.VideoCapture(Config.VIDEO_PATH)  # pylint: disable=no-member
-            cap_any = cast(Any, self.cap)
-            if not cap_any or not cap_any.isOpened():
-                raise ValueError("No se pudo abrir el archivo de video")
-            return True
-        except (IOError, OSError, ValueError):
-            return False
 
-    def _setup_opencv_video(self):
-        """Inicializa el vídeo."""
-        if not self._initialize_video_capture():
-            self._start_carousel_fade_in() # If video fails, start fade-in for background
-            return
-        if self.video_label:
-            self.video_label.setGeometry(0, 0, *Config.WINDOW_SIZE)
-        if self.timer:
-            self.timer.timeout.connect(self._update_frame)
-        if self.background_label:
-            cast(Any, self).background_label.hide()
-
-    def _start_video_playback(self):
-        """Inicia la reproducción de video."""
-        cap_any = cast(Any, self.cap)
-        if cap_any and cap_any.isOpened() and self.timer:
-            self.timer.start(30)
-            if self.video_label:
-                self.video_label.show()
 
     def closeEvent(self, a0: QCloseEvent):  # pylint: disable=invalid-name, unused-argument
         """Liberar recursos al cerrar la aplicación."""
         if self.background_manager:
             self.background_manager.cleanup()
-            
+
         if self.audio_player is not None:
             self.audio_player.stop()
             self.audio_player = None
-            
+
         self._clear_temp_files()
 
         # Detach from shared memory
@@ -358,7 +328,7 @@ class App(QMainWindow):
             "AYUDA": self.show_help,
             "OPCIONES": self.show_options,
             "CONSOLA": self.show_console,
-            
+
             "SOBRE ESTO": self.show_about,
         }
         for text, action in btn_data.items():
@@ -428,7 +398,7 @@ class App(QMainWindow):
             self.content_container = QWidget(self.container)
             self.content_container.setGeometry(310, 0, 900, 600)
             self.content_container.setStyleSheet("background: transparent; border: none;") # INVISIBLE
-            
+
             self.home_label = self._create_text_area(
                 "BABYLON SCANLATION\n\nEste es el inicio de la aplicación. Aquí puedes acceder a las diferentes secciones desde el menú lateral para gestionar tus proyectos y herramientas.",
                 style="""
@@ -449,7 +419,7 @@ class App(QMainWindow):
             self.log_console_area = self._create_log_console_area() # Initialize Log Console area
             self.configuration_area = self._create_configuration_area() # Initialize configuration area
             self.gemini_config_area = GeminiConfigPanel(
-                self.content_container, 
+                self.content_container,
                 self.tools_manager,
                 self.super_cartoon_font,
                 self.roboto_black_font,
@@ -483,7 +453,7 @@ class App(QMainWindow):
             }
             """
         )
-        
+
         layout = QVBoxLayout(frame)
         text_edit = QTextEdit()
         text_edit.setFrameShape(QFrame.Shape.NoFrame)
@@ -492,7 +462,7 @@ class App(QMainWindow):
         text_edit.setFont(self.super_cartoon_font)
         # Forzamos transparencia absoluta en el widget de texto
         text_edit.setStyleSheet("background: transparent; border: none; color: white; padding: 20px; font-size: 24px;")
-        
+
         layout.addWidget(text_edit)
         return frame # Retornamos el frame como el objeto de la sección
 
@@ -511,7 +481,7 @@ class App(QMainWindow):
         add_button = QPushButton("AÑADIR PROYECTO")
         # Ensure 'scroll' is treated as a widget that has .widget().layout()
         scroll_widget = projects_area["scroll"]
-        
+
         if scroll_widget and isinstance(scroll_widget, QScrollArea) and scroll_widget.widget():
              layout = scroll_widget.widget().layout()
              if isinstance(layout, QGridLayout):
@@ -522,7 +492,7 @@ class App(QMainWindow):
         add_button.setFont(self.adventure_font)
         add_button.setCursor(Qt.CursorShape.PointingHandCursor)
         button_layout.addWidget(add_button)
-        
+
         delete_button = QPushButton("QUITAR PROYECTO")
         delete_button.setFont(self.adventure_font)
         delete_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -776,8 +746,8 @@ class App(QMainWindow):
         model_combo.setFont(self.roboto_black_font)
         model_combo.currentIndexChanged.connect(
             lambda: self._save_gemini_settings(
-                model_name=model_combo.currentText(), 
-                enable_thinking=self.thinking_checkbox.isChecked() if self.thinking_checkbox else Config.GEMINI_ENABLE_THINKING, 
+                model_name=model_combo.currentText(),
+                enable_thinking=self.thinking_checkbox.isChecked() if self.thinking_checkbox else Config.GEMINI_ENABLE_THINKING,
                 enable_auto_switch=self.auto_switch_checkbox.isChecked() if self.auto_switch_checkbox else Config.ENABLE_AUTO_MODEL_SWITCH,
                 system_instruction=Config.GEMINI_SYSTEM_INSTRUCTION
             )
@@ -795,8 +765,8 @@ class App(QMainWindow):
         self.thinking_checkbox.setFont(self.roboto_black_font)
         self.thinking_checkbox.stateChanged.connect(
             lambda: self._save_gemini_settings(
-                model_name=model_combo.currentText(), 
-                enable_thinking=self.thinking_checkbox.isChecked() if self.thinking_checkbox else Config.GEMINI_ENABLE_THINKING, 
+                model_name=model_combo.currentText(),
+                enable_thinking=self.thinking_checkbox.isChecked() if self.thinking_checkbox else Config.GEMINI_ENABLE_THINKING,
                 enable_auto_switch=self.auto_switch_checkbox.isChecked() if self.auto_switch_checkbox else Config.ENABLE_AUTO_MODEL_SWITCH,
                 system_instruction=Config.GEMINI_SYSTEM_INSTRUCTION
             )
@@ -850,7 +820,7 @@ class App(QMainWindow):
                 else:
                     raise
 
-    
+
 
     def _hide_all_sections(self):
         """Oculta todas las secciones de contenido y controles de traducción."""
@@ -866,7 +836,7 @@ class App(QMainWindow):
 
         if hasattr(tools_manager, "header_panel") and tools_manager.header_panel:
             tools_manager.header_panel.hide()
-        
+
         if hasattr(tools_manager, "footer_panel") and tools_manager.footer_panel:
             tools_manager.footer_panel.hide()
 
@@ -889,7 +859,10 @@ class App(QMainWindow):
 
     def _hide_main_sections(self):
         """Oculta las secciones principales de la UI."""
-        self._hide_widgets(["home_label", "help_area", "options_area", "about_area", "configuration_area", "gemini_config_area", "log_console_area"])
+        self._hide_widgets([
+            "home_label", "help_area", "options_area", "about_area",
+            "configuration_area", "gemini_config_area", "log_console_area"
+        ])
         self._hide_utilities_area()
         self._hide_projects_area()
         # Asegurarse de ocultar contenedores dinámicos de ToolsManager
@@ -899,6 +872,8 @@ class App(QMainWindow):
             self.tools_manager.gemini_container.hide()
         if hasattr(self.tools_manager, 'mistral_container') and self.tools_manager.mistral_container:
             self.tools_manager.mistral_container.hide()
+        if hasattr(self.tools_manager, 'babylon_panel') and self.tools_manager.babylon_panel:
+            self.tools_manager.babylon_panel.hide()
 
     def show_gemini_configuration(self):
         """Muestra la sección de configuración de Gemini."""
@@ -912,7 +887,7 @@ class App(QMainWindow):
         self._hide_container_only("parent_container", None)
         self._hide_container_only("details_container", None)
         self._hide_container_only("parent_container", self.tools_manager)
-        
+
         # Preservar contenedores de IA
         self._hide_container_only("gemini_container", None)
         self._hide_container_only("gemini_container", self.tools_manager)
@@ -1067,17 +1042,17 @@ if __name__ == "__main__":
     #     pass # Si falla la redirección, seguimos igual
 
     app = QApplication(sys.argv)
-    
+
     # Cargar y aplicar estilos QSS
     qss_path = resource_path(os.path.join("styles", "main.qss"))
     if os.path.exists(qss_path):
         with open(qss_path, "r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())
-            
+
     # 2. ACTIVAR SEÑALES DE LOGGING (Una vez que existe QApplication)
     from log_console import init_signals
     init_signals()
-            
+
     window = App()
     window.show()
     sys.exit(app.exec())
