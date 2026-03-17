@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any, cast
 # bibliotecas no nativas
 import requests
 
-from PySide6.QtCore import Qt, QUrl, Signal, QSharedMemory, QTimer
+from PySide6.QtCore import Qt, QUrl, Signal, QSharedMemory, QTimer, QEvent
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QPixmap, QMouseEvent, QCloseEvent
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtWidgets import (
@@ -32,10 +32,8 @@ from background_manager import BackgroundManager
 # 1. INICIALIZAR LOGGING GLOBAL INMEDIATAMENTE
 init_global_logging()
 
-# Silenciar logs ruidosos de librerías externas
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
+# ELIMINADO: Ya no se silencian logs de librerías externas.
+# Queremos capturar absolutamente todo por petición del usuario.
 
 sys.excepthook = global_exception_handler
 
@@ -68,6 +66,7 @@ class App(QMainWindow):
     def __init__(self):
         """Iniciador de funciones."""
         super().__init__()
+        QApplication.instance().installEventFilter(self)
 
         self.timer: Optional[QTimer] = None # Inicialización temprana para evitar errores en _check_single_instance
 
@@ -135,6 +134,13 @@ class App(QMainWindow):
 
         # Sincronizar entorno
         self._sync_env_to_config()
+
+    def eventFilter(self, source: object, event: QEvent) -> bool:
+        """Filtra los eventos de teclado para deshabilitar la tecla Tab y las flechas de dirección."""
+        if event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_Left, Qt.Key.Key_Right):
+                return True
+        return super().eventFilter(source, event)
 
     def _sync_env_to_config(self):
         """Si existen claves en .env, forzar su uso en Config."""
@@ -614,7 +620,8 @@ class App(QMainWindow):
             else:
                 thumbnail.setText("Miniatura no disponible")
                 thumbnail.setStyleSheet("color: white; font-size: 12px;")
-        except (requests.RequestException, IOError):
+        except (requests.RequestException, IOError) as e:
+            logging.warning(f"[UI] No se pudo cargar miniatura de proyecto: {e}")
             thumbnail.setText("Error al cargar")
             thumbnail.setStyleSheet("color: white; font-size: 12px;")
         return thumbnail
@@ -1028,19 +1035,11 @@ class App(QMainWindow):
 
 
 if __name__ == "__main__":
-    # Silenciar advertencias de bajo nivel (FFmpeg/C++) redirigiendo stderr a null
-    # try:
-    #     # Abrir el "agujero negro" del sistema (NUL en Windows, /dev/null en Unix)
-    #     devnull = os.open(os.devnull, os.O_WRONLY)
-    #     # Guardar el stderr original por si acaso (aunque no lo restauraremos)
-    #     old_stderr = os.dup(sys.stderr.fileno())
-    #     # Redirigir stderr (descriptor 2) a devnull
-    #     os.dup2(devnull, sys.stderr.fileno())
-    #     # Cerrar el handle auxiliar
-    #     os.close(devnull)
-    # except Exception as e:
-    #     pass # Si falla la redirección, seguimos igual
-
+    # --- ACTIVAR DEPURACIÓN INTENSIVA DE QT ---
+    os.environ["QT_DEBUG_PLUGINS"] = "1"
+    os.environ["QT_LOGGING_RULES"] = "*.debug=true;qt.*=true"
+    os.environ["PYTHONWARNINGS"] = "always"
+    
     app = QApplication(sys.argv)
 
     # Cargar y aplicar estilos QSS

@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import TYPE_CHECKING, Any, List, Union, cast
 
 import requests
@@ -55,8 +56,8 @@ class OptionsController(QObject):
         for temp_file in self.temp_files:
             try:
                 os.remove(temp_file)
-            except OSError:
-                pass
+            except OSError as e:
+                logging.error(f"No se pudo eliminar el archivo temporal {temp_file}: {e}")
         self.temp_files = []
 
     def pause_resume_video(self):
@@ -183,7 +184,7 @@ class OptionsController(QObject):
                     pixmap.loadFromData(response.content)
                     self.update_image_source(pixmap)
             except (IOError, OSError, ValueError):
-                pass
+                logging.exception(f"Error al cargar imagen desde URL: {url}")
 
     def update_image_source(self, source: Union[str, QPixmap]):
         """Actualizar la fuente de la imagen."""

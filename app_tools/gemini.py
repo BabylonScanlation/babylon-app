@@ -7,16 +7,13 @@ from typing import List, Optional, Any, Tuple, Dict, cast, Set
 from concurrent.futures import ThreadPoolExecutor
 
 # pylint: disable=no-name-in-module, import-error
-from google import genai as _genai_module # type: ignore
-from google.genai import types as _types_module # type: ignore
+import google.genai as genai
+from google.genai import types
+
 from PIL import Image
 
 from app_tools.ai_service import BaseAIProcessor, AIAPIError
 from config import Config
-
-# Re-export as Any to silence Pylance unknown type errors
-genai: Any = cast(Any, _genai_module)
-types: Any = cast(Any, _types_module)
 
 class GeminiAPIError(AIAPIError):
     pass
@@ -99,7 +96,7 @@ class GeminiProcessor(BaseAIProcessor):
             models_iter = client.models.list()
             available_models: List[str] = []
             
-            ALLOWED_FAMILIES = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-flash"]
+            ALLOWED_FAMILIES = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-flash", "gemini-3.1-flash-lite-preview"]
             FORBIDDEN_TERMS = [
                 "pro", "2.0", "deep-research", "nano", "audio", "tts", 
                 "embedding", "aqa", "gemma", "image", "face", "screen",
@@ -122,14 +119,32 @@ class GeminiProcessor(BaseAIProcessor):
                     continue
                 available_models.append(name)
             
-            def sort_priority(m_name: str) -> int:
-                if "gemini-3" in m_name:
-                    return 3
-                if "latest" in m_name:
-                    return 0 
+            def sort_priority(m_name: str) -> Tuple:
+                # Extraer versión principal y sub-versión
+                version_match = re.search(r'gemini-(\d+(\.\d+)?)', m_name)
+                main_version = 0
+                sub_version = 0
+                if version_match:
+                    try:
+                        # Dar un gran peso a la versión principal
+                        version_parts = version_match.group(1).split('.')
+                        main_version = int(version_parts[0]) * 100
+                        if len(version_parts) > 1:
+                            sub_version = int(version_parts[1]) * 10
+                    except (ValueError, IndexError):
+                        pass
+                
+                # Penalizar 'lite' y 'latest' para que vayan al final de su grupo
+                penalty = 0
                 if "lite" in m_name:
-                    return 1
-                return 2 
+                    penalty = 5
+                if "latest" in m_name:
+                    penalty = 9
+
+                # La prioridad final es la versión menos la penalización.
+                # A mayor número, más arriba aparecerá.
+                priority = main_version + sub_version - penalty
+                return (priority, m_name)
 
             available_models.sort(key=sort_priority, reverse=True)
             if not available_models:
@@ -290,7 +305,7 @@ class GeminiProcessor(BaseAIProcessor):
             logging.error(f"Error en troceado paralelo: {e}")
             return [img_path]
 
-    def call_api_batch(self, prompt: str, images: List[str], cancel_event: Optional[threading.Event] = None) -> List[str]:
+    def call_api_batch(self, prompt: str, images: List[str], cancel_event: Optional[threading.Event] = None, current_batch: int = 1, total_batches: int = 1) -> List[str]:
         if not images:
             return []
         
@@ -442,6 +457,8 @@ class GeminiProcessor(BaseAIProcessor):
                             part_args["media_resolution"] = resolution_enum
                         current_contents.append(types.Part.from_bytes(**part_args))
 
+                    self._report_status(f"Enviando lote {current_batch}/{total_batches} (sub-lote {batch_idx//BATCH_SIZE + 1} de { (len(final_images_list) + BATCH_SIZE - 1) // BATCH_SIZE })...")
+                    
                     # BUCLE DE REINTENTOS PARA ESTE LOTE ESPECÍFICO
                     api_retries = 3
                     retry_delay = 2
@@ -450,7 +467,6 @@ class GeminiProcessor(BaseAIProcessor):
 
                     for api_attempt in range(api_retries + 1):
                         try:
-                            self._report_status(f"Enviando lote {batch_idx//BATCH_SIZE + 1}/{(len(final_images_list)-1)//BATCH_SIZE + 1}...")
                             response = client.models.generate_content(model=Config.GEMINI_MODEL, contents=current_contents, config=config)
                             if response.text:
                                 batch_response_text = str(response.text)
@@ -558,15 +574,19 @@ class GeminiProcessor(BaseAIProcessor):
             return "error"
 
         chunk_size = 5
-        logging.info(f"Procesando capítulo con {Config.GEMINI_MODEL} | Lote: {chunk_size}")
+        total_batches = (len(image_files) + chunk_size - 1) // chunk_size
+        logging.info(f"Procesando capítulo con {Config.GEMINI_MODEL} | Lote: {chunk_size} | Total Lotes: {total_batches}")
 
         all_texts: List[str] = []
         for i in range(0, len(image_files), chunk_size):
             if cancel_event and cancel_event.is_set():
                 return "cancelled"
             
+            current_batch_num = (i // chunk_size) + 1
             chunk = image_files[i : i + chunk_size]
-            results = self.call_api_batch("", chunk, cancel_event=cancel_event)
+            results = self.call_api_batch(
+                "", chunk, cancel_event=cancel_event, current_batch=current_batch_num, total_batches=total_batches
+            )
             
             # Verificación de fallo inmediato
             if results and results[0] == "CANCELLED":
@@ -590,6 +610,9 @@ class GeminiProcessor(BaseAIProcessor):
         file_paths.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])
 
         chunk_size = 5
+        total_batches = (len(file_paths) + chunk_size - 1) // chunk_size
+        logging.info(f"Procesando {len(file_paths)} archivos con {Config.GEMINI_MODEL} | Lote: {chunk_size} | Total Lotes: {total_batches}")
+        
         all_texts: List[str] = []
         success_status = "success"
 
@@ -598,8 +621,11 @@ class GeminiProcessor(BaseAIProcessor):
                 success_status = "cancelled"
                 break
             
+            current_batch_num = (i // chunk_size) + 1
             chunk = file_paths[i : i + chunk_size]
-            results = self.call_api_batch("", chunk, cancel_event=cancel_event)
+            results = self.call_api_batch(
+                "", chunk, cancel_event=cancel_event, current_batch=current_batch_num, total_batches=total_batches
+            )
             
             # Verificación de fallo inmediato
             if results and results[0] == "CANCELLED":

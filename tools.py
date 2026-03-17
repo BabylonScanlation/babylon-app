@@ -1,10 +1,12 @@
 "Módulo 'tools.py' dónde esta la lógica que permite cargar los datos de las herramientas."
 
 # bibliotecas nativas
+import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import webbrowser
 from typing import (
@@ -28,7 +30,7 @@ from app_tools.gemini import GeminiAPIError, GeminiProcessor
 from app_tools.haruneko import DownloadThread, HaruNekoManager
 from app_tools.mistral import MistralAPIError
 from babylon_panel import BabylonPanel
-from config import Config
+from config import Config, resource_path
 
 # bibliotecas no nativas
 # pylint: disable=no-name-in-module
@@ -40,7 +42,7 @@ from PySide6.QtCore import (
     QThreadPool,
     Signal,
 )
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont, QPixmap, QFocusEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -330,6 +332,10 @@ class ToolsManager(QObject):
 
     def show_tool_details(self, category: str):
         """Muestra los detalles de las herramientas específicas para una categoría."""
+        logging.debug(
+            f"[UI] Navegando a detalles de herramienta: categoría '{category}'"
+        )
+
         if self.toggle_ai_button:
             self.toggle_ai_button.hide()
         if self.source_combo:
@@ -598,6 +604,20 @@ class ToolsManager(QObject):
                         desc=description_label: leave_handler(lbl, desc)
                     )  # type: ignore
 
+                    def focus_handler(
+                        event: QFocusEvent,
+                        widget=image_label,
+                        scroll=scroll_area,
+                    ):
+                        if event.gotFocus():
+                            scroll.ensureWidgetVisible(widget, 50, 50)  # 50px de margen
+                        # Dejar que el evento original continúe
+                        original_focusInEvent(event)
+
+                    # Guardar el evento original y sobreescribirlo
+                    original_focusInEvent = image_label.focusInEvent
+                    image_label.focusInEvent = focus_handler
+
                     # Acción de Click
                     def make_click_handler(t_name=tool["name"], cat=category):
                         def on_click(event):
@@ -634,7 +654,9 @@ class ToolsManager(QObject):
                     row, col = divmod(i, cols)
                     details_layout.addWidget(image_label, row, col)
                 except Exception as e:
-                    logging.error(f"Error cargando herramienta en grid: {e}")
+                    logging.exception(
+                        f"[UI] Error crítico cargando herramienta '{tool.get('name', 'desconocida')}' en grid: {e}"
+                    )
 
         scroll_area.setWidget(details_container)
         if self.parent_container:
@@ -704,7 +726,9 @@ class ToolsManager(QObject):
         for container in tool_containers:
             input_field = container.findChild(QLineEdit)
             output_field = container.findChild(QTextEdit)
-            use_button = container.findChild(QPushButton, f"use_btn_{cast(Any, container).tool['name']}")
+            use_button = container.findChild(
+                QPushButton, f"use_btn_{cast(Any, container).tool['name']}"
+            )
 
             if (
                 not isinstance(input_field, QLineEdit)
@@ -2130,30 +2154,42 @@ class ToolsManager(QObject):
         self.download_hakuneko()
 
     def _start_gemini_processing(self, retry_from_mistral: bool = False):
-        """Inicia Gemini en segundo plano usando Worker y ThreadPool."""
+        """Inicia Gemini en segundo plano de forma no bloqueante."""
         try:
             if not self.output_directory:
                 raise ValueError("La ruta de salida debe estar configurada.")
 
-            self.gemini_start_button.setEnabled(False)
-            self.gemini_cancel_button.setEnabled(True)
+            current_files = (
+                list(self.selected_files_for_processing)
+                if hasattr(self, "selected_files_for_processing")
+                else []
+            )
+            current_input = self.input_path
+            current_output = str(self.output_directory)
+
+            if not current_files and not current_input:
+                raise ValueError("No se han seleccionado archivos ni carpetas.")
+
+            # --- CORRECCIÓN DE BUGS: ESTADO DE BOTONES ---
+            if hasattr(self, "gemini_start_button"):
+                self.gemini_start_button.setEnabled(False)
+            if hasattr(self, "gemini_cancel_button"):
+                self.gemini_cancel_button.setEnabled(True)
+
+            # Limpiar selección para que el usuario pueda preparar el SIGUIENTE capítulo
+            self.selected_files_for_processing = []
+            self.input_path = None
+
             self.cancel_event = threading.Event()
 
-            # Callback para actualizaciones de estado (thread-safe gracias a señal)
             def status_updater(message: str):
                 self.status_update_signal.emit(message)
 
             self.gemini_processor.set_status_callback(status_updater)
 
-            # Función que se ejecutará en segundo plano
             def processing_task():
-                # Wrapper para capturar finalización y pasarla como resultado del Worker
-                # En lugar de llamar directamente a _handle_processing_finished (que toca UI),
-                # devolvemos el estado para que la señal 'result' lo maneje en el hilo principal.
                 final_status = "unknown"
                 final_error = None
-
-                # Evento local para esperar a que termine el procesamiento interno
                 processing_done = threading.Event()
 
                 def on_finished_callback(status: str, error_msg: Optional[str] = None):
@@ -2163,71 +2199,44 @@ class ToolsManager(QObject):
                     processing_done.set()
 
                 try:
-                    if (
-                        hasattr(self, "selected_files_for_processing")
-                        and self.selected_files_for_processing
-                    ):
+                    if current_files:
                         self._process_selected_files_gemini(
-                            self.selected_files_for_processing,
-                            str(self.output_directory),
+                            current_files,
+                            current_output,
                             self.cancel_event,
                             on_finished_callback,
                         )
-                        self.selected_files_for_processing = []
-                    elif self.input_path:
+                    elif current_input:
                         cast(Any, self.gemini_processor).start_processing_in_background(
-                            self.input_path,
-                            str(self.output_directory),
+                            current_input,
+                            current_output,
                             self.cancel_event,
                             callback=on_finished_callback,
                         )
-                    else:
-                        raise ValueError("Rutas no configuradas.")
 
-                    # Esperar a que el callback se ejecute (sincronizar el hilo worker con el proceso interno)
-                    # Esto es necesario porque start_processing_in_background podría lanzar sus propios hilos
-                    # si no está diseñado para bloquear. Asumimos que bloquea o usa el callback.
-                    # Si start_processing_in_background NO bloquea, necesitaremos esperar al evento.
                     processing_done.wait()
                     return (final_status, final_error)
 
                 except GeminiAPIError as e:
-                    if retry_from_mistral:
-                        return ("error", f"Ambos modelos fallaron: {e}")
-                    else:
-                        return ("error_gemini_api", str(e))
+                    return (
+                        "error_gemini_api" if not retry_from_mistral else "error",
+                        str(e),
+                    )
                 except Exception as e:
                     return ("error", str(e))
 
-            # Configurar Worker
             worker = Worker(processing_task)
-
-            # Conectar resultado (se ejecuta en hilo principal)
-            def handle_result(result):
-                status, error = result
-                self._handle_processing_finished(status, error)
-
-            worker.signals.result.connect(handle_result)
-
-            # Conectar errores no capturados
-            def handle_error(err_tuple):
-                _, value, _ = err_tuple
-                self._handle_processing_finished("error", str(value))
-
-            worker.signals.error.connect(handle_error)
-
+            worker.signals.result.connect(
+                lambda res: self._handle_processing_finished(res[0], res[1])
+            )
             QThreadPool.globalInstance().start(worker)
 
-            QMessageBox.information(
-                self.app,
-                "Procesamiento iniciado",
-                "El procesamiento se ha iniciado. Puedes cancelarlo en cualquier momento.",
+            logging.info(
+                "[GEMINI] Tarea iniciada. El botón se reactivará al finalizar."
             )
 
-        except ValueError as e:
-            QMessageBox.critical(
-                self.app, "Error", f"Error durante el procesamiento: {e}"
-            )
+        except Exception as e:
+            QMessageBox.critical(self.app, "Error", str(e))
             if hasattr(self, "gemini_start_button"):
                 self.gemini_start_button.setEnabled(True)
             if hasattr(self, "gemini_cancel_button"):
@@ -2237,13 +2246,13 @@ class ToolsManager(QObject):
         """Cancela el procesamiento en curso de Gemini."""
         if hasattr(self, "cancel_event") and self.cancel_event:
             self.cancel_event.set()
-            self.gemini_cancel_button.setEnabled(
-                False
-            )  # Deshabilitar botón de cancelación
+            if hasattr(self, "gemini_cancel_button"):
+                self.gemini_cancel_button.setEnabled(False)
+
             QMessageBox.information(
                 self.app,
                 "Cancelación Solicitada",
-                "Se ha solicitado la cancelación. El proceso se detendrá lo antes posible.",
+                "Se ha solicitado la cancelación. El proceso se detendrá en el siguiente punto de control.",
             )
         else:
             QMessageBox.warning(
@@ -2253,17 +2262,30 @@ class ToolsManager(QObject):
             )
 
     def _start_mistral_processing(self, retry_from_gemini: bool = False):
-        """Inicia Mistral en segundo plano validando rutas y manejando cancelaciones."""
+        """Inicia Mistral en segundo plano de forma no bloqueante."""
         try:
-            if not self.output_directory:  # output_directory is always required
+            if not self.output_directory:
                 raise ValueError("La ruta de salida debe estar configurada.")
 
-            # Deshabilitar botón de inicio y habilitar botón de cancelación
-            if self.mistral_start_button:
+            current_files = (
+                list(self.selected_files_for_processing)
+                if hasattr(self, "selected_files_for_processing")
+                else []
+            )
+            current_input = self.input_path
+            current_output = str(self.output_directory)
+
+            if not current_files and not current_input:
+                raise ValueError("No se han seleccionado archivos ni carpetas.")
+
+            # --- CORRECCIÓN DE BUGS: ESTADO DE BOTONES ---
+            if hasattr(self, "mistral_start_button"):
                 self.mistral_start_button.setEnabled(False)
-            if self.mistral_cancel_button:
+            if hasattr(self, "mistral_cancel_button"):
                 self.mistral_cancel_button.setEnabled(True)
-            QApplication.processEvents()  # Actualizar UI inmediatamente
+
+            self.selected_files_for_processing = []
+            self.input_path = None
 
             self.cancel_event = threading.Event()
 
@@ -2273,62 +2295,36 @@ class ToolsManager(QObject):
                     def on_finished(status: str, error_msg: Optional[str] = None):
                         self._handle_processing_finished(status, error_msg)
 
-                    if (
-                        hasattr(self, "selected_files_for_processing")
-                        and self.selected_files_for_processing
-                    ):
-                        # Process selected files
+                    if current_files:
                         self._process_selected_files_mistral(
-                            self.selected_files_for_processing,
-                            str(self.output_directory),
-                            cast(threading.Event, self.cancel_event),
+                            current_files,
+                            current_output,
+                            self.cancel_event,
                             on_finished,
                         )
-                        # Clear selected files after starting processing
-                        self.selected_files_for_processing = []
-                    elif self.input_path:
-                        # Process input directory
+                    elif current_input:
                         cast(
                             Any, self.mistral_processor
                         ).start_processing_in_background(
-                            self.input_path,
-                            str(self.output_directory),
-                            cast(threading.Event, self.cancel_event),
+                            current_input,
+                            current_output,
+                            self.cancel_event,
                             callback=on_finished,
                         )
-                    else:
-                        raise ValueError(
-                            "Las rutas de entrada o archivos seleccionados deben estar configurados."
-                        )
-                except MistralAPIError as e:
-                    if retry_from_gemini:
-                        # If already retrying from Gemini and Mistral also fails, just show error and stop
-                        self._handle_processing_finished(
-                            "error", f"Ambos modelos (Gemini y Mistral) fallaron: {e}"
-                        )
-                    else:
-                        self._handle_processing_finished("error_mistral_api", str(e))
                 except Exception as e:
                     self._handle_processing_finished("error", str(e))
 
-            self.processing_thread = threading.Thread(target=processing_target_mistral)
-            self.processing_thread.start()
+            thread = threading.Thread(target=processing_target_mistral, daemon=True)
+            thread.start()
+            logging.info(
+                "[MISTRAL] Tarea iniciada. El botón se reactivará al finalizar."
+            )
 
-            QMessageBox.information(
-                cast(QWidget, self.app),
-                "Procesamiento iniciado",
-                "El procesamiento se ha iniciado. Puedes cancelarlo en cualquier momento.",
-            )
-            # Mover el QApplication.processEvents() aquí para actualizar UI
-            QApplication.processEvents()
-        except ValueError as e:
-            QMessageBox.critical(
-                cast(QWidget, self.app), "Error", f"Error durante el procesamiento: {e}"
-            )
-            # Asegurar reset de botones en caso de error
-            if hasattr(self, "mistral_start_button") and self.mistral_start_button:
+        except Exception as e:
+            QMessageBox.critical(self.app, "Error", str(e))
+            if hasattr(self, "mistral_start_button"):
                 self.mistral_start_button.setEnabled(True)
-            if hasattr(self, "mistral_cancel_button") and self.mistral_cancel_button:
+            if hasattr(self, "mistral_cancel_button"):
                 self.mistral_cancel_button.setEnabled(False)
 
     def _process_selected_files_mistral(
@@ -2690,3 +2686,41 @@ class ToolsManager(QObject):
         footer_label.setAlignment(qt_any.AlignCenter)
         footer_label.setGeometry(50, 500, 800, 150)
         return footer_label
+
+
+def _open_in_terminal(args: List[str], cwd: str, title: str = "") -> str:
+    """Abre un script en una nueva ventana de terminal (CLI interactivo)."""
+    try:
+        if sys.platform == "win32":
+            # Escapar argumentos con espacios
+            inner = " ".join(
+                f'"{a}"' if " " in str(a) and not str(a).startswith('"') else str(a)
+                for a in args
+            )
+            # cmd /k mantiene la ventana abierta al finalizar
+            cmd_str = f'start "{title}" cmd /k {inner}'
+            subprocess.Popen(
+                cmd_str,
+                cwd=cwd,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                shell=True,
+            )
+        else:
+            launched = False
+            for term in [
+                ["gnome-terminal", f"--title={title}", "--"] + args,
+                ["xterm", "-title", title, "-e"] + args,
+                ["konsole", "--title", title, "-e"] + args,
+                ["x-terminal-emulator", "-e"] + args,
+            ]:
+                try:
+                    subprocess.Popen(term, cwd=cwd)
+                    launched = True
+                    break
+                except FileNotFoundError:
+                    continue
+            if not launched:
+                subprocess.Popen(args, cwd=cwd)
+        return f"✅ Terminal abierto: {title}"
+    except Exception as exc:
+        return f"❌ Error al abrir terminal: {exc}"

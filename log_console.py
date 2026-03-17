@@ -2,13 +2,43 @@ import logging
 import os
 import threading
 import codecs
-from PySide6.QtWidgets import QVBoxLayout, QTextEdit, QFrame
+import sys
+import warnings
+from PySide6.QtWidgets import QVBoxLayout, QTextEdit, QFrame, QMessageBox
 from PySide6.QtCore import Signal, QObject
 
 # --- Sistema Global de Logging ---
 class LogSignal(QObject):
     """Emisor de señales para logs (necesario para thread-safety en Qt)."""
     log_received = Signal(str)
+
+# --- PARCHEO GLOBAL DE QMESSAGEBOX PARA LOGGING ---
+_original_critical = QMessageBox.critical
+_original_warning = QMessageBox.warning
+_original_information = QMessageBox.information
+_original_question = QMessageBox.question
+
+def _patched_critical(parent, title, text, *args, **kwargs):
+    logging.error(f"[POPUP CRITICAL] {title}: {text}")
+    return _original_critical(parent, title, text, *args, **kwargs)
+
+def _patched_warning(parent, title, text, *args, **kwargs):
+    logging.warning(f"[POPUP WARNING] {title}: {text}")
+    return _original_warning(parent, title, text, *args, **kwargs)
+
+def _patched_information(parent, title, text, *args, **kwargs):
+    logging.info(f"[POPUP INFO] {title}: {text}")
+    return _original_information(parent, title, text, *args, **kwargs)
+
+def _patched_question(parent, title, text, *args, **kwargs):
+    logging.info(f"[POPUP QUESTION] {title}: {text}")
+    return _original_question(parent, title, text, *args, **kwargs)
+
+# Aplicar parches
+QMessageBox.critical = _patched_critical
+QMessageBox.warning = _patched_warning
+QMessageBox.information = _patched_information
+QMessageBox.question = _patched_question
 
 # Variables globales
 LOG_BUFFER = []
@@ -28,17 +58,6 @@ class QtLogHandler(logging.Handler):
         try:
             msg = self.format(record)
             
-            # Filtro de seguridad para mensajes ruidosos conocidos
-            noise_keywords = [
-                "MustDowngradeError", 
-                "HttpVersion.h3", 
-                "Alt-Svc",
-                "encoding error : input conversion failed",
-                "I/O error : encoder error"
-            ]
-            if any(kw in msg for kw in noise_keywords):
-                return
-
             # 1. Guardar siempre en buffer (historial)
             LOG_BUFFER.append(msg)
             
@@ -88,54 +107,68 @@ class FDCapturer:
                     if not line: 
                         continue
                         
-                    # --- Lógica de filtrado de nivel ---
+                    # --- Lógica de nivel (Agresiva) ---
                     level_to_use = self.level
-                    if self.level >= logging.ERROR:
-                        lower_text = line.lower()
+                    lower_text = line.lower()
+                    
+                    # Si es el descriptor de error (2), mínimo es WARNING
+                    if self.fd == 2:
+                        level_to_use = logging.WARNING
                         error_keywords = ["error", "failed", "exception", "traceback", "fatal", "panic", "critical"]
-                        if not any(k in lower_text for k in error_keywords):
-                            level_to_use = logging.INFO
+                        if any(k in lower_text for k in error_keywords):
+                            level_to_use = logging.ERROR
                     
                     self.logger.log(level_to_use, line)
                     
             except OSError:
                 break
-            except Exception:
+            except Exception as e:
+                logging.error(f"FDCapturer pipe read error: {e}")
                 continue
 
 def init_global_logging():
     """Configura el logging globalmente (Fase 1: Solo Buffer)."""
     global UI_HANDLER
     
+    # Redirigir advertencias de Python al sistema de logging
+    logging.captureWarnings(True)
+    
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.INFO) # Nivel base más razonable
+
+    # Silenciar librerías ruidosas
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("PIL").setLevel(logging.INFO)
     
     if root_logger.handlers:
         root_logger.handlers = []
 
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
 
-    # 1. Handler para la UI (Buffer only initially)
+    # 1. Handler para la UI
     UI_HANDLER = QtLogHandler()
     UI_HANDLER.setFormatter(formatter)
     root_logger.addHandler(UI_HANDLER)
     
-    # 2. INTERCEPTAR NIVEL BAJO (C++/FFmpeg/Qt)
+    # 2. INTERCEPTAR NIVEL BAJO (C++/FFmpeg/Qt/Network)
     try:
         native_out = logging.getLogger('NATIVE_OUT')
         native_out.propagate = False
-        native_out.setLevel(logging.INFO)
+        native_out.setLevel(logging.INFO) # Cambiado de DEBUG a INFO
         native_out.addHandler(UI_HANDLER)
 
         native_err = logging.getLogger('NATIVE_ERR')
         native_err.propagate = False
-        native_err.setLevel(logging.ERROR)
+        native_err.setLevel(logging.WARNING) # Nivel de error ya era razonable
         native_err.addHandler(UI_HANDLER)
 
-        _ = FDCapturer(1, native_out, logging.INFO)
-        _ = FDCapturer(2, native_err, logging.ERROR)
-    except Exception:
-        pass
+        # Captura total de descriptores 1 (stdout) y 2 (stderr)
+        _ = FDCapturer(1, native_out, logging.INFO) # Cambiado de DEBUG a INFO
+        _ = FDCapturer(2, native_err, logging.WARNING)
+    except Exception as e:
+        print(f"Error inicializando FDCapturer: {e}")
+
 
 def init_signals():
     """Inicializa las señales Qt (Fase 2: Conectar UI). Llamar DESPUÉS de crear QApplication."""

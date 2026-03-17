@@ -28,7 +28,7 @@ def global_exception_handler(
     )
 
     # 1. Registrar en el sistema de logging (Consola In-App + Terminal)
-    logging.error(f"❌ EXCEPCIÓN NO CONTROLADA:\n{error_message}")
+    logging.critical(f"❌ EXCEPCIÓN NO CONTROLADA:\n{error_message}")
 
     from PySide6.QtWidgets import QMessageBox
 
@@ -36,16 +36,16 @@ def global_exception_handler(
         QMessageBox.critical(
             None, "Error Crítico", f"Se produjo un error inesperado:\n\n{error_message}"
         )
-    except Exception:
+    except Exception as e:
         # Si falla la UI, al menos ya está en el log
-        pass
+        logging.error(f"Falla al mostrar QMessageBox en global_exception_handler: {e}")
 
 
 # --- Carga de Entorno ---
 try:
     load_dotenv(resource_path(".env"))
-except Exception:
-    pass
+except Exception as e:
+    logging.warning(f"No se pudo cargar el archivo .env: {e}")
 
 # --- Configuración de Rutas y Datos ---
 USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
@@ -82,8 +82,8 @@ class Config:
                     user_settings: Dict[str, Any] = json.load(f)
                     settings.update(user_settings)
 
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error(f"Error al cargar configuraciones de usuario: {e}")
         return settings
 
     @staticmethod
@@ -92,6 +92,18 @@ class Config:
         try:
             # Cargar configuración existente
             settings: Dict[str, Any] = Config.load_user_settings()
+            
+            # TRACKING DE VARIABLES
+            for key, value in new_settings.items():
+                old_val = settings.get(key)
+                if old_val != value:
+                    display_val = value
+                    display_old = old_val
+                    if "API_KEY" in key:
+                        display_val = f"{str(value)[:4]}...{str(value)[-4:]}" if len(str(value)) > 8 else "***"
+                        display_old = f"{str(old_val)[:4]}...{str(old_val)[-4:]}" if old_val and len(str(old_val)) > 8 else "***"
+                    logging.debug(f"[CONFIG] Actualizada variable: {key} | {display_old} -> {display_val}")
+            
             settings.update(new_settings)
 
             # PROTECCIÓN: Si las keys existen en el entorno (.env), NO guardarlas en el JSON.
@@ -104,8 +116,8 @@ class Config:
 
             with open(USER_SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=4)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"[CONFIG] Error al guardar configuraciones: {e}")
 
     user_settings: Dict[str, Any] = load_user_settings()
 
@@ -115,6 +127,7 @@ class Config:
         "gemini-2.5-flash": {"RPM": 5, "TPM": 250000, "RPD": 20},
         "gemini-2.5-flash-lite": {"RPM": 10, "TPM": 250000, "RPD": 20},
         "gemini-3-flash-preview": {"RPM": 5, "TPM": 250000, "RPD": 20},
+        "gemini-3.1-flash-lite-preview": {"RPM": 15, "TPM": 250000, "RPD": 500},
     }
 
     # --- LÓGICA DE ROTACIÓN DE KEYS ---

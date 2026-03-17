@@ -63,7 +63,16 @@ class BaseAIProcessor:
             # Fallback prompt si no hay archivo configurado
             prompt = "Traduce el texto de esta imagen."
 
+        logging.debug(f"[AI_SERVICE] Procesando archivo: '{file_path}' | Output dir: '{output_dir}'")
+        logging.debug(f"[AI_SERVICE] Prompt utilizado (primeros 50 chars): {prompt[:50]}...")
+        
         result_text = self.call_api(prompt, image_path=file_path)
+        
+        if result_text:
+            logging.debug(f"[AI_SERVICE] Respuesta recibida para '{os.path.basename(file_path)}' (longitud: {len(result_text)})")
+        else:
+            logging.debug(f"[AI_SERVICE] La API no devolvió texto para '{os.path.basename(file_path)}'")
+            
         return result_text
 
     def combine_texts(self, output_dir: str, combined_content: List[Optional[str]], chapter_name: str, master_content: Optional[str] = None) -> bool:

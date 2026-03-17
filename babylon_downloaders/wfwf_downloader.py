@@ -502,8 +502,9 @@ def pack_chapter(src_folder: str, out_path: str, fmt: str) -> None:
         for p in files:
             try:
                 pages.append(Image.open(p).convert("RGB"))
-            except Exception:
-                pass
+        except Exception as e:
+            print(f"  {C.YELLOW}Error procesando página {p}: {e}{C.END}")
+            continue
         if pages:
             pages[0].save(out_path, save_all=True, append_images=pages[1:])
     else:

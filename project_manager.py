@@ -1,3 +1,4 @@
+import logging
 from typing import List, Tuple
 import os
 
@@ -142,7 +143,7 @@ class ProjectManager:
                 layout.addWidget(image_label, row, col)
                 
             except Exception:
-                pass
+                logging.exception(f"Error cargando imagen {file_name} en el gestor de proyectos")
 
     def get_description(self, image_name: str) -> str:
         """Obtiene la descripción de una imagen basada en su nombre."""
