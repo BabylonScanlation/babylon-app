@@ -364,6 +364,61 @@ class DownloaderPicacomic(BaseDownloader):
     ) -> list[dict]:
         return fetch_full_catalog(self._sess, self._token, sort, page_limit=page_limit)
 
+    def get_catalog_page(
+        self, page: int = 1, page_size: int = 20, **kwargs
+    ) -> tuple[list, bool]:
+        """Parallel page loading: fetches 5 server pages at once."""
+        sort = kwargs.get("sort", "dd")
+        key = f"pica_{sort}"
+        if getattr(self, "_cat_buf_key", None) != key:
+            self._cat_buf = []
+            self._cat_buf_key = key
+            self._cat_srv_page = 0
+            self._cat_total = None
+            self._cat_exhausted = False
+
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        while len(self._cat_buf) < end and not self._cat_exhausted:
+            # Load 5 pages in parallel (each has 20 items → 100 items per batch)
+            batch_start = self._cat_srv_page + 1
+            batch_end = batch_start + 5
+            with __import__(
+                "concurrent.futures", fromlist=["ThreadPoolExecutor", "as_completed"]
+            ).ThreadPoolExecutor(max_workers=5) as pool:
+                futs = {
+                    pool.submit(
+                        _fetch_global_page, self._sess, self._token, pg, sort
+                    ): pg
+                    for pg in range(batch_start, batch_end)
+                }
+                results = {}
+                for fut in __import__(
+                    "concurrent.futures", fromlist=["as_completed"]
+                ).as_completed(futs):
+                    pg_n, comics, total = fut.result()
+                    results[pg_n] = (comics, total)
+            self._cat_srv_page = batch_end - 1
+            added = 0
+            for pg_n in sorted(results):
+                comics, total = results[pg_n]
+                if self._cat_total is None and total:
+                    self._cat_total = total
+                if not comics:
+                    self._cat_exhausted = True
+                else:
+                    self._cat_buf.extend(comics)
+                    added += len(comics)
+            if added == 0 or (
+                self._cat_total and self._cat_srv_page >= self._cat_total
+            ):
+                self._cat_exhausted = True
+
+        chunk = self._cat_buf[start:end]
+        has_more = (not self._cat_exhausted) or (end < len(self._cat_buf))
+        return chunk, has_more
+
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
         cid = item.get("id", "")
         info = get_comic_info(self._sess, self._token, cid)

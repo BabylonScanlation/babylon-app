@@ -285,85 +285,11 @@ def _parse_series_meta_org(sess_org: requests.Session, slug: str) -> Optional[di
 def _resolve_com_slug(
     sess_com: requests.Session, mirror: str, org_slug: str, title: str = ""
 ) -> str:
-    """Map baozimh.org slug → .com mirror slug (may be numeric ID or same text)."""
-    # Strategy 1: org_slug works directly on .com mirror (most common case)
-    for attempt_slug in [
-        org_slug,
-        org_slug.lower(),
-        org_slug.replace("-", "_"),
-        org_slug.replace("_", "-"),
-    ]:
-        raw = _get_raw(
-            sess_com, f"{mirror}/comic/{attempt_slug}", mirror + "/", retries=1
-        )
-        if raw:
-            html = raw.decode("utf-8", errors="replace")
-            if (
-                "page_direct" in html
-                or "chapter_slot" in html
-                or "section_slot" in html
-            ):
-                return attempt_slug
-            # Extract any comic_id/id embedded in the page
-            m = re.search(r"comic_id[^0-9]*([0-9]{3,})", html)
-            if m:
-                return m.group(1)
-
-    # Strategy 2: Search the API by title/slug keyword
-    search_terms = []
-    if title and len(title) > 2:
-        search_terms.append(title[:30])
-    if org_slug != title:
-        # Convert slug to a readable form for search
-        readable = org_slug.replace("-", " ").replace("_", " ")
-        if readable not in search_terms:
-            search_terms.append(readable)
-
-    for keyword in search_terms:
-        if not keyword.strip():
-            continue
-        try:
-            q = requests.utils.quote(keyword.strip())
-            url = (
-                f"{mirror}/api/bzmhq/amp_comic_list"
-                f"?type=all&region=all&state=all&filter=*"
-                f"&page=1&limit=20&language=tw&keyword={q}"
-            )
-            r = sess_com.get(
-                url,
-                timeout=8,
-                headers={"Accept": "application/json", "Referer": mirror + "/"},
-            )
-            if r.status_code == 200:
-                data = r.json()
-                items = (
-                    data
-                    if isinstance(data, list)
-                    else data.get("items") or data.get("list") or data.get("data") or []
-                )
-                for item in items:
-                    cid = str(
-                        item.get("comic_id") or item.get("id") or item.get("slug") or ""
-                    )
-                    if cid and cid != "0":
-                        return cid
-        except Exception:
-            pass
-
-    # Strategy 3: Try alternate mirrors
-    for alt in COM_MIRRORS:
-        if alt == mirror:
-            continue
-        try:
-            raw = _get_raw(sess_com, f"{alt}/comic/{org_slug}", alt + "/", retries=1)
-            if raw:
-                html = raw.decode("utf-8", errors="replace")
-                if "page_direct" in html or "chapter_slot" in html:
-                    # Update session to use this mirror
-                    return org_slug
-        except Exception:
-            pass
-
+    # Try direct match
+    raw = _get_raw(sess_com, f"{mirror}/comic/{org_slug}", mirror + "/", retries=1)
+    if raw and f"comic_id={org_slug}" in raw.decode("utf-8", errors="replace"):
+        return org_slug
+    # Fallback: use org_slug as-is
     return org_slug
 
 
