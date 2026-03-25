@@ -1,15 +1,14 @@
 """
-d_mangafox.py — fanfox.net downloader (sin menú)
+d_mangafox.py — fanfox.net downloader (Modularizado)
 
-FIXES sobre el original:
-  - word token ya no está en el HTML → se obtiene del cookie 'word' (servidor lo setea al visitar la página)
-  - _api_images filtra loading.gif/placeholders
-  - La aceptación de imágenes ya no usa len==n_pages (aceptaba placeholders), usa _is_real_image
+ACTUALIZACIÓN:
+  - Eliminado el requerimiento de login, tokens CSRF y extracción de 'word'.
+  - Se utiliza la versión móvil (m.fanfox.net) para evadir las protecciones de la API.
+  - Se extraen las imágenes directamente del DOM usando selectores verificados.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,196 +19,27 @@ from bs4 import BeautifulSoup
 from common import CFG, BaseDownloader
 
 BASE_URL = "https://fanfox.net"
+MOBILE_URL = "https://m.fanfox.net"
 TIMEOUT = (15, 45)
 RETRY = 2.0
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
+        "Chrome/134.0.0.0 Safari/537.36"
     ),
-    "Referer": BASE_URL + "/",
-    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Referer": f"{BASE_URL}/",
 }
 
-_RE_CHAPTERID = re.compile(r'chapterid\s*=\s*["\']?(\d+)["\']?', re.I)
-_RE_IMAGECOUNT = re.compile(r'imagecount\s*=\s*["\']?(\d+)["\']?', re.I)
-_RE_WORD = re.compile(
-    r'["\']word["\']\s*:\s*["\']([^"\']{3,})["\']'
-    r'|var\s+word\s*=\s*["\']([^"\']{3,})["\']',
-    re.I,
-)
-_RE_IMGURL = re.compile(
-    r'(https?://(?:fmcdn|img\.mfcdn)[^"\'<>\s]+'
-    r'\.(?:jpe?g|png|webp|gif)(?:\?[^"\'<>\s]*)?)',
-    re.I,
-)
 _CHAP_URL_RE = re.compile(r"/manga/[^/]+/(?:v([^/]+)/)?c([^/]+)/\d+\.html")
-
-# Placeholders que fanfox sirve cuando no hay token válido — nunca son imágenes del capítulo
-_PLACEHOLDER_PATTERNS = (
-    "loading.gif",
-    "loading.png",
-    "/images/loading",
-    "static.fanfox.net",
-    "mangafox/images",
-    "sprite.png",
-    "data:image",
-)
-
-
-def _is_placeholder(url: str) -> bool:
-    u = url.lower()
-    return any(p in u for p in _PLACEHOLDER_PATTERNS)
-
-
-def _is_real_image(url: str) -> bool:
-    if not url or not url.startswith("http"):
-        return False
-    if _is_placeholder(url):
-        return False
-    if "cover" in url.lower():
-        return False
-    return any(cdn in url for cdn in ("fmcdn", "mfcdn", "img.mfcdn"))
-
-
-# ── Credenciales opcionales — completar para habilitar descarga de capítulos ──
-FANFOX_USERNAME = "LucasGoldstein"
-FANFOX_EMAIL = "hcaulfield@muvilo.net"
-FANFOX_PASSWORD = "celavii24"
-
-
-def _login(sess: requests.Session, email: str, password: str) -> bool:
-    """
-    Inicia sesión en fanfox.net.
-    Intenta con username y email, y con las variantes de URL conocidas.
-    """
-    if not email or not password:
-        return False
-    import logging
-
-    log = logging.getLogger(__name__)
-    try:
-        login_url = f"{BASE_URL}/login/?from=/"
-        r = sess.get(login_url, timeout=10)
-        if r.status_code != 200:
-            log.warning(f"[mangafox] GET {login_url} → {r.status_code}")
-            return False
-        html = r.text
-
-        # Extraer token CSRF — fanfox usa varios nombres posibles
-        import re as _re
-
-        csrf = None
-        for pat in [
-            r'name="?(?:_token|csrf_token|authenticity_token)"?\s+[^>]*value="([^"]+)"',
-            r'value="([^"]+)"\s+name="?(?:_token|csrf_token)"?',
-            r'"_token"\s*:\s*"([^"]+)"',
-        ]:
-            m = _re.search(pat, html, _re.I)
-            if m:
-                csrf = m.group(1)
-                break
-
-        # username es el campo que usa fanfox (no email)
-        # el valor puede ser email o username — intentamos ambos
-        username = email.split("@")[0] if "@" in email else email
-
-        for login_field, login_val in [
-            ("username", username),
-            ("email", email),
-            ("username", email),
-        ]:
-            data = {
-                login_field: login_val,
-                "password": password,
-                "remember": "1",
-            }
-            if csrf:
-                data["_token"] = csrf
-
-            r2 = sess.post(
-                login_url,
-                data=data,
-                headers={"Referer": login_url},
-                timeout=15,
-                allow_redirects=True,
-            )
-            log.debug(
-                f"[mangafox] POST login ({login_field}={login_val!r}) → {r2.status_code} url={r2.url}"
-            )
-
-            # Éxito: redirigió fuera del login, o tiene cookie de sesión
-            if "login" not in r2.url or any(
-                k in sess.cookies
-                for k in ("isLogin", "user_id", "uid", "session", "mangafox")
-            ):
-                log.info(f"[mangafox] login OK con campo {login_field!r}")
-                return True
-
-        log.warning(f"[mangafox] login falló — cookies: {list(sess.cookies.keys())}")
-        return False
-    except Exception as e:
-        import logging as _l
-
-        _l.getLogger(__name__).warning(f"[mangafox] login excepción: {e}")
-        return False
 
 
 def _make_session() -> requests.Session:
     s = requests.Session()
     s.headers.update(HEADERS)
-    try:
-        s.get(BASE_URL, timeout=10)
-    except Exception:
-        pass
-    # Login automático — intenta username primero, luego email
-    if FANFOX_PASSWORD:
-        ok = _login(s, FANFOX_USERNAME, FANFOX_PASSWORD) if FANFOX_USERNAME else False
-        if not ok:
-            ok = _login(s, FANFOX_EMAIL, FANFOX_PASSWORD)
-        import logging
-
-        logging.getLogger(__name__).info(
-            f"[mangafox] login {'OK' if ok else 'FALLÓ'} — cookies: {list(s.cookies.keys())}"
-        )
     return s
-
-
-def _get_word_from_chapter(
-    sess: requests.Session, chap_url: str, chapter_id: str
-) -> str:
-    """
-    Intenta obtener el word token real haciendo el mismo request que chapter_h.js.
-    fanfox genera el token via: GET /roll_manga/apiv1/manga/{slug}/chapters/{id}/words/
-    """
-    import re as _re
-
-    # Extraer slug de la URL del capítulo
-    m = _re.search(r"/manga/([^/]+)/", chap_url)
-    if not m:
-        return ""
-    slug = m.group(1)
-    for endpoint in [
-        f"{BASE_URL}/roll_manga/apiv1/manga/{slug}/chapters/{chapter_id}/words/",
-        f"{BASE_URL}/roll_manga/apiv1/manga/{slug}/chapters/{chapter_id}/token/",
-    ]:
-        try:
-            r = sess.get(endpoint, timeout=10, headers={"Referer": chap_url})
-            if r.status_code == 200:
-                data = r.json()
-                word = (
-                    data.get("word")
-                    or data.get("token")
-                    or data.get("data", {}).get("word")
-                    if isinstance(data.get("data"), dict)
-                    else None
-                )
-                if word and isinstance(word, str) and len(word) > 5:
-                    return word
-        except Exception:
-            pass
-    return sess.cookies.get("word", "")
 
 
 def _fetch_html(
@@ -232,7 +62,38 @@ def _soup(html: str) -> BeautifulSoup:
     return BeautifulSoup(html, "lxml")
 
 
-# ── ORIGINAL _parse_manga_list — NO TOCAR ────────────────────────────────────
+# ─────────────────────────────────────────────
+# EXTRAER IMAGEN DE LA PÁGINA (Lógica Nueva)
+# ─────────────────────────────────────────────
+def _extract_image_from_page(soup: BeautifulSoup) -> Optional[str]:
+    selectors = [
+        "img#image",
+        "img.reader-image",
+        "img.manga-page",
+        ".reader-main img",
+        "#viewer img",
+        "img[src*='compressed']",
+        "img[src*='zjcdn']",
+        "img[src*='mangafox']",
+        "img[data-src]",
+        "img[width][height][src*='.jpg'], img[width][height][src*='.png']",
+    ]
+    for sel in selectors:
+        img_tag = soup.select_one(sel)
+        if img_tag:
+            src = img_tag.get("data-src") or img_tag.get("src") or ""
+            if src:
+                if src.startswith("//"):
+                    src = "https:" + src
+                elif not src.startswith("http"):
+                    src = BASE_URL + src
+                return src
+    return None
+
+
+# ─────────────────────────────────────────────
+# PARSERS ORIGINALES (Búsqueda y Directorio)
+# ─────────────────────────────────────────────
 def _parse_manga_list(html: str) -> list[dict]:
     soup = _soup(html)
     results: list[dict] = []
@@ -317,7 +178,6 @@ def _parse_series(sess: requests.Session, slug: str) -> Optional[dict]:
             chapters.append({"id": chap, "title": label, "chap": chap, "url": full_url})
 
     _harvest(html)
-
     page = 2
     while page <= 50:
         pg_html = None
@@ -348,194 +208,79 @@ def _parse_series(sess: requests.Session, slug: str) -> Optional[dict]:
     return {"id": slug, "slug": slug, "title": title, "chapters": chapters}
 
 
-def _js_vars(html: str) -> tuple:
-    soup = _soup(html)
-    js_text = "\n".join(s.get_text() for s in soup.find_all("script"))
-    combined = js_text + "\n" + html
-    m_id = _RE_CHAPTERID.search(combined)
-    m_cnt = _RE_IMAGECOUNT.search(combined)
-    m_w = _RE_WORD.search(combined)
-    chid = m_id.group(1) if m_id else None
-    cnt = int(m_cnt.group(1)) if m_cnt else 0
-    word = (m_w.group(1) or m_w.group(2)) if m_w else None
+# ─────────────────────────────────────────────
+# OBTENCIÓN DE IMÁGENES (Versión Móvil)
+# ─────────────────────────────────────────────
+def _get_chapter_images(sess: requests.Session, chap_url: str) -> list[str]:
+    mobile_base = chap_url.replace(BASE_URL, MOBILE_URL)
+    if not mobile_base.endswith(".html"):
+        mobile_base = mobile_base.rstrip("/") + "/1.html"
+    else:
+        mobile_base = re.sub(r"/\d+\.html$", "/1.html", mobile_base)
 
-    # FIX: fanfox movió el word token al CDN token de og:image
-    # <meta name="og:image" content="...?token=WORD&ttl=...">
-    if not word:
-        og_img = soup.find("meta", attrs={"name": "og:image"}) or soup.find(
-            "meta", property="og:image"
-        )
-        if og_img:
-            content = og_img.get("content", "")
-            m_tok = re.search(r"[?&]token=([a-f0-9]{20,})", content)
-            if m_tok:
-                word = m_tok.group(1)
-
-    return chid, cnt, word
-
-
-def _is_cover_response(images: list[str]) -> bool:
-    """
-    Detecta cuando la API devuelve la portada repetida N veces (sin token válido).
-    La portada tiene 'cover' en la URL o todas las URLs son idénticas.
-    """
-    if not images:
-        return False
-    # Todas iguales = respuesta inválida
-    if len(set(images)) == 1:
-        return True
-    # Contiene "cover" en la URL
-    if any("cover" in u.lower() for u in images):
-        return True
-    return False
-
-
-def _api_images(
-    sess: requests.Session,
-    slug: str,
-    chapter_id: str,
-    n_pages: int,
-    word: Optional[str],
-    chap_url: str = "",
-) -> list[str]:
-    """
-    FIX: obtiene word desde cookie si no está en HTML.
-    FIX: filtra placeholders/loading.gif.
-    FIX: acepta imágenes reales sin verificar conteo exacto.
-    """
-    images: list[str] = []
-    api = f"{BASE_URL}/roll_manga/apiv1/manga/{slug}/chapters/{chapter_id}/images/"
-
-    # word: HTML → cookie (servidor lo setea al visitar la página)
-    token = word or sess.cookies.get("word", "")
-
-    for page in range(1, n_pages + 1):
-        params: dict = {"page": page}
-        if token:
-            params["token"] = token
-        try:
-            r = sess.get(
-                api, params=params, timeout=TIMEOUT, headers={"Referer": BASE_URL + "/"}
-            )
-            if r.status_code != 200:
-                break
-            data = r.json()
-            if isinstance(data, dict):
-                if "images" in data:
-                    for img in data["images"]:
-                        u = img.get("url", "") if isinstance(img, dict) else str(img)
-                        if u and not _is_placeholder(u):
-                            images.append(u if u.startswith("http") else "https:" + u)
-                    continue
-                if "url" in data:
-                    u = data["url"]
-                    if u and not _is_placeholder(u):
-                        images.append(u if u.startswith("http") else "https:" + u)
-                    continue
-            if isinstance(data, list):
-                for item in data:
-                    u = item.get("url", "") if isinstance(item, dict) else str(item)
-                    if u and not _is_placeholder(u):
-                        images.append(u if u.startswith("http") else "https:" + u)
-        except Exception:
-            break
-
-    return [u for u in images if _is_real_image(u) and "cover" not in u.lower()]
-
-
-def _page_image(sess: requests.Session, page_url: str, referer: str) -> Optional[str]:
-    html = _fetch_html(sess, page_url, referer)
-    if not html:
-        return None
-    soup = _soup(html)
-    for sel in [
-        "img#image",
-        "img.reader-main-img",
-        "#viewer img",
-        ".read-manga-page img",
-        "section.reader-main img",
-    ]:
-        img = soup.select_one(sel)
-        if img:
-            for attr in ("data-original", "data-src", "src"):
-                src = img.get(attr, "")
-                if (
-                    src
-                    and any(x in src for x in ("fmcdn", "mfcdn"))
-                    and not _is_placeholder(src)
-                ):
-                    return src if src.startswith("http") else "https:" + src
-    for m in _RE_IMGURL.finditer(html):
-        src = m.group(1)
-        if (
-            "/logo" not in src
-            and "/icon" not in src
-            and "cover" not in src.lower()
-            and not _is_placeholder(src)
-        ):
-            return src
-    return None
-
-
-def _get_chapter_images(sess: requests.Session, chap_url: str, slug: str) -> list[str]:
-    import logging
-
-    log = logging.getLogger(__name__)
-
-    base_chap = re.sub(r"/\d+\.html$", "", chap_url)
-
-    # Visitar la página — el servidor puede setear el cookie 'word' aquí
-    html = _fetch_html(sess, chap_url, BASE_URL)
+    html = _fetch_html(sess, mobile_base, BASE_URL)
     if not html:
         return []
 
-    chapter_id, n_pages, word = _js_vars(html)
+    soup = _soup(html)
+    page_count = 1
 
-    # Intentar obtener el word token real via el endpoint AJAX de fanfox
-    if not word:
-        word = _get_word_from_chapter(sess, chap_url, chapter_id or "") or None
+    # Detección robusta de páginas
+    text = soup.get_text()
+    m = re.search(r"/\s*(\d+)", text)
+    if m:
+        page_count = int(m.group(1))
 
-    if not word:
-        log.warning(
-            "[mangafox] Sin word token — fanfox requiere login para descargar capítulos. "
-            "Completá FANFOX_EMAIL y FANFOX_PASSWORD en d_mangafox.py."
-        )
+    m = re.search(r"Page\s*\d+\s*of\s*(\d+)", text, re.I)
+    if m and int(m.group(1)) > page_count:
+        page_count = int(m.group(1))
 
-    if n_pages == 0:
-        soup = _soup(html)
-        nums: set = set()
-        for a in soup.find_all("a", href=re.compile(r"/\d+\.html$")):
-            m = re.search(r"/(\d+)\.html$", a.get("href", ""))
-            if m:
-                nums.add(int(m.group(1)))
-        if nums:
-            n_pages = max(nums)
+    select = soup.find("select", {"name": "page"}) or soup.find(
+        "select", id=re.compile(r"page", re.I)
+    )
+    if select:
+        opts = select.find_all("option")
+        if opts and len(opts) > page_count:
+            page_count = len(opts)
 
-    if chapter_id and n_pages > 0:
-        images = _api_images(sess, slug, chapter_id, n_pages, word, chap_url)
-        if images and not _is_cover_response(images):
-            return images
-        if images:
-            log.warning(
-                "[mangafox] API retornó solo portadas — word token inválido o sin login."
-            )
+    pagination_block = (
+        soup.select_one(".pager, .pagination, .page-nav, .chapter-page-nav") or soup
+    )
+    nums = [
+        int(t)
+        for t in re.findall(r"\b(\d{1,3})\b", pagination_block.get_text())
+        if 1 <= int(t) <= 999
+    ]
+    if nums:
+        max_num = max(nums)
+        if max_num > page_count:
+            page_count = max_num
 
-    # Fallback: scrape página por página
-    max_scan = n_pages if n_pages > 0 else 60
+    base_mobile = re.sub(r"/\d+\.html$", "", mobile_base)
     imgs_by_page: dict = {}
+
+    def _get_page_img(p: int) -> Optional[str]:
+        pg_url = f"{base_mobile}/{p}.html"
+        ph = _fetch_html(sess, pg_url, mobile_base)
+        if ph:
+            return _extract_image_from_page(_soup(ph))
+        return None
+
+    # Parseo concurrente para acelerar la extracción desde el sitio móvil
     with ThreadPoolExecutor(max_workers=4) as exe:
-        futs = {
-            exe.submit(_page_image, sess, f"{base_chap}/{p}.html", chap_url): p
-            for p in range(1, max_scan + 1)
-        }
+        futs = {exe.submit(_get_page_img, p): p for p in range(1, page_count + 1)}
         for fut in as_completed(futs):
             p = futs[fut]
             img = fut.result()
             if img:
                 imgs_by_page[p] = img
+
     return [imgs_by_page[p] for p in sorted(imgs_by_page)]
 
 
+# ─────────────────────────────────────────────
+# CLASE BASE PARA EL FRAMEWORK
+# ─────────────────────────────────────────────
 class DownloaderMangafox(BaseDownloader):
     NAME = "FANFOX  (fanfox.net)"
     HAS_CATALOG = True
@@ -642,10 +387,9 @@ class DownloaderMangafox(BaseDownloader):
 
     def get_chapter_images(self, chapter: dict, series: dict) -> list[str]:
         url = chapter.get("url", "")
-        slug = series.get("slug", series.get("id", ""))
         if not url:
             return []
-        return _get_chapter_images(self._sess, url, slug)
+        return _get_chapter_images(self._sess, url)
 
     def dl_image(self, url: str, referer: str = "") -> Optional[bytes]:
         for attempt in range(3):
