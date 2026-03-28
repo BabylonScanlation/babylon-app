@@ -857,7 +857,6 @@ class BabylonSeriesWorker(QRunnable):
             dl = get_dl(self.site_type)
             raw_item = self.item.get("_raw") or self.item
 
-            # Diagnóstico wfwf: loguear estructura del raw para detectar bugs
             if self.site_type == "wfwf":
                 keys = (
                     list(raw_item.keys())
@@ -865,29 +864,8 @@ class BabylonSeriesWorker(QRunnable):
                     else type(raw_item).__name__
                 )
                 logging.info(f"[Babylon/wfwf] get_series raw keys: {keys}")
-                # wfwf.get_series() puede esperar que 'mode' sea un enum Mode
-                # Si llegó como string, convertirlo antes de pasar
-                try:
-                    mod = _load_mod("wfwf")
-                    Mode = mod.Mode
-                    if isinstance(raw_item, dict) and "mode" in raw_item:
-                        mode_val = raw_item["mode"]
-                        if isinstance(mode_val, str):
-                            # Intentar convertir string → Mode enum
-                            try:
-                                raw_item = dict(
-                                    raw_item
-                                )  # copia para no mutar el cache
-                                raw_item["mode"] = Mode(mode_val)
-                                logging.info(
-                                    f"[Babylon/wfwf] mode string→enum: {mode_val!r} → {raw_item['mode']}"
-                                )
-                            except (ValueError, KeyError):
-                                logging.warning(
-                                    f"[Babylon/wfwf] No se pudo convertir mode={mode_val!r} a Mode enum"
-                                )
-                except Exception as me:
-                    logging.warning(f"[Babylon/wfwf] No se pudo cargar Mode enum: {me}")
+                # Mode.__init__ en d_wfwf.py acepta str y Mode object.
+                # NO convertir aquí — get_series lo hace internamente.
 
             series, chapters = dl.get_series(raw_item)
 

@@ -1,6 +1,15 @@
 """
 d_wfwf.py — wfwf448.com downloader (sin menú)
 Dual mode: Webtoon (ing/list/view) y Manhwa (cm/cl/cv).
+
+FIXES 2026-03:
+  - Detección de dominio más robusta (no requiere "toon=" en homepage)
+  - Lista de candidatos ampliada (448-490 + dominios alternativos)
+  - Descubrimiento secuencial de dominio cuando fallan los candidatos
+  - Regex de capítulos acepta &amp; en HTML crudo
+  - Regex de capítulos: &title= ahora es opcional
+  - Paginación real de capítulos (fetches hasta max_page)
+  - get_series / get_chapter_images aceptan mode como str o Mode object
 """
 
 from __future__ import annotations
@@ -8,6 +17,7 @@ from __future__ import annotations
 import base64
 import re
 import sys
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
@@ -16,22 +26,25 @@ import requests
 from bs4 import BeautifulSoup
 from common import CFG, BaseDownloader
 
-_BASE_CANDIDATES = [
-    "https://wfwf448.com/",
-    "https://wfwf449.com/",
-    "https://wfwf450.com/",
-    "https://wfwf451.com/",
-    "https://wfwf452.com/",
-    "https://wfwf453.com/",
-    "https://wfwf454.com/",
-    "https://wfwf455.com/",
-    "https://wfwf1.com/",
-    "https://wfwf2.com/",
-    "https://wfwf3.com/",
-    "https://wfwf10.com/",
-    "https://wfwf20.com/",
-]
-BASE_URL = "https://wfwf448.com/"  # overwritten at import time
+# Expandimos la lista: dominio actual es wfwf448, rota ~cada 5 días
+_BASE_CANDIDATES = (
+    # Números secuenciales desde el conocido (448) con margen amplio
+    [f"https://wfwf{n}.com/" for n in range(448, 510)]
+    + [
+        # Dominios alternativos documentados
+        "https://wfwf1.com/",
+        "https://wfwf2.com/",
+        "https://wfwf3.com/",
+        "https://wfwf10.com/",
+        "https://wfwf20.com/",
+        "https://wfwf30.com/",
+        "https://wfwf50.com/",
+        "https://wfwf100.com/",
+        "https://wfwf200.com/",
+        "https://wfwf300.com/",
+    ]
+)
+BASE_URL = "https://wfwf448.com/"  # se sobreescribe en _detect_base_url
 TIMEOUT = (12, 20)
 RETRY = 1.5
 
@@ -66,19 +79,72 @@ _MANHWA_CATS = [
     f"?o=n&type1=complete&type2={x}" for x in [10, 11, 12, 13, 14, 15, 16, 20]
 ] + ["?o=n&type1=complete&type2=recent", "?o=n&type1=hiatus", "?o=n"]
 
+# Indicadores de que la página es una página real del sitio wfwf
+_SITE_KEYWORDS = ("toon=", "wfwf", "lng", "ing", "webtoon", "웹툰", "만화", "manhwa")
+
+
+def _is_valid_wfwf_response(text: str) -> bool:
+    """
+    Verifica si una respuesta HTML parece ser una página real de wfwf.
+    Más leniente que la comprobación original de solo 'toon='.
+    """
+    lower = text.lower()
+    return any(kw in lower for kw in _SITE_KEYWORDS)
+
 
 def _detect_base_url(sess: requests.Session) -> str:
-    """Try BASE_URL candidates and return first that responds."""
+    """
+    Detecta el dominio activo de wfwf probando candidatos en paralelo.
+    Acepta cualquier página 200 que parezca ser del sitio wfwf.
+    Si todos fallan, intenta descubrimiento secuencial.
+    """
     global BASE_URL
-    for candidate in _BASE_CANDIDATES:
+
+    def _try(candidate: str) -> str:
         try:
             r = sess.get(candidate + "ing", timeout=6)
-            if r.status_code == 200 and "toon=" in r.text:
-                BASE_URL = candidate
+            if r.status_code == 200 and _is_valid_wfwf_response(r.text):
+                return candidate
+            # También probar la raíz
+            r2 = sess.get(candidate, timeout=5)
+            if r2.status_code == 200 and _is_valid_wfwf_response(r2.text):
                 return candidate
         except Exception:
             pass
-    return BASE_URL  # fallback to default
+        return ""
+
+    # Probar los primeros 20 candidatos en paralelo (prioridad a los más recientes)
+    priority = _BASE_CANDIDATES[:20]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(_try, priority))
+
+    for r in results:
+        if r:
+            BASE_URL = r
+            sess.headers.update({"Referer": BASE_URL})
+            return r
+
+    # Si fallan, probar el resto secuencialmente
+    for candidate in _BASE_CANDIDATES[20:]:
+        found = _try(candidate)
+        if found:
+            BASE_URL = found
+            sess.headers.update({"Referer": BASE_URL})
+            return found
+
+    # Último recurso: descubrimiento secuencial desde el último número conocido
+    m = re.search(r"wfwf(\d+)", BASE_URL)
+    if m:
+        last_num = int(m.group(1))
+        for offset in range(1, 30):
+            candidate = f"https://wfwf{last_num + offset}.com/"
+            found = _try(candidate)
+            if found:
+                BASE_URL = found
+                sess.headers.update({"Referer": BASE_URL})
+                return found
+
+    return BASE_URL  # fallback al default
 
 
 def _make_session() -> requests.Session:
@@ -99,9 +165,9 @@ def _fetch_html(sess: requests.Session, url: str, retries: int = 3) -> Optional[
             if r.status_code == 200:
                 return r.text
         except Exception:
-            import time
+            import time as _time
 
-            time.sleep(RETRY * (attempt + 1))
+            _time.sleep(RETRY * (attempt + 1))
     return None
 
 
@@ -112,9 +178,15 @@ class Mode:
     WEBTOON = "webtoon"
     MANHWA = "manhwa"
 
-    def __init__(self, kind: str):
-        assert kind in (self.WEBTOON, self.MANHWA)
-        self.kind = kind
+    def __init__(self, kind):
+        # Acepta tanto string como objeto Mode (evita el bug de double-conversion)
+        if isinstance(kind, Mode):
+            self.kind = kind.kind
+        else:
+            assert kind in (self.WEBTOON, self.MANHWA), (
+                f"Mode inválido: {kind!r}. Debe ser 'webtoon' o 'manhwa'."
+            )
+            self.kind = kind
 
     @property
     def main_path(self) -> str:
@@ -131,11 +203,28 @@ class Mode:
         return f"{BASE_URL}{path}?toon={toon_id}&num={num}&title={safe}{num}%C8%AD"
 
     def chapter_href_re(self, toon_id: str) -> re.Pattern:
+        """
+        Regex que acepta tanto & como &amp; y hace &title= opcional.
+        Esto permite match tanto en HTML crudo (con &amp;) como en atributos
+        decodificados por BS4 (con &).
+        """
         path = "view" if self.kind == self.WEBTOON else "cv"
-        return re.compile(rf"{path}\?toon={toon_id}&num=(\d+)&title=", re.I)
+        amp = r"(?:&amp;|&)"
+        return re.compile(
+            rf"{path}\?toon={re.escape(toon_id)}{amp}num=(\d+)(?:{amp}title=)?",
+            re.I,
+        )
 
     def __str__(self) -> str:
         return "Webtoon" if self.kind == self.WEBTOON else "Manhwa"
+
+
+def _mode_from_item(item: dict) -> Mode:
+    """
+    Extrae el modo de un dict de forma segura, aceptando strings o objetos Mode.
+    """
+    mode_val = item.get("mode", Mode.WEBTOON)
+    return Mode(mode_val)  # Mode.__init__ ya maneja ambos casos
 
 
 # ── Series list ───────────────────────────────────────────────────────────────
@@ -144,8 +233,7 @@ class Mode:
 def _parse_series_from_html(html: str, mode: Mode) -> list[dict]:
     path_kw = "list" if mode.kind == Mode.WEBTOON else "cl"
     main_kw = mode.main_path
-    # Match /<path>?toon=ID&...title=ENC_TITLE  (no quotes inside pattern)
-    _nq = r"[^&\s<>]+"  # non-special chars
+    _nq = r"[^&\s<>]+"
     pat = re.compile(
         r"/"
         + re.escape(path_kw)
@@ -248,6 +336,13 @@ def fetch_full_catalog(sess: requests.Session, workers: int = 10) -> list[dict]:
 def _parse_series_page(
     html: str, toon_id: str, enc_title: str, mode: Mode
 ) -> tuple[str, list[dict]]:
+    """
+    Parsea la página de una serie y extrae título + lista de capítulos.
+    Estrategias de extracción:
+    1. BS4: busca <a href="..."> con el patrón correcto (ampersand decodificado)
+    2. Raw HTML scan: busca el patrón con &amp; (HTML crudo)
+    Ambas estrategias usan el regex mejorado que acepta ambos encodings.
+    """
     soup = _soup(html)
     title = urllib.parse.unquote(enc_title)
     for sel in ["h1", ".toon-title", ".series-title", "#toon_title", ".title", "h2"]:
@@ -261,29 +356,31 @@ def _parse_series_page(
     chapters: list[dict] = []
 
     def _add_from_html(html_text: str) -> None:
+        # Estrategia 1: atributos href decodificados por BS4
         s = _soup(html_text)
         for a in s.find_all("a", href=True):
             mm = chap_re.search(a["href"])
             if not mm:
                 continue
             num = int(mm.group(1))
-            if num in seen_nums:
+            if num in seen_nums or num == 0:
                 continue
             seen_nums.add(num)
             raw_text = a.get_text(" ", strip=True)
             chap_title = _NOISE_RE.sub(" ", raw_text).strip() or f"Cap {num}"
             chapters.append({"id": str(num), "num": num, "title": chap_title})
-        # raw HTML scan for links not in <a> tags (JS-rendered)
+
+        # Estrategia 2: scan del HTML crudo (captura JS-rendered o atributos sin parsear)
+        # El regex ya acepta &amp; gracias a (?:&amp;|&) en chapter_href_re
         for mm in chap_re.finditer(html_text):
             num = int(mm.group(1))
-            if num not in seen_nums:
+            if num not in seen_nums and num != 0:
                 seen_nums.add(num)
                 chapters.append({"id": str(num), "num": num, "title": f"Cap {num}"})
 
     _add_from_html(html)
 
-    # Also check for "more chapters" links or pagination patterns
-    # Some wfwf pages use ?p=N or &p=N for pagination
+    # Detectar paginación y obtener páginas adicionales si existen
     more_pat = re.compile(r"[?&]p=(\d+)", re.I)
     max_page = 1
     for a in soup.find_all("a", href=True):
@@ -291,8 +388,21 @@ def _parse_series_page(
         if mm:
             max_page = max(max_page, int(mm.group(1)))
 
+    # FIX: ahora SÍ se buscan las páginas adicionales (bug original: solo leía max_page)
+    if max_page > 1:
+        for page_num in range(2, max_page + 1):
+            sep = "&" if "?" in mode.series_url(toon_id, enc_title) else "?"
+            page_url = mode.series_url(toon_id, enc_title) + f"{sep}p={page_num}"
+            page_html = _fetch_html(_current_sess, page_url)
+            if page_html:
+                _add_from_html(page_html)
+
     chapters.sort(key=lambda c: c["num"], reverse=True)
     return title, chapters
+
+
+# Variable de sesión global para que _parse_series_page pueda hacer requests adicionales
+_current_sess: Optional[requests.Session] = None
 
 
 # ── Images ────────────────────────────────────────────────────────────────────
@@ -336,9 +446,9 @@ def _extract_images(html: str) -> list[str]:
     return list(dict.fromkeys(candidates))
 
 
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 #  CLASE PÚBLICA
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 class DownloaderWfwf(BaseDownloader):
     NAME = "WFWF  (wfwf448.com)"
     HAS_CATALOG = True
@@ -346,6 +456,9 @@ class DownloaderWfwf(BaseDownloader):
 
     def __init__(self):
         self._sess = _make_session()
+        # Registrar la sesión globalmente para que _parse_series_page pueda usarla
+        global _current_sess
+        _current_sess = self._sess
 
     def search(self, query: str) -> list[dict]:
         """Busca en catálogo completo (webtoon + manhwa). Cache entre búsquedas."""
@@ -372,7 +485,7 @@ class DownloaderWfwf(BaseDownloader):
         return results
 
     def _direct_search(self, query: str) -> list[dict]:
-        """Intenta buscar directamente en la web (endpoints comunes de búsqueda)."""
+        """Intenta buscar directamente en la web."""
         results: list[dict] = []
         seen: set = set()
         for path in [
@@ -385,7 +498,6 @@ class DownloaderWfwf(BaseDownloader):
                 if r.status_code != 200:
                     continue
                 html = r.text
-                # Try both webtoon and manhwa patterns
                 for mode in [Mode(Mode.WEBTOON), Mode(Mode.MANHWA)]:
                     for it in _parse_series_from_html(html, mode):
                         key = f"{it['mode']}_{it['toon_id']}"
@@ -404,7 +516,9 @@ class DownloaderWfwf(BaseDownloader):
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
         toon_id = item.get("toon_id", item.get("id", ""))
         enc_title = item.get("encoded_title", "")
-        mode = Mode(item.get("mode", Mode.WEBTOON))
+        # FIX: _mode_from_item acepta tanto string como objeto Mode
+        mode = _mode_from_item(item)
+
         html = _fetch_html(self._sess, mode.series_url(toon_id, enc_title))
         if not html:
             return {}, []
@@ -415,7 +529,7 @@ class DownloaderWfwf(BaseDownloader):
             "title": title,
             "toon_id": toon_id,
             "encoded_title": enc_title,
-            "mode": mode.kind,
+            "mode": mode.kind,  # siempre guardamos el string, no el objeto
         }
         return meta, chapters
 
@@ -423,13 +537,14 @@ class DownloaderWfwf(BaseDownloader):
         toon_id = series.get("toon_id", series.get("id", ""))
         enc_title = series.get("encoded_title", "")
         num = chapter.get("num", int(chapter.get("id", 0)))
-        mode = Mode(series.get("mode", Mode.WEBTOON))
+        # FIX: _mode_from_item acepta tanto string como objeto Mode
+        mode = _mode_from_item(series)
         url = mode.chapter_url(toon_id, num, enc_title)
         html = _fetch_html(self._sess, url)
         return _extract_images(html) if html else []
 
     def dl_image(self, url: str, referer: str = "") -> Optional[bytes]:
-        import time
+        import time as _time
 
         for attempt in range(3):
             try:
@@ -437,7 +552,7 @@ class DownloaderWfwf(BaseDownloader):
                 if r.status_code == 200 and r.content:
                     return r.content
             except Exception:
-                time.sleep(RETRY * (attempt + 1))
+                _time.sleep(RETRY * (attempt + 1))
         return None
 
     def get_referer(self, chapter: dict, series: dict) -> str:
