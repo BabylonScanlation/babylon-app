@@ -1056,7 +1056,7 @@ def _save_image(raw: bytes, path: str) -> None:
 _PANEL_BG = "background-color:rgba(15,17,23,235);border:1px solid rgba(157,70,255,0.3);border-radius:12px;"
 _BTN_BASE = (
     "QPushButton{background:rgba(60,60,60,150);color:white;"
-    "border:1px solid rgba(150,0,150,100);border-radius:5px;padding:6px 14px;}"
+    "border:1px solid rgba(150,0,150,100);border-radius:5px;padding:6px 8px;}"
     "QPushButton:hover{background:rgba(150,0,150,50);border:1px solid #960096;}"
     "QPushButton:disabled{color:rgba(255,255,255,0.25);border:1px solid rgba(150,0,150,0.15);}"
 )
@@ -2580,8 +2580,8 @@ class BabylonSiteDetailPanel(QWidget):
             lbl.setFont(self.body_font)
         lay.addWidget(lbl, 1)
 
-        btn = QPushButton("Ver serie")
-        btn.setFixedWidth(90)
+        btn = QPushButton("VER SERIE")
+        btn.setMinimumWidth(100)
         btn.setStyleSheet(_BTN_BASE)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         if self.body_font:
