@@ -1,17 +1,14 @@
 """
-d_mangafox.py — fanfox.net downloader (sin menú)
-
-FIXES sobre el original:
-  - word token ya no está en el HTML → se obtiene del cookie 'word' (servidor lo setea al visitar la página)
-  - _api_images filtra loading.gif/placeholders
-  - La aceptación de imágenes ya no usa len==n_pages (aceptaba placeholders), usa _is_real_image
+d_wfwf.py — wfwf448.com downloader (sin menú)
+Dual mode: Webtoon (ing/list/view) y Manhwa (cm/cl/cv).
 """
 
 from __future__ import annotations
 
-import json
+import base64
 import re
-import time
+import sys
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
@@ -19,547 +16,331 @@ import requests
 from bs4 import BeautifulSoup
 from common import CFG, BaseDownloader
 
-BASE_URL = "https://fanfox.net"
-TIMEOUT = (15, 45)
-RETRY = 2.0
+_BASE_CANDIDATES = [
+    "https://wfwf448.com/",
+    "https://wfwf449.com/",
+    "https://wfwf450.com/",
+    "https://wfwf451.com/",
+    "https://wfwf452.com/",
+    "https://wfwf453.com/",
+    "https://wfwf454.com/",
+    "https://wfwf455.com/",
+    "https://wfwf1.com/",
+    "https://wfwf2.com/",
+    "https://wfwf3.com/",
+    "https://wfwf10.com/",
+    "https://wfwf20.com/",
+]
+BASE_URL = "https://wfwf448.com/"  # overwritten at import time
+TIMEOUT = (12, 20)
+RETRY = 1.5
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Referer": BASE_URL + "/",
-    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": BASE_URL,
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
 }
 
-_RE_CHAPTERID = re.compile(r'chapterid\s*=\s*["\']?(\d+)["\']?', re.I)
-_RE_IMAGECOUNT = re.compile(r'imagecount\s*=\s*["\']?(\d+)["\']?', re.I)
-_RE_WORD = re.compile(
-    r'["\']word["\']\s*:\s*["\']([^"\']{3,})["\']'
-    r'|var\s+word\s*=\s*["\']([^"\']{3,})["\']',
+_UI_PATHS = ("/images/", "/bann/", "/img/", "/icons/", "/logo", "/thumb")
+_CDN_RE = re.compile(
+    r"https?://[a-z0-9\-]+\.(?:site|com|net|kr)/[^\s\"'<>]+"
+    r"\.(?:jpe?g|png|webp|gif)",
     re.I,
 )
-_RE_IMGURL = re.compile(
-    r'(https?://(?:fmcdn|img\.mfcdn)[^"\'<>\s]+'
-    r'\.(?:jpe?g|png|webp|gif)(?:\?[^"\'<>\s]*)?)',
-    re.I,
-)
-_CHAP_URL_RE = re.compile(r"/manga/[^/]+/(?:v([^/]+)/)?c([^/]+)/\d+\.html")
+_NOISE_RE = re.compile(r"^\d+\s*|하루전|방금전|\d+일전|오늘|\d{4}-\d{2}-\d{2}|\s{2,}")
 
-# Placeholders que fanfox sirve cuando no hay token válido — nunca son imágenes del capítulo
-_PLACEHOLDER_PATTERNS = (
-    "loading.gif",
-    "loading.png",
-    "/images/loading",
-    "static.fanfox.net",
-    "mangafox/images",
-    "sprite.png",
-    "data:image",
-)
+_WEBTOON_CATS = [f"?o=n&type1=day&type2={i}" for i in range(1, 8)] + [
+    "?o=n&type1=day&type2=10",
+    "?o=n&type1=day&type2=recent",
+    "?o=n&type1=day&type2=new",
+    "?o=n&type1=complete",
+    "?o=n&type1=hiatus",
+    "?o=n",
+]
+_MANHWA_CATS = [
+    f"?o=n&type1=complete&type2={x}" for x in [10, 11, 12, 13, 14, 15, 16, 20]
+] + ["?o=n&type1=complete&type2=recent", "?o=n&type1=hiatus", "?o=n"]
 
 
-def _is_placeholder(url: str) -> bool:
-    u = url.lower()
-    return any(p in u for p in _PLACEHOLDER_PATTERNS)
-
-
-def _is_real_image(url: str) -> bool:
-    if not url or not url.startswith("http"):
-        return False
-    if _is_placeholder(url):
-        return False
-    if "cover" in url.lower():
-        return False
-    return any(cdn in url for cdn in ("fmcdn", "mfcdn", "img.mfcdn"))
-
-
-# ── Credenciales opcionales — completar para habilitar descarga de capítulos ──
-FANFOX_USERNAME = "LucasGoldstein"
-FANFOX_EMAIL = "hcaulfield@muvilo.net"
-FANFOX_PASSWORD = "celavii24"
-
-
-def _login(sess: requests.Session, email: str, password: str) -> bool:
-    """
-    Inicia sesión en fanfox.net.
-    fanfox usa ASP.NET — el login va por un endpoint AJAX, no un form POST clásico.
-    """
-    if not email or not password:
-        return False
-    import logging
-
-    log = logging.getLogger(__name__)
-
-    try:
-        # Visitar homepage para obtener cookies iniciales (webstickynode, MG_MACHINEKEY)
-        sess.get(BASE_URL + "/", timeout=10)
-
-        # fanfox usa endpoint AJAX para login
-        ajax_endpoints = [
-            f"{BASE_URL}/ajax/singin/",
-            f"{BASE_URL}/ajax/login/",
-            f"{BASE_URL}/login/singin/",
-        ]
-        # Campos que fanfox acepta (probados en orden)
-        field_variants = [
-            {"loginusername": email, "loginpassword": password, "rememberMe": "1"},
-            {
-                "loginusername": FANFOX_USERNAME,
-                "loginpassword": password,
-                "rememberMe": "1",
-            },
-            {"username": email, "password": password, "remember": "1"},
-            {"username": FANFOX_USERNAME, "password": password, "remember": "1"},
-            {"email": email, "password": password, "remember": "1"},
-        ]
-
-        for endpoint in ajax_endpoints:
-            for fields in field_variants:
-                try:
-                    r = sess.post(
-                        endpoint,
-                        data=fields,
-                        headers={
-                            "Referer": BASE_URL + "/",
-                            "X-Requested-With": "XMLHttpRequest",
-                            "Accept": "application/json, text/javascript, */*",
-                        },
-                        timeout=12,
-                        allow_redirects=True,
-                    )
-                    log.debug(
-                        f"[mangafox] POST {endpoint} ({list(fields.keys())[0]}) → {r.status_code} {r.text[:80]}"
-                    )
-
-                    if r.status_code not in (200, 302):
-                        continue
-
-                    # Verificar éxito: cookie de sesión o respuesta JSON positiva
-                    cookies_now = list(sess.cookies.keys())
-                    new_cookies = [
-                        c
-                        for c in cookies_now
-                        if c not in ("webstickynode", "MG_MACHINEKEY")
-                    ]
-                    if new_cookies:
-                        log.info(f"[mangafox] login OK — cookies nuevas: {new_cookies}")
-                        return True
-
-                    # Verificar respuesta JSON
-                    try:
-                        data = r.json()
-                        if (
-                            data.get("success")
-                            or data.get("errno") == 0
-                            or data.get("status") == "ok"
-                        ):
-                            log.info(f"[mangafox] login OK (JSON) via {endpoint}")
-                            return True
-                    except Exception:
-                        pass
-
-                    # Si la respuesta no tiene error, considerar éxito parcial
-                    if (
-                        r.status_code == 200
-                        and "error" not in r.text.lower()
-                        and len(r.text) < 100
-                    ):
-                        log.info(f"[mangafox] login posiblemente OK via {endpoint}")
-                        return True
-
-                except Exception as e:
-                    log.debug(f"[mangafox] {endpoint} error: {e}")
-                    continue
-
-        log.warning(f"[mangafox] login falló — cookies: {list(sess.cookies.keys())}")
-        return False
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"[mangafox] login excepción: {e}")
-        return False
+def _detect_base_url(sess: requests.Session) -> str:
+    """Try BASE_URL candidates and return first that responds."""
+    global BASE_URL
+    for candidate in _BASE_CANDIDATES:
+        try:
+            r = sess.get(candidate + "ing", timeout=6)
+            if r.status_code == 200 and "toon=" in r.text:
+                BASE_URL = candidate
+                return candidate
+        except Exception:
+            pass
+    return BASE_URL  # fallback to default
 
 
 def _make_session() -> requests.Session:
     s = requests.Session()
     s.headers.update(HEADERS)
-    try:
-        s.get(BASE_URL, timeout=10)
-    except Exception:
-        pass
-    # Login automático — intenta username primero, luego email
-    if FANFOX_PASSWORD:
-        ok = _login(s, FANFOX_USERNAME, FANFOX_PASSWORD) if FANFOX_USERNAME else False
-        if not ok:
-            ok = _login(s, FANFOX_EMAIL, FANFOX_PASSWORD)
-        import logging
-
-        logging.getLogger(__name__).info(
-            f"[mangafox] login {'OK' if ok else 'FALLÓ'} — cookies: {list(s.cookies.keys())}"
-        )
+    _detect_base_url(s)
     return s
 
 
-def _get_word_from_chapter(
-    sess: requests.Session, chap_url: str, chapter_id: str
-) -> str:
-    """
-    Intenta obtener el word token real haciendo el mismo request que chapter_h.js.
-    fanfox genera el token via: GET /roll_manga/apiv1/manga/{slug}/chapters/{id}/words/
-    """
-    import re as _re
+def _soup(html: str) -> BeautifulSoup:
+    return BeautifulSoup(html, "html.parser")
 
-    # Extraer slug de la URL del capítulo
-    m = _re.search(r"/manga/([^/]+)/", chap_url)
-    if not m:
-        return ""
-    slug = m.group(1)
-    for endpoint in [
-        f"{BASE_URL}/roll_manga/apiv1/manga/{slug}/chapters/{chapter_id}/words/",
-        f"{BASE_URL}/roll_manga/apiv1/manga/{slug}/chapters/{chapter_id}/token/",
-    ]:
+
+def _fetch_html(sess: requests.Session, url: str, retries: int = 3) -> Optional[str]:
+    for attempt in range(retries):
         try:
-            r = sess.get(endpoint, timeout=10, headers={"Referer": chap_url})
-            if r.status_code == 200:
-                data = r.json()
-                word = (
-                    data.get("word")
-                    or data.get("token")
-                    or data.get("data", {}).get("word")
-                    if isinstance(data.get("data"), dict)
-                    else None
-                )
-                if word and isinstance(word, str) and len(word) > 5:
-                    return word
-        except Exception:
-            pass
-    return sess.cookies.get("word", "")
-
-
-def _fetch_html(
-    sess: requests.Session, url: str, referer: Optional[str] = None
-) -> Optional[str]:
-    hdrs = {"Referer": referer} if referer else {}
-    for attempt in range(3):
-        try:
-            r = sess.get(url, timeout=TIMEOUT, headers=hdrs)
+            r = sess.get(url, timeout=TIMEOUT)
             if r.status_code == 200:
                 return r.text
-            if r.status_code in (403, 404):
-                return None
         except Exception:
+            import time
+
             time.sleep(RETRY * (attempt + 1))
     return None
 
 
-def _soup(html: str) -> BeautifulSoup:
-    return BeautifulSoup(html, "lxml")
+# ── Mode ──────────────────────────────────────────────────────────────────────
 
 
-# ── ORIGINAL _parse_manga_list — NO TOCAR ────────────────────────────────────
-def _parse_manga_list(html: str) -> list[dict]:
+class Mode:
+    WEBTOON = "webtoon"
+    MANHWA = "manhwa"
+
+    def __init__(self, kind: str):
+        assert kind in (self.WEBTOON, self.MANHWA)
+        self.kind = kind
+
+    @property
+    def main_path(self) -> str:
+        return "ing" if self.kind == self.WEBTOON else "cm"
+
+    def series_url(self, toon_id: str, enc_title: str) -> str:
+        path = "list" if self.kind == self.WEBTOON else "cl"
+        safe = urllib.parse.quote(enc_title, safe="%+")
+        return f"{BASE_URL}{path}?toon={toon_id}&title={safe}"
+
+    def chapter_url(self, toon_id: str, num: int, enc_title: str) -> str:
+        path = "view" if self.kind == self.WEBTOON else "cv"
+        safe = urllib.parse.quote(enc_title, safe="%+")
+        return f"{BASE_URL}{path}?toon={toon_id}&num={num}&title={safe}{num}%C8%AD"
+
+    def chapter_href_re(self, toon_id: str) -> re.Pattern:
+        path = "view" if self.kind == self.WEBTOON else "cv"
+        return re.compile(rf"{path}\?toon={toon_id}&num=(\d+)&title=", re.I)
+
+    def __str__(self) -> str:
+        return "Webtoon" if self.kind == self.WEBTOON else "Manhwa"
+
+
+# ── Series list ───────────────────────────────────────────────────────────────
+
+
+def _parse_series_from_html(html: str, mode: Mode) -> list[dict]:
+    path_kw = "list" if mode.kind == Mode.WEBTOON else "cl"
+    main_kw = mode.main_path
+    # Match /<path>?toon=ID&...title=ENC_TITLE  (no quotes inside pattern)
+    _nq = r"[^&\s<>]+"  # non-special chars
+    pat = re.compile(
+        r"/"
+        + re.escape(path_kw)
+        + r"[?&]toon=(\d+)"
+        + _nq
+        + r"[?&]title=("
+        + _nq
+        + r")",
+        re.I,
+    )
+    pat2 = re.compile(
+        r"/"
+        + re.escape(main_kw)
+        + r"[?&]toon=(\d+)"
+        + _nq
+        + r"[?&]title=("
+        + _nq
+        + r")",
+        re.I,
+    )
     soup = _soup(html)
-    results: list[dict] = []
+    items: list[dict] = []
     seen: set = set()
-    _ML = re.compile(r"/manga/([a-z0-9_\-]+)/?$")
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        m = pat.search(href) or pat2.search(href)
+        if not m:
+            continue
+        toon_id, enc_title = m.group(1), m.group(2)
+        if toon_id in seen:
+            continue
+        seen.add(toon_id)
+        text = a.get_text(" ", strip=True)
+        title = urllib.parse.unquote(enc_title)
+        if text and "더 읽기" not in text and len(text) > 1:
+            title = text.split("/")[0].strip() or title
+        items.append(
+            {
+                "id": toon_id,
+                "toon_id": toon_id,
+                "encoded_title": enc_title,
+                "title": title,
+                "mode": mode.kind,
+            }
+        )
+    return items
 
-    ITEM_SELS = [
-        "ul.manga-list-4-list li",
-        "ul.manga-list-4 li",
-        "ul.manga-list-2 li",
-        "ul.manga-list li",
-        ".manga-list li",
+
+def _fetch_cat(args: tuple) -> list[dict]:
+    sess, url, mode = args
+    html = _fetch_html(sess, url)
+    return _parse_series_from_html(html, mode) if html else []
+
+
+def fetch_series_list(
+    sess: requests.Session, mode: Mode, workers: int = 10
+) -> list[dict]:
+    cats = _WEBTOON_CATS if mode.kind == Mode.WEBTOON else _MANHWA_CATS
+    main = mode.main_path
+    all_urls = [f"{BASE_URL}{main}"] + [f"{BASE_URL}{main}{c}" for c in cats]
+    series: list[dict] = []
+    seen: set = set()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for items in pool.map(_fetch_cat, [(sess, u, mode) for u in all_urls]):
+            for it in items:
+                if it["toon_id"] not in seen:
+                    seen.add(it["toon_id"])
+                    series.append(it)
+    return series
+
+
+def fetch_full_catalog(sess: requests.Session, workers: int = 10) -> list[dict]:
+    mode_wt = Mode(Mode.WEBTOON)
+    mode_mh = Mode(Mode.MANHWA)
+    cats_wt = [f"{BASE_URL}{mode_wt.main_path}"] + [
+        f"{BASE_URL}{mode_wt.main_path}{c}" for c in _WEBTOON_CATS
     ]
-    items = []
-    for sel in ITEM_SELS:
-        items = soup.select(sel)
-        if items:
-            break
-
-    for item in items:
-        a = item.select_one(
-            "p.manga-list-4-item-title a, p.title a, h3 a, .title a"
-        ) or item.find("a", href=re.compile(r"/manga/[^/]+/?$"))
-        if not a:
-            continue
-        href = a.get("href", "")
-        title = a.get_text(strip=True)
-        m = re.search(r"/manga/([^/?#]+)/?", href)
-        if not m or not title:
-            continue
-        slug = m.group(1)
-        if slug in seen:
-            continue
-        seen.add(slug)
-        results.append({"id": slug, "slug": slug, "title": title})
-
-    if not results:
-        for a in soup.find_all("a", href=_ML):
-            href = a.get("href", "")
-            title = (a.get("title") or a.get_text(strip=True)).strip()
-            m = _ML.search(href)
-            if not m or not title or len(title) < 2:
-                continue
-            slug = m.group(1)
-            if slug in seen:
-                continue
-            seen.add(slug)
-            results.append({"id": slug, "slug": slug, "title": title})
-    return results
+    cats_mh = [f"{BASE_URL}{mode_mh.main_path}"] + [
+        f"{BASE_URL}{mode_mh.main_path}{c}" for c in _MANHWA_CATS
+    ]
+    tasks = [(sess, u, mode_wt) for u in cats_wt] + [
+        (sess, u, mode_mh) for u in cats_mh
+    ]
+    all_series: list[dict] = []
+    seen: set = set()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for items in pool.map(_fetch_cat, tasks):
+            for it in items:
+                key = f"{it['mode']}_{it['toon_id']}"
+                if key not in seen:
+                    seen.add(key)
+                    all_series.append(it)
+    all_series.sort(key=lambda s: (s["mode"], s["title"].lower()))
+    return all_series
 
 
-def _parse_series(sess: requests.Session, slug: str) -> Optional[dict]:
-    html = _fetch_html(sess, f"{BASE_URL}/manga/{slug}/")
-    if not html:
-        return None
+# ── Series page ───────────────────────────────────────────────────────────────
+
+
+def _parse_series_page(
+    html: str, toon_id: str, enc_title: str, mode: Mode
+) -> tuple[str, list[dict]]:
     soup = _soup(html)
-    title = ""
-    for sel in ["span.detail-info-right-title-font", "h1.title", "h1"]:
+    title = urllib.parse.unquote(enc_title)
+    for sel in ["h1", ".toon-title", ".series-title", "#toon_title", ".title", "h2"]:
         node = soup.select_one(sel)
-        if node and node.get_text(strip=True):
+        if node and node.get_text(strip=True) and len(node.get_text(strip=True)) > 1:
             title = node.get_text(strip=True)
             break
-    title = title or slug.replace("_", " ").title()
 
+    chap_re = mode.chapter_href_re(toon_id)
+    seen_nums: set = set()
     chapters: list[dict] = []
-    seen_c: set = set()
 
-    def _harvest(h: str) -> None:
-        for a in _soup(h).find_all("a", href=_CHAP_URL_RE):
-            href = a.get("href", "")
-            m = _CHAP_URL_RE.search(href)
-            if not m:
+    def _add_from_html(html_text: str) -> None:
+        s = _soup(html_text)
+        for a in s.find_all("a", href=True):
+            mm = chap_re.search(a["href"])
+            if not mm:
                 continue
-            chap = m.group(2)
-            if chap in seen_c:
+            num = int(mm.group(1))
+            if num in seen_nums:
                 continue
-            seen_c.add(chap)
-            full_url = BASE_URL + href if href.startswith("/") else href
-            label = a.get_text(strip=True) or f"Ch.{chap}"
-            if label.lower() in ("read now", "read", "start", ""):
-                label = f"Ch.{chap}"
-            chapters.append({"id": chap, "title": label, "chap": chap, "url": full_url})
+            seen_nums.add(num)
+            raw_text = a.get_text(" ", strip=True)
+            chap_title = _NOISE_RE.sub(" ", raw_text).strip() or f"Cap {num}"
+            chapters.append({"id": str(num), "num": num, "title": chap_title})
+        # raw HTML scan for links not in <a> tags (JS-rendered)
+        for mm in chap_re.finditer(html_text):
+            num = int(mm.group(1))
+            if num not in seen_nums:
+                seen_nums.add(num)
+                chapters.append({"id": str(num), "num": num, "title": f"Cap {num}"})
 
-    _harvest(html)
+    _add_from_html(html)
 
-    page = 2
-    while page <= 50:
-        pg_html = None
-        for url in [
-            f"{BASE_URL}/manga/{slug}/chapter-list-{page}.html",
-            f"{BASE_URL}/manga/{slug}/?page={page}",
-            f"{BASE_URL}/manga/{slug}?page={page}",
-        ]:
-            pg_html = _fetch_html(sess, url)
-            if pg_html:
-                break
-        if not pg_html:
-            break
-        prev_count = len(chapters)
-        _harvest(pg_html)
-        if len(chapters) == prev_count:
-            break
-        page += 1
-        time.sleep(0.3)
+    # Also check for "more chapters" links or pagination patterns
+    # Some wfwf pages use ?p=N or &p=N for pagination
+    more_pat = re.compile(r"[?&]p=(\d+)", re.I)
+    max_page = 1
+    for a in soup.find_all("a", href=True):
+        mm = more_pat.search(a["href"])
+        if mm:
+            max_page = max(max_page, int(mm.group(1)))
 
-    def _key(ch):
+    chapters.sort(key=lambda c: c["num"], reverse=True)
+    return title, chapters
+
+
+# ── Images ────────────────────────────────────────────────────────────────────
+
+
+def _extract_images(html: str) -> list[str]:
+    m64 = re.search(r"var\s+toon_img\s*=\s*['\"]([A-Za-z0-9+/=]+)['\"];", html)
+    if m64:
         try:
-            return float(ch["chap"])
-        except:
-            return 0.0
-
-    chapters.sort(key=_key, reverse=True)
-    return {"id": slug, "slug": slug, "title": title, "chapters": chapters}
-
-
-def _js_vars(html: str) -> tuple:
-    soup = _soup(html)
-    js_text = "\n".join(s.get_text() for s in soup.find_all("script"))
-    combined = js_text + "\n" + html
-    m_id = _RE_CHAPTERID.search(combined)
-    m_cnt = _RE_IMAGECOUNT.search(combined)
-    m_w = _RE_WORD.search(combined)
-    chid = m_id.group(1) if m_id else None
-    cnt = int(m_cnt.group(1)) if m_cnt else 0
-    word = (m_w.group(1) or m_w.group(2)) if m_w else None
-
-    # FIX: fanfox movió el word token al CDN token de og:image
-    # <meta name="og:image" content="...?token=WORD&ttl=...">
-    if not word:
-        og_img = soup.find("meta", attrs={"name": "og:image"}) or soup.find(
-            "meta", property="og:image"
-        )
-        if og_img:
-            content = og_img.get("content", "")
-            m_tok = re.search(r"[?&]token=([a-f0-9]{20,})", content)
-            if m_tok:
-                word = m_tok.group(1)
-
-    return chid, cnt, word
-
-
-def _is_cover_response(images: list[str]) -> bool:
-    """
-    Detecta cuando la API devuelve la portada repetida N veces (sin token válido).
-    La portada tiene 'cover' en la URL o todas las URLs son idénticas.
-    """
-    if not images:
-        return False
-    # Todas iguales = respuesta inválida
-    if len(set(images)) == 1:
-        return True
-    # Contiene "cover" en la URL
-    if any("cover" in u.lower() for u in images):
-        return True
-    return False
-
-
-def _api_images(
-    sess: requests.Session,
-    slug: str,
-    chapter_id: str,
-    n_pages: int,
-    word: Optional[str],
-    chap_url: str = "",
-) -> list[str]:
-    """
-    FIX: obtiene word desde cookie si no está en HTML.
-    FIX: filtra placeholders/loading.gif.
-    FIX: acepta imágenes reales sin verificar conteo exacto.
-    """
-    images: list[str] = []
-    api = f"{BASE_URL}/roll_manga/apiv1/manga/{slug}/chapters/{chapter_id}/images/"
-
-    # word: HTML → cookie (servidor lo setea al visitar la página)
-    token = word or sess.cookies.get("word", "")
-
-    for page in range(1, n_pages + 1):
-        params: dict = {"page": page}
-        if token:
-            params["token"] = token
-        try:
-            r = sess.get(
-                api, params=params, timeout=TIMEOUT, headers={"Referer": BASE_URL + "/"}
-            )
-            if r.status_code != 200:
-                break
-            data = r.json()
-            if isinstance(data, dict):
-                if "images" in data:
-                    for img in data["images"]:
-                        u = img.get("url", "") if isinstance(img, dict) else str(img)
-                        if u and not _is_placeholder(u):
-                            images.append(u if u.startswith("http") else "https:" + u)
-                    continue
-                if "url" in data:
-                    u = data["url"]
-                    if u and not _is_placeholder(u):
-                        images.append(u if u.startswith("http") else "https:" + u)
-                    continue
-            if isinstance(data, list):
-                for item in data:
-                    u = item.get("url", "") if isinstance(item, dict) else str(item)
-                    if u and not _is_placeholder(u):
-                        images.append(u if u.startswith("http") else "https:" + u)
+            decoded = base64.b64decode(m64.group(1)).decode("utf-8", errors="replace")
+            soup2 = _soup(decoded)
+            urls = [
+                str(img["src"])
+                for img in soup2.find_all("img", src=True)
+                if str(img["src"]).startswith("http")
+                and not any(p in str(img["src"]) for p in _UI_PATHS)
+            ]
+            if urls:
+                return list(dict.fromkeys(urls))
         except Exception:
-            break
-
-    return [u for u in images if _is_real_image(u) and "cover" not in u.lower()]
-
-
-def _page_image(sess: requests.Session, page_url: str, referer: str) -> Optional[str]:
-    html = _fetch_html(sess, page_url, referer)
-    if not html:
-        return None
+            pass
+    cdn = [
+        u
+        for u in dict.fromkeys(_CDN_RE.findall(html))
+        if not any(p in u for p in _UI_PATHS)
+    ]
+    if cdn:
+        return cdn
     soup = _soup(html)
-    for sel in [
-        "img#image",
-        "img.reader-main-img",
-        "#viewer img",
-        ".read-manga-page img",
-        "section.reader-main img",
-    ]:
-        img = soup.select_one(sel)
-        if img:
-            for attr in ("data-original", "data-src", "src"):
-                src = img.get(attr, "")
-                if (
-                    src
-                    and any(x in src for x in ("fmcdn", "mfcdn"))
-                    and not _is_placeholder(src)
-                ):
-                    return src if src.startswith("http") else "https:" + src
-    for m in _RE_IMGURL.finditer(html):
-        src = m.group(1)
+    scope = soup.select_one("#toon_img") or soup
+    VALID = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+    candidates = []
+    for img in scope.find_all("img"):
+        src = img.get("src") or img.get("data-src") or ""
         if (
-            "/logo" not in src
-            and "/icon" not in src
-            and "cover" not in src.lower()
-            and not _is_placeholder(src)
+            src.startswith("http")
+            and not any(p in src for p in _UI_PATHS)
+            and any(src.lower().endswith(e) for e in VALID)
         ):
-            return src
-    return None
+            candidates.append(src)
+    return list(dict.fromkeys(candidates))
 
 
-def _get_chapter_images(sess: requests.Session, chap_url: str, slug: str) -> list[str]:
-    import logging
-
-    log = logging.getLogger(__name__)
-
-    base_chap = re.sub(r"/\d+\.html$", "", chap_url)
-
-    # Visitar la página — el servidor puede setear el cookie 'word' aquí
-    html = _fetch_html(sess, chap_url, BASE_URL)
-    if not html:
-        return []
-
-    chapter_id, n_pages, word = _js_vars(html)
-
-    # Intentar obtener el word token real via el endpoint AJAX de fanfox
-    if not word:
-        word = _get_word_from_chapter(sess, chap_url, chapter_id or "") or None
-
-    if not word:
-        log.warning(
-            "[mangafox] Sin word token — fanfox requiere login para descargar capítulos. "
-            "Completá FANFOX_EMAIL y FANFOX_PASSWORD en d_mangafox.py."
-        )
-
-    if n_pages == 0:
-        soup = _soup(html)
-        nums: set = set()
-        for a in soup.find_all("a", href=re.compile(r"/\d+\.html$")):
-            m = re.search(r"/(\d+)\.html$", a.get("href", ""))
-            if m:
-                nums.add(int(m.group(1)))
-        if nums:
-            n_pages = max(nums)
-
-    if chapter_id and n_pages > 0:
-        images = _api_images(sess, slug, chapter_id, n_pages, word, chap_url)
-        if images and not _is_cover_response(images):
-            return images
-        if images:
-            log.warning(
-                "[mangafox] API retornó solo portadas — word token inválido o sin login."
-            )
-
-    # Fallback: scrape página por página
-    max_scan = n_pages if n_pages > 0 else 60
-    imgs_by_page: dict = {}
-    with ThreadPoolExecutor(max_workers=4) as exe:
-        futs = {
-            exe.submit(_page_image, sess, f"{base_chap}/{p}.html", chap_url): p
-            for p in range(1, max_scan + 1)
-        }
-        for fut in as_completed(futs):
-            p = futs[fut]
-            img = fut.result()
-            if img:
-                imgs_by_page[p] = img
-    return [imgs_by_page[p] for p in sorted(imgs_by_page)]
-
-
-class DownloaderMangafox(BaseDownloader):
-    NAME = "FANFOX  (fanfox.net)"
+# ══════════════════════════════════════════════════════════════
+#  CLASE PÚBLICA
+# ══════════════════════════════════════════════════════════════
+class DownloaderWfwf(BaseDownloader):
+    NAME = "WFWF  (wfwf448.com)"
     HAS_CATALOG = True
     HAS_SEARCH = True
 
@@ -567,114 +348,92 @@ class DownloaderMangafox(BaseDownloader):
         self._sess = _make_session()
 
     def search(self, query: str) -> list[dict]:
-        results, seen = [], set()
-        for page in range(1, 80):
-            url = f"{BASE_URL}/search?title={requests.utils.quote(query)}"
-            if page > 1:
-                url += f"&page={page}"
-            html = _fetch_html(self._sess, url)
-            if not html:
-                break
-            batch = _parse_manga_list(html)
-            added = 0
-            for it in batch:
-                if it["slug"] not in seen:
-                    seen.add(it["slug"])
-                    results.append(it)
-                    added += 1
-            if added == 0:
-                break
-            time.sleep(0.3)
+        """Busca en catálogo completo (webtoon + manhwa). Cache entre búsquedas."""
+        q = query.lower().strip()
+        if not q:
+            return []
+
+        # Intentar endpoint de búsqueda directo primero
+        direct = self._direct_search(q)
+        if direct:
+            return direct
+
+        # Fallback: filtrar sobre catálogo completo cacheado
+        if not hasattr(self, "_full_catalog") or not self._full_catalog:
+            print(f"  Cargando catálogo para búsqueda…", end=" ", flush=True)
+            self._full_catalog = fetch_full_catalog(self._sess)
+            print(f"{len(self._full_catalog)} series")
+        results = []
+        for s in self._full_catalog:
+            title_low = s.get("title", "").lower()
+            enc_low = urllib.parse.unquote(s.get("encoded_title", "")).lower()
+            if q in title_low or q in enc_low:
+                results.append(s)
         return results
 
-    def get_catalog(self, max_pages: int = 143) -> list[dict]:
-        results, seen = [], set()
-        for page in range(1, max_pages + 1):
-            html = None
-            for url in [
-                f"{BASE_URL}/directory/{page}.html",
-                f"{BASE_URL}/directory/?page={page}",
-            ]:
-                html = _fetch_html(self._sess, url)
-                if html:
-                    break
-            if not html:
-                break
-            batch = _parse_manga_list(html)
-            nuevos = 0
-            for it in batch:
-                if it["slug"] not in seen:
-                    seen.add(it["slug"])
-                    results.append(it)
-                    nuevos += 1
-            if nuevos == 0 and page > 2:
-                break
-            time.sleep(0.35)
-        return results
+    def _direct_search(self, query: str) -> list[dict]:
+        """Intenta buscar directamente en la web (endpoints comunes de búsqueda)."""
+        results: list[dict] = []
+        seen: set = set()
+        for path in [
+            f"search?s={urllib.parse.quote(query)}",
+            f"?s={urllib.parse.quote(query)}",
+            f"search?q={urllib.parse.quote(query)}",
+        ]:
+            try:
+                r = self._sess.get(BASE_URL + path, timeout=10)
+                if r.status_code != 200:
+                    continue
+                html = r.text
+                # Try both webtoon and manhwa patterns
+                for mode in [Mode(Mode.WEBTOON), Mode(Mode.MANHWA)]:
+                    for it in _parse_series_from_html(html, mode):
+                        key = f"{it['mode']}_{it['toon_id']}"
+                        if key not in seen:
+                            seen.add(key)
+                            results.append(it)
+                if results:
+                    return results
+            except Exception:
+                pass
+        return []
 
-    def get_catalog_page(
-        self, page: int = 1, page_size: int = 20, **kwargs
-    ) -> tuple[list, bool]:
-        key = "fanfox"
-        if getattr(self, "_cat_buf_key", None) != key:
-            self._cat_buf = []
-            self._cat_buf_key = key
-            self._cat_srv_page = 0
-            self._cat_exhausted = False
-            self._cat_seen = set()
-
-        start = (page - 1) * page_size
-        end = start + page_size
-
-        while len(self._cat_buf) < end and not self._cat_exhausted:
-            self._cat_srv_page += 1
-            html = None
-            for url in [
-                f"{BASE_URL}/directory/{self._cat_srv_page}.html",
-                f"{BASE_URL}/directory/?page={self._cat_srv_page}",
-            ]:
-                html = _fetch_html(self._sess, url)
-                if html:
-                    break
-            if not html:
-                self._cat_exhausted = True
-                break
-            batch = _parse_manga_list(html)
-            added = 0
-            for it in batch:
-                if it["slug"] not in self._cat_seen:
-                    self._cat_seen.add(it["slug"])
-                    self._cat_buf.append(it)
-                    added += 1
-            if added == 0:
-                self._cat_exhausted = True
-            time.sleep(0.25)
-
-        chunk = self._cat_buf[start:end]
-        has_more = (not self._cat_exhausted) or (end < len(self._cat_buf))
-        return chunk, has_more
+    def get_catalog(self) -> list[dict]:
+        return fetch_full_catalog(self._sess)
 
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
-        slug = item.get("slug") or item.get("id", "")
-        data = _parse_series(self._sess, slug)
-        if not data:
+        toon_id = item.get("toon_id", item.get("id", ""))
+        enc_title = item.get("encoded_title", "")
+        mode = Mode(item.get("mode", Mode.WEBTOON))
+        html = _fetch_html(self._sess, mode.series_url(toon_id, enc_title))
+        if not html:
             return {}, []
-        chapters = data.pop("chapters", [])
-        return data, chapters
+        title, chapters = _parse_series_page(html, toon_id, enc_title, mode)
+        meta = {
+            "id": toon_id,
+            "slug": toon_id,
+            "title": title,
+            "toon_id": toon_id,
+            "encoded_title": enc_title,
+            "mode": mode.kind,
+        }
+        return meta, chapters
 
     def get_chapter_images(self, chapter: dict, series: dict) -> list[str]:
-        url = chapter.get("url", "")
-        slug = series.get("slug", series.get("id", ""))
-        if not url:
-            return []
-        return _get_chapter_images(self._sess, url, slug)
+        toon_id = series.get("toon_id", series.get("id", ""))
+        enc_title = series.get("encoded_title", "")
+        num = chapter.get("num", int(chapter.get("id", 0)))
+        mode = Mode(series.get("mode", Mode.WEBTOON))
+        url = mode.chapter_url(toon_id, num, enc_title)
+        html = _fetch_html(self._sess, url)
+        return _extract_images(html) if html else []
 
     def dl_image(self, url: str, referer: str = "") -> Optional[bytes]:
+        import time
+
         for attempt in range(3):
             try:
-                r = self._sess.get(
-                    url, timeout=TIMEOUT, headers={"Referer": BASE_URL + "/"}
-                )
+                r = self._sess.get(url, timeout=TIMEOUT)
                 if r.status_code == 200 and r.content:
                     return r.content
             except Exception:
@@ -682,4 +441,4 @@ class DownloaderMangafox(BaseDownloader):
         return None
 
     def get_referer(self, chapter: dict, series: dict) -> str:
-        return BASE_URL + "/"
+        return BASE_URL
