@@ -36,8 +36,9 @@ a = Analysis(
     datas=[
         ('BBSL', 'BBSL'),
         ('styles', 'styles'),
-        ('app_media/img-aux/logo.png', 'app_media/img-aux'),
-        ('app_media/img-aux/icono.ico', 'app_media/img-aux'),
+        ('app_media', 'app_media'),
+        ('app_tools', 'app_tools'),
+        ('babylon_downloaders', 'babylon_downloaders'),
         ('.env', '.')
     ],
     hiddenimports=[],
