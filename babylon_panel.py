@@ -30,10 +30,11 @@ from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple, cast
 
 from config import Config, resource_path
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, QUrl
+from PySide6.QtGui import QFont, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -370,6 +371,46 @@ def _raw_to_display(site_type: str, raw: Dict) -> Optional[Dict]:
     if not slug:
         return None
     return {"title": title, "slug": slug, "_raw": raw}
+
+
+def get_series_url(site_type: str, item: Dict) -> str:
+    """Retorna la URL completa de la serie en la web original."""
+    try:
+        mod = _load_mod(site_type)
+        base = getattr(mod, "BASE_URL", "").rstrip("/")
+        slug = item.get("slug", "")
+
+        if site_type == "wfwf":
+            # slug = id|||encoded|||mode
+            parts = slug.split("|||")
+            if len(parts) == 3:
+                t_id, enc, mode = parts
+                return f"{base}/{mode}/{t_id}/{enc}"
+        elif site_type == "hitomi":
+            return f"https://hitomi.la/manga/{slug}.html"
+        elif site_type == "baozimh":
+            # baozimh suele tener mirrors, usamos el del downloader si existe
+            dl = get_dl("baozimh")
+            b = (dl._mirror or base).rstrip("/")
+            return f"{b}/comic/{slug}"
+        elif site_type == "18mh":
+            return f"{base}/manga/{slug}.html"
+        elif site_type == "bakamh":
+            return f"{base}/manga/{slug}/"
+        elif site_type == "dumanwu":
+            return f"{base}/{slug}/"
+        elif site_type == "manhuagui":
+            return f"{base}/comic/{slug}/"
+        elif site_type == "picacomic":
+            return f"https://wikimanga.org/comic/{slug}"  # Picacomic es app-only, link fallback
+        elif site_type == "mangafox":
+            return f"{base}/manga/{slug}/"
+        elif site_type == "toonkor":
+            return f"{base}/{slug}"
+
+        return f"{base}/{slug}"
+    except Exception:
+        return ""
 
 
 def search_site(
@@ -1408,8 +1449,24 @@ class BabylonSeriesPanel(QWidget):
         hdr.addStretch()
         self._lbl_title = QLabel(self.item.get("title", "Cargando…")[:60])
         self._lbl_title.setStyleSheet(
-            "color:#bd7aff;font-size:15px;font-weight:bold;background:transparent;border:none;"
+            "QLabel{color:#bd7aff;font-size:15px;font-weight:bold;background:transparent;border:none;}"
+            "QLabel:hover{color:#bd7aff;text-decoration:underline;}"
         )
+        self._lbl_title.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._lbl_title.setToolTip("Click para copiar enlace a la web")
+        
+        def _copy_title_url(ev):
+            url = get_series_url(self.site["type"], self.item)
+            if url:
+                QApplication.clipboard().setText(url)
+                # Opcional: feedback visual temporal en el label de info
+                old_info = self._lbl_info.text()
+                self._lbl_info.setText("¡Enlace copiado al portapapeles!")
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(2000, lambda: self._lbl_info.setText(old_info))
+
+        self._lbl_title.mousePressEvent = _copy_title_url  # type: ignore
+
         if self.title_font:
             self._lbl_title.setFont(self.title_font)
         self._lbl_title.setAlignment(
@@ -1442,7 +1499,9 @@ class BabylonSeriesPanel(QWidget):
         for lbl_txt, slot in [
             ("Seleccionar todo", self._ch_list.selectAll),
             ("Quitar selección", self._ch_list.clearSelection),
-            ("Invertir", self._invert),
+            ("Invertir selección", self._invert),
+            ("Invertir orden", self._invert_order),
+            ("ABRIR WEB", self._open_web),
         ]:
             b = QPushButton(lbl_txt)
             b.setStyleSheet(_BTN_BASE)
@@ -1559,6 +1618,22 @@ class BabylonSeriesPanel(QWidget):
         self.download_requested.emit(
             self._series, chapters, os.path.join(self._dest_dir, safe)
         )
+
+    def _invert_order(self) -> None:
+        if not self._chapters:
+            return
+        self._chapters.reverse()
+        self._ch_list.clear()
+        for ch in self._chapters:
+            it = QListWidgetItem(ch.get("title", "?"))
+            it.setData(Qt.ItemDataRole.UserRole, ch)
+            self._ch_list.addItem(it)
+        self._update_btn()
+
+    def _open_web(self) -> None:
+        url = get_series_url(self.site["type"], self.item)
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2547,41 +2622,36 @@ class BabylonSiteDetailPanel(QWidget):
         lay = QHBoxLayout(card)
         lay.setContentsMargins(12, 7, 12, 7)
 
-        lbl = QLabel(item.get("title", "(sin título)"))
-        lbl.setStyleSheet("color:#ddd;background:transparent;border:none;")
-        lbl.setWordWrap(True)
-        lbl.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse  # drag to select text
-        )
-        lbl.setCursor(Qt.CursorShape.IBeamCursor)
+        title_lbl = QLabel(item.get("title", "(sin título)"))
+        title_lbl.setStyleSheet("color:#ddd;background:transparent;border:none;")
+        title_lbl.setWordWrap(True)
+        title_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        title_lbl.setCursor(Qt.CursorShape.IBeamCursor)
         if self.body_font:
-            lbl.setFont(self.body_font)
-        lay.addWidget(lbl, 1)
+            title_lbl.setFont(self.body_font)
+        lay.addWidget(title_lbl, 1)
 
-        btn = QPushButton("VER SERIE")
-        btn.setMinimumWidth(100)
-        btn.setStyleSheet(_BTN_BASE)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_view = QPushButton("VER SERIE")
+        btn_view.setMinimumWidth(100)
+        btn_view.setStyleSheet(_BTN_PRIMARY)
+        btn_view.setCursor(Qt.CursorShape.PointingHandCursor)
         if self.body_font:
-            btn.setFont(self.body_font)
+            btn_view.setFont(self.body_font)
         can_open = bool(item.get("slug") and item.get("slug") != "__no_token__")
-        btn.setEnabled(can_open)
-        btn.setToolTip(f"Cargar ficha:\n{item.get('title', '')}")
+        btn_view.setEnabled(can_open)
 
-        def _open(i=item):
+        def _open_series(i=item):
             self.series_requested.emit(i)
 
-        btn.clicked.connect(lambda _c=False, i=item: _open(i))
-        lay.addWidget(btn)
+        btn_view.clicked.connect(lambda _c=False, i=item: _open_series(i))
+        lay.addWidget(btn_view)
 
-        # Click en cualquier parte del card (excepto el label en modo selección) abre la serie
+        # Click en el fondo del card (no widgets hijos) abre la serie
         if can_open:
-
             def _card_press(ev, i=item):
                 if ev.button() == Qt.MouseButton.LeftButton:
                     self.series_requested.emit(i)
-
-            card.mousePressEvent = _card_press  # type: ignore[assignment]
+            card.mousePressEvent = _card_press  # type: ignore
 
         return card
 
