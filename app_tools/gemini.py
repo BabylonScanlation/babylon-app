@@ -96,11 +96,11 @@ class GeminiProcessor(BaseAIProcessor):
             models_iter = client.models.list()
             available_models: List[str] = []
             
-            ALLOWED_FAMILIES = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-flash", "gemini-3.1-flash-lite-preview"]
+            ALLOWED_FAMILIES = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]
             FORBIDDEN_TERMS = [
                 "pro", "2.0", "deep-research", "nano", "audio", "tts", 
                 "embedding", "aqa", "gemma", "image", "face", "screen",
-                "preview", "latest"
+                "preview", "latest", "gemini-2.5-flash-lite"
             ]
 
             for model in models_iter:
@@ -469,11 +469,12 @@ class GeminiProcessor(BaseAIProcessor):
 
                     self._report_status(f"Lote {current_batch}/{total_batches} (sub {batch_idx//BATCH_SIZE + 1}): {len(batch_paths)} imágenes...")
                     
+                    api_attempt = 0
                     api_retries = 3
                     retry_delay = 2
                     batch_response_text = ""
 
-                    for api_attempt in range(api_retries + 1):
+                    while api_attempt <= api_retries:
                         if cancel_event and cancel_event.is_set():
                             return ["CANCELLED"] * len(images)
 
@@ -494,14 +495,16 @@ class GeminiProcessor(BaseAIProcessor):
                                             return ["CANCELLED"] * len(images)
                                         self._report_status(f"Servidor ocupado (503). Reintento {api_attempt+1}/{api_retries} en {i}s...")
                                         time.sleep(1)
+                                    api_attempt += 1
                                     continue
                                 else:
                                     if self._try_switch_model():
                                         self._report_status(f"Cambiando modelo a {Config.GEMINI_MODEL}...")
                                         client = self.get_client()
-                                        api_attempt = -1 
+                                        api_attempt = 0 # Reiniciar intentos con el nuevo modelo
                                         continue
                             
+                            self._report_status(f"Error en lote: {str(api_err)[:100]}")
                             raise api_err
                     
                     if batch_response_text:
@@ -667,6 +670,8 @@ class GeminiProcessor(BaseAIProcessor):
 
     def process_selected_files_gemini(self, file_paths: List[str], output_dir: str, cancel_event: Any, callback: Any):
         if not file_paths:
+            if callback:
+                callback("error", "No se seleccionaron archivos.")
             return
 
         file_paths.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])

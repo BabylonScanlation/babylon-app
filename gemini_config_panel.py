@@ -50,20 +50,24 @@ class GeminiConfigPanel(QWidget):
     def setup_ui(self):
         self.setObjectName("GeminiConfigPanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True) # Fuerza el pintado del fondo
-        self.setGeometry(50, 50, 780, 540) # Altura reducida para que los botones suban
+        
+        # SIMETRÍA PERFECTA: Margen de 40px en los 4 costados (Contenedor 900x600)
+        self.setGeometry(40, 40, 820, 520) 
+        
         self.setStyleSheet(
             """
             #GeminiConfigPanel {
-                background-color: rgba(0, 0, 0, 235);
-                border: 2px solid rgba(150, 0, 150, 150);
+                background-color: rgba(0, 0, 0, 245);
+                border: 2px solid rgba(150, 0, 150, 180);
                 border-radius: 15px;
             }
             """
         )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(25, 15, 25, 25) # Márgenes equilibrados
-        layout.setSpacing(4) # Espaciado mínimo entre bloques
+        layout.setContentsMargins(40, 40, 40, 40) # Márgenes internos uniformes
+        layout.setSpacing(10)
 
+        layout.addStretch() # Centrado vertical del contenido
 
         title_label = QLabel("CONFIGURACIÓN AVANZADA DE GEMINI")
         title_label.setStyleSheet(

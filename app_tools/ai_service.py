@@ -36,7 +36,7 @@ class BaseAIProcessor:
                 self.status_callback(message)
             except Exception:
                 pass # Ignorar errores en el callback de UI
-        logging.info(f"[{self.model_name}] {message}")
+        logging.info(f"[{self.model_name.upper()}] {message}")
 
     def reset_counters(self):
         self.processing_start_time = time.time()

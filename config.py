@@ -126,7 +126,6 @@ class Config:
     # Structure: {ModelName: (RPM, TPM, RPD)}
     MODEL_LIMITS: Dict[str, Dict[str, int]] = {
         "gemini-2.5-flash": {"RPM": 5, "TPM": 250000, "RPD": 20},
-        "gemini-2.5-flash-lite": {"RPM": 10, "TPM": 250000, "RPD": 20},
         "gemini-3-flash-preview": {"RPM": 5, "TPM": 250000, "RPD": 20},
         "gemini-3.1-flash-lite-preview": {"RPM": 15, "TPM": 250000, "RPD": 500},
     }

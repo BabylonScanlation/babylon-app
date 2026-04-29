@@ -731,7 +731,7 @@ class App(QMainWindow):
         model_label.setStyleSheet("color: white;")
         model_label.setFont(self.roboto_black_font)
         model_combo = QComboBox()
-        model_combo.addItems(["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"])
+        model_combo.addItems(["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash"])
         model_combo.setCurrentText(Config.GEMINI_MODEL)
         model_combo.setStyleSheet(
             """
