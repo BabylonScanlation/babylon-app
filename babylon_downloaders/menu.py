@@ -38,8 +38,10 @@ DOWNLOADERS: list[tuple[str, str]] = [
     ("mangafox", "FANFOX        (fanfox.net)         — requests + BS4"),
     ("manhuagui", "MANHUAGUI     (manhuagui.com)     — p.a.c.k.e.r + LZ"),
     ("picacomic", "PICACOMIC     (picacomic.com)     — API HMAC + login"),
+    ("pigmh", "PIGMH         (pigmh.com)         — AES-128-CBC + BS4"),
     ("toonkor", "TOONKOR       (tkorXXX.com)       — scrapling + base64"),
     ("wfwf", "WFWF          (wfwf448.com)       — dual-mode webtoon"),
+    ("yumanhua", "YUMANHUA      (yumanhua.com)      — XOR + Scrapling"),
 ]
 
 
@@ -76,6 +78,10 @@ def _load_downloader(key: str):
         from d_picacomic import DownloaderPicacomic
 
         return DownloaderPicacomic()
+    if key == "pigmh":
+        from d_pigmh import DownloaderPigmh
+
+        return DownloaderPigmh()
     if key == "toonkor":
         from d_toonkor import DownloaderToonkor
 
@@ -84,6 +90,10 @@ def _load_downloader(key: str):
         from d_wfwf import DownloaderWfwf
 
         return DownloaderWfwf()
+    if key == "yumanhua":
+        from d_yumanhua import DownloaderYumanhua
+
+        return DownloaderYumanhua()
     raise ValueError(f"Downloader desconocido: {key}")
 
 

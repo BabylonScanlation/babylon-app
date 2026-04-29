@@ -110,7 +110,7 @@ except ImportError:
 
 # --- CONFIGURACIÓN ---
 GEMINI_CHEAP_MODEL = "gemini-2.5-flash-lite"
-GEMMA_TEXT_MODEL = "gemma-3-27b-it"
+GEMMA_TEXT_MODEL = "gemma-4-31b-it"
 
 # --- PROMPT PARA IA ---
 PROMPT_IA = (

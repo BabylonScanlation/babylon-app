@@ -29,9 +29,8 @@ import zipfile
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from config import Config, resource_path
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, QUrl
-from PySide6.QtGui import QFont, QPixmap, QDesktopServices
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QFont, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -51,6 +50,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from config import Config, resource_path
 
 PAGE_SIZE = 20  # Items por página en la UI
 
@@ -275,6 +276,7 @@ SITE_FILTER_CONFIG: Dict[str, List[Dict]] = {
             "dynamic": True,
         },
     ],
+    "pigmh": [],
     "toonkor": [],
     "wfwf": [
         {
@@ -287,6 +289,7 @@ SITE_FILTER_CONFIG: Dict[str, List[Dict]] = {
             ],
         },
     ],
+    "yumanhua": [],
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -306,8 +309,10 @@ _DOWNLOADER_MAP: Dict[str, Tuple[str, str]] = {
     "mangafox": ("d_mangafox.py", "DownloaderMangafox"),
     "manhuagui": ("d_manhuagui.py", "DownloaderManhuagui"),
     "picacomic": ("d_picacomic.py", "DownloaderPicacomic"),
+    "pigmh": ("d_pigmh.py", "DownloaderPigmh"),
     "toonkor": ("d_toonkor.py", "DownloaderToonkor"),
     "wfwf": ("d_wfwf.py", "DownloaderWfwf"),
+    "yumanhua": ("d_yumanhua.py", "DownloaderYumanhua"),
 }
 
 _mod_cache: Dict[str, Any] = {}
@@ -1454,7 +1459,7 @@ class BabylonSeriesPanel(QWidget):
         )
         self._lbl_title.setCursor(Qt.CursorShape.PointingHandCursor)
         self._lbl_title.setToolTip("Click para copiar enlace a la web")
-        
+
         def _copy_title_url(ev):
             url = get_series_url(self.site["type"], self.item)
             if url:
@@ -2324,8 +2329,10 @@ _SITE_HINTS: Dict[str, str] = {
     "mangafox": "Busca por nombre, o pulsa Listar para ver el catálogo.",
     "manhuagui": "Busca por nombre, o filtra región/género/público/estado y pulsa Listar.",
     "picacomic": "Busca por nombre, o elige categoría/orden y pulsa Listar.",
+    "pigmh": "Busca por nombre, o pulsa Listar para ver el catálogo.",
     "toonkor": "Busca por nombre, o pulsa Listar para ver todas las series.",
     "wfwf": "Elige Webtoon/Manhwa/Ambos y pulsa Listar, o escribe un nombre.",
+    "yumanhua": "Busca por nombre, o pulsa Listar para ver el catálogo.",
 }
 
 

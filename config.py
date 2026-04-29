@@ -68,6 +68,7 @@ class Config:
         settings: Dict[str, Any] = {
             "GEMINI_MODEL": "gemini-2.5-flash",
             "GEMINI_ENABLE_THINKING": True,
+            "GEMINI_STITCHING_ONLY": False,
             "GEMINI_TEMPERATURE": 1.0,
             "GEMINI_ULTRA_HIGH_QUALITY": False,
             "ENABLE_AUTO_MODEL_SWITCH": True,
@@ -165,6 +166,7 @@ class Config:
 
     GEMINI_MODEL: str = str(user_settings["GEMINI_MODEL"])
     GEMINI_ENABLE_THINKING: bool = bool(user_settings["GEMINI_ENABLE_THINKING"])
+    GEMINI_STITCHING_ONLY: bool = bool(user_settings.get("GEMINI_STITCHING_ONLY", False))
     GEMINI_TEMPERATURE: float = float(user_settings["GEMINI_TEMPERATURE"])
     GEMINI_ULTRA_HIGH_QUALITY: bool = bool(
         user_settings.get("GEMINI_ULTRA_HIGH_QUALITY", False)
@@ -667,6 +669,32 @@ class Config:
             "status": "Activo",
             "type": "wfwf",
             "file": "wfwf_downloader.py",
+        },
+        {
+            "name": "Pigmh",
+            "image_path": resource_path(
+                os.path.join(
+                    "BBSL", "herramientas", "ch_downloaders", "babylon", "pigmh.png"
+                )
+            ),
+            "description": "Manhua raw en chino con cifrado AES",
+            "url": "https://pigmh.com",
+            "status": "Activo",
+            "type": "pigmh",
+            "file": "pigmh_downloader.py",
+        },
+        {
+            "name": "Yumanhua",
+            "image_path": resource_path(
+                os.path.join(
+                    "BBSL", "herramientas", "ch_downloaders", "babylon", "yumanhua.png"
+                )
+            ),
+            "description": "Manhua raw en chino — Decryptor XOR",
+            "url": "https://yumanhua.com",
+            "status": "Activo",
+            "type": "yumanhua",
+            "file": "yumanhua_downloader.py",
         },
     ]
 

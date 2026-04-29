@@ -200,19 +200,23 @@ def decrypt_images(html: str, seeds: list[bytes]) -> list[str]:
             continue
         p, base, _count, k = args
         decoded = _decode_packer(p, base, k)
-        m = re.search(
-            r"""var\s+\w+\s*=\s*['"]([A-Za-z0-9+/]{40,}={0,2})['"]""", decoded
-        )
-        if not m:
-            continue
-        try:
-            raw = base64.b64decode(m.group(1) + "==")
-        except Exception:
-            continue
-        for seed in seeds:
+        
+        # Regex v5.5: Captura base64 con o sin asignación var
+        matches = re.findall(r'["\']([A-Za-z0-9+/]{100,})["\']', decoded)
+        if not matches:
+            matches = re.findall(r'=\s*["\']?([A-Za-z0-9+/]{100,})', decoded)
+            
+        for match_val in matches:
             try:
-                xored = _xor(raw, seed)
-                final = base64.b64decode(xored + b"==").decode("utf-8", errors="ignore")
+                pad = (4 - len(match_val) % 4) % 4
+                raw = base64.b64decode(match_val + "=" * pad)
+            except Exception:
+                continue
+            for seed in seeds:
+                try:
+                    xored = _xor(raw, seed)
+                    pad2 = (4 - len(xored) % 4) % 4
+                    final = base64.b64decode(xored + b"=="[:pad2]).decode("utf-8", errors="ignore")
                 if "http" not in final:
                     continue
                 try:
@@ -297,7 +301,7 @@ def _parse_series_page(
     except Exception:
         pass
 
-    caps.sort(key=_cap_sort_key)
+    # caps.sort(key=_cap_sort_key) # v5.5: usar orden natural
     meta = {"id": slug, "slug": slug, "title": title}
     return meta, caps
 

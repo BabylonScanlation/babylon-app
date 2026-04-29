@@ -31,6 +31,7 @@ class GeminiConfigPanel(QWidget):
         self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
         self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
         self.ultra_high_quality_cb.setChecked(Config.GEMINI_ULTRA_HIGH_QUALITY)
+        self.stitching_only_cb.setChecked(Config.GEMINI_STITCHING_ONLY)
         self.gemini_api_input.setText(Config.GEMINI_API_KEY)
         self.pending_system_instruction.setPlainText(Config.GEMINI_SYSTEM_INSTRUCTION)
         super().showEvent(event)
@@ -43,34 +44,37 @@ class GeminiConfigPanel(QWidget):
         self._original_auto_model_switch = Config.ENABLE_AUTO_MODEL_SWITCH
         self._original_gemini_api_key = Config.GEMINI_API_KEY
         self._original_gemini_ultra_high_quality = Config.GEMINI_ULTRA_HIGH_QUALITY
+        self._original_gemini_stitching_only = Config.GEMINI_STITCHING_ONLY
         self._original_gemini_system_instruction = Config.GEMINI_SYSTEM_INSTRUCTION
 
     def setup_ui(self):
         self.setObjectName("GeminiConfigPanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True) # Fuerza el pintado del fondo
-        self.setGeometry(50, 50, 780, 500)
+        self.setGeometry(50, 50, 780, 540) # Altura reducida para que los botones suban
         self.setStyleSheet(
             """
             #GeminiConfigPanel {
-                background-color: rgba(0, 0, 0, 150);
-                border: 1px solid rgba(150, 0, 150, 100);
+                background-color: rgba(0, 0, 0, 235);
+                border: 2px solid rgba(150, 0, 150, 150);
                 border-radius: 15px;
             }
             """
         )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
+        layout.setContentsMargins(25, 15, 25, 25) # Márgenes equilibrados
+        layout.setSpacing(4) # Espaciado mínimo entre bloques
+
 
         title_label = QLabel("CONFIGURACIÓN AVANZADA DE GEMINI")
         title_label.setStyleSheet(
             """
-            font-size: 22px;
+            font-size: 24px;
             color: #960096;
             background: transparent;
             qproperty-alignment: AlignCenter;
             letter-spacing: 2px;
             border: none;
+            text-shadow: 0px 0px 5px rgba(150, 0, 150, 150);
             """
         )
         title_label.setFont(self.super_cartoon_font)
@@ -99,7 +103,7 @@ class GeminiConfigPanel(QWidget):
                 color: white;
                 border: 1px solid #572364;
                 border-radius: 5px;
-                padding: 12px;
+                padding: 10px 12px; # Reducido vertical de 12 a 10 para evitar recorte
                 font-size: 14px;
             }
             QLineEdit:focus {
@@ -239,6 +243,7 @@ class GeminiConfigPanel(QWidget):
         options_group = QWidget()
         options_group.setStyleSheet("border: 1px solid rgba(150, 0, 150, 50); border-radius: 8px; padding: 10px;")
         options_layout = QVBoxLayout(options_group)
+        options_layout.setSpacing(6) # Espacio reducido entre cada checkbox
         
         self.gemini_thinking_cb = QCheckBox("Activar modo pensamiento (Thinking Mode)")
         self.gemini_thinking_cb.setStyleSheet("color: white; font-size: 13px; border: none;")
@@ -256,9 +261,15 @@ class GeminiConfigPanel(QWidget):
         self.auto_switch_checkbox.setFont(self.roboto_black_font)
         self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
 
+        self.stitching_only_cb = QCheckBox("Modo unión (Solo unir imágenes, Sin IA)")
+        self.stitching_only_cb.setStyleSheet("color: #ccffcc; font-size: 13px; border: none; font-weight: bold;")
+        self.stitching_only_cb.setFont(self.roboto_black_font)
+        self.stitching_only_cb.setChecked(Config.GEMINI_STITCHING_ONLY)
+
         options_layout.addWidget(self.gemini_thinking_cb)
         options_layout.addWidget(self.ultra_high_quality_cb)
         options_layout.addWidget(self.auto_switch_checkbox)
+        options_layout.addWidget(self.stitching_only_cb)
         settings_layout.addWidget(options_group)
 
         self._on_ultra_high_toggled(Qt.CheckState.Checked if Config.GEMINI_ULTRA_HIGH_QUALITY else Qt.CheckState.Unchecked, initial_load=True)
@@ -313,7 +324,13 @@ class GeminiConfigPanel(QWidget):
                     self.tools_manager.gemini_browse_folders_button.setToolTip("")
 
         if is_checked and not initial_load:
-            QMessageBox.warning(self, "Modo Ultra High Quality", "ATENCION: Este modo maximiza la resolución... [Truncado]")
+            QMessageBox.warning(
+                self, 
+                "Modo Ultra High Quality", 
+                "ATENCIÓN: Este modo maximiza la resolución (4500px) y la precisión del OCR, "
+                "pero duplica el consumo de tokens y solo permite procesar UNA imagen por tanda "
+                "para evitar errores de memoria en la API de Gemini."
+            )
 
     def _validate_gemini_api_ui(self):
         """Valida la API key visualmente de forma asíncrona."""
@@ -353,6 +370,7 @@ class GeminiConfigPanel(QWidget):
         settings = {
             "GEMINI_MODEL": self.gemini_model_combo.currentText(),
             "GEMINI_ENABLE_THINKING": self.gemini_thinking_cb.isChecked(),
+            "GEMINI_STITCHING_ONLY": self.stitching_only_cb.isChecked(),
             "ENABLE_AUTO_MODEL_SWITCH": self.auto_switch_checkbox.isChecked(),
             "GEMINI_ULTRA_HIGH_QUALITY": self.ultra_high_quality_cb.isChecked(),
             "GEMINI_SYSTEM_INSTRUCTION": self.pending_system_instruction.toPlainText(),
@@ -374,6 +392,7 @@ class GeminiConfigPanel(QWidget):
         # Restaurar configuración original en memoria (por seguridad)
         Config.GEMINI_MODEL = self._original_gemini_model
         Config.GEMINI_ENABLE_THINKING = self._original_gemini_thinking
+        Config.GEMINI_STITCHING_ONLY = self._original_gemini_stitching_only
         Config.ENABLE_AUTO_MODEL_SWITCH = self._original_auto_model_switch
         Config.GEMINI_API_KEY = self._original_gemini_api_key
         Config.GEMINI_ULTRA_HIGH_QUALITY = self._original_gemini_ultra_high_quality
@@ -382,6 +401,7 @@ class GeminiConfigPanel(QWidget):
         # Restaurar estado VISUAL de los widgets
         self.gemini_model_combo.setCurrentText(Config.GEMINI_MODEL)
         self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
+        self.stitching_only_cb.setChecked(Config.GEMINI_STITCHING_ONLY)
         self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
         self.ultra_high_quality_cb.setChecked(Config.GEMINI_ULTRA_HIGH_QUALITY)
         self.gemini_api_input.setText(Config.GEMINI_API_KEY)
