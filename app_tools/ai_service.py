@@ -190,7 +190,7 @@ class BaseAIProcessor:
                 return self.process_chapter(os.path.dirname(input_path), output_dir, cancel_event, os.path.dirname(input_path))
             else:
                 # Caso directorio
-                input_base = input_path
+                input_base = os.path.dirname(input_path)
                 # Detectar si es un capítulo (tiene imágenes) o una serie (tiene subcarpetas)
                 has_images = any(f.lower().endswith(Config.SUPPORTED_FORMATS) for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f)))
                 
@@ -199,16 +199,41 @@ class BaseAIProcessor:
                 
                 # Procesar subdirectorios recursivamente
                 status = "success"
+                chapters_to_process = []
+                
                 for root, dirs, _ in os.walk(input_path):
                     for d in dirs:
-                        if cancel_event.is_set():
-                            return "cancelled"
                         chapter_path = os.path.join(root, d)
                         # Verificar si tiene imágenes
                         if any(f.lower().endswith(Config.SUPPORTED_FORMATS) for f in os.listdir(chapter_path)):
-                            res = self.process_chapter(chapter_path, output_dir, cancel_event, input_base)
+                            chapters_to_process.append(chapter_path)
+                
+                if not chapters_to_process:
+                    return status
+                    
+                # Número de hilos igual al número de API Keys para maximizar el paralelismo sin saturar
+                num_workers = max(1, len(Config.GEMINI_API_KEYS))
+                
+                with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                    futures = []
+                    for ch_path in chapters_to_process:
+                        futures.append(executor.submit(self.process_chapter, ch_path, output_dir, cancel_event, input_base))
+                    
+                    for future in as_completed(futures):
+                        if cancel_event.is_set():
+                            executor.shutdown(wait=False)
+                            return "cancelled"
+                        
+                        try:
+                            res = future.result()
                             if res != "success":
                                 status = res
+                        except Exception as e:
+                            logging.error(f"Error procesando capítulo: {e}")
+                            status = "error"
+                            
+                    # Asegurar que el executor se apague sin bloquear al finalizar todas las tareas
+                    executor.shutdown(wait=False)
                 return status
 
         except Exception as e:

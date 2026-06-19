@@ -15,35 +15,94 @@ from PIL import Image
 from app_tools.ai_service import BaseAIProcessor, AIAPIError
 from config import Config
 
+class APIKeyPool:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(APIKeyPool, cls).__new__(cls)
+                cls._instance._init_pool()
+            return cls._instance
+
+    def _init_pool(self):
+        self.lock = threading.Lock()
+        self.keys_state = {}
+        today = time.strftime("%Y-%m-%d")
+        
+        saved_usage = Config.user_settings.get("KEY_USAGE_TRACKING", {})
+        saved_date = Config.user_settings.get("LAST_REQUEST_DATE", "")
+        
+        if saved_date != today:
+            saved_usage = {}
+            Config.save_user_settings({"LAST_REQUEST_DATE": today, "KEY_USAGE_TRACKING": {}})
+
+        for k in Config.GEMINI_API_KEYS:
+            usage = saved_usage.get(k, 0)
+            self.keys_state[k] = {
+                'last_time': 0.0,
+                'daily_count': usage,
+                'exhausted': False,
+                'tpm_cooldown_until': 0.0
+            }
+
+    def _save_state(self):
+        usage = {k: v['daily_count'] for k, v in self.keys_state.items()}
+        Config.save_user_settings({"KEY_USAGE_TRACKING": usage})
+
+    def mark_exhausted(self, key: str):
+        with self.lock:
+            if key in self.keys_state:
+                self.keys_state[key]['exhausted'] = True
+
+    def mark_tpm_limit(self, key: str, cooldown_seconds: float = 60.0):
+        with self.lock:
+            if key in self.keys_state:
+                self.keys_state[key]['tpm_cooldown_until'] = time.time() + cooldown_seconds
+
+    def acquire_key_and_reserve(self, limits: dict) -> Tuple[str, float]:
+        rpm = limits.get("RPM", 5)
+        rpd = limits.get("RPD", 20)
+        min_interval = 60.0 / rpm
+        
+        with self.lock:
+            best_key = None
+            min_wait = float('inf')
+            
+            for k, state in self.keys_state.items():
+                if state['exhausted']: continue
+                if state['daily_count'] >= rpd: continue
+                
+                now = time.time()
+                if now < state['tpm_cooldown_until']:
+                    wait = state['tpm_cooldown_until'] - now
+                else:
+                    elapsed = now - state['last_time']
+                    wait = max(0.0, min_interval - elapsed)
+                
+                if wait < min_wait:
+                    min_wait = wait
+                    best_key = k
+            
+            if best_key is None:
+                return "", -1.0 # Todas agotadas o límite diario
+                
+            if min_wait <= 0.0:
+                self.keys_state[best_key]['last_time'] = time.time()
+                self.keys_state[best_key]['daily_count'] += 1
+                self._save_state()
+                return best_key, 0.0
+                
+            return best_key, min_wait
+
 class GeminiAPIError(AIAPIError):
     pass
 
 class GeminiProcessor(BaseAIProcessor):
     def __init__(self):
         super().__init__(model_name="Gemini")
-        self._last_request_time = 0.0
-        self._check_and_reset_daily_quota()
-        self._exhausted_keys: Set[str] = set()
-        self._failed_models: Set[str] = set() # Modelos que han fallado con la key actual
-
-    def _check_and_reset_daily_quota(self):
-        """Reinicia el contador diario si ha cambiado el día."""
-        today = time.strftime("%Y-%m-%d")
-        if Config.LAST_REQUEST_DATE != today:
-            Config.DAILY_REQUEST_COUNT = 0
-            Config.LAST_REQUEST_DATE = today
-            Config.save_user_settings({
-                "DAILY_REQUEST_COUNT": 0, 
-                "LAST_REQUEST_DATE": today
-            })
-
-    def _increment_daily_count(self):
-        """Incrementa y guarda el uso diario."""
-        Config.DAILY_REQUEST_COUNT += 1
-        Config.save_user_settings({
-            "DAILY_REQUEST_COUNT": Config.DAILY_REQUEST_COUNT,
-            "LAST_REQUEST_DATE": Config.LAST_REQUEST_DATE
-        })
+        self._failed_models: Set[str] = set()
 
     def _get_current_limits(self) -> Dict[str, int]:
         model = Config.GEMINI_MODEL.lower()
@@ -52,22 +111,22 @@ class GeminiProcessor(BaseAIProcessor):
                 return limits
         return {"RPM": 5, "TPM": 250000, "RPD": 20}
 
-    def _wait_for_rate_limit(self):
-        self._check_and_reset_daily_quota()
+    def _wait_and_get_key(self) -> str:
         limits = self._get_current_limits()
-
-        if Config.DAILY_REQUEST_COUNT >= limits["RPD"]:
-            msg = f"Límite diario alcanzado ({limits['RPD']} RPD). Espera hasta mañana."
-            self._report_status(msg)
-            raise GeminiAPIError(msg)
-
-        min_interval = 60.0 / limits["RPM"]
-        elapsed = time.time() - self._last_request_time
+        pool = APIKeyPool()
         
-        if elapsed < min_interval:
-            wait_needed = min_interval - elapsed
-            self._report_status(f"Respetando RPM ({limits['RPM']}). Pausando {wait_needed:.1f}s...")
-            time.sleep(wait_needed)
+        while True:
+            key, wait_time = pool.acquire_key_and_reserve(limits)
+            if wait_time < 0:
+                msg = "Límite diario alcanzado o todas las llaves agotadas."
+                self._report_status(msg)
+                raise GeminiAPIError(msg)
+            
+            if wait_time == 0.0:
+                return key
+            
+            self._report_status(f"Respetando RPM. Pausando {wait_time:.1f}s por llave disponible...")
+            time.sleep(wait_time)
 
     def get_client(self, api_key: Optional[str] = None) -> Any: # type: ignore
         return genai.Client(
@@ -209,7 +268,7 @@ class GeminiProcessor(BaseAIProcessor):
 
     def _reset_model_to_default(self):
         """Resetea el modelo al preferido al cambiar de API Key."""
-        default_model = "gemini-2.5-flash"
+        default_model = "gemini-3.1-flash-lite-preview"
         self._report_status(f"Nueva Key: Reseteando modelo a {default_model}")
         Config.GEMINI_MODEL = default_model
 
@@ -218,30 +277,32 @@ class GeminiProcessor(BaseAIProcessor):
             results = self.call_api_batch(prompt, [image_path])
             return results[0] if results else ""
         
-        self._wait_for_rate_limit()
-        
         max_retries = 3
         base_delay = 2
 
         for attempt in range(max_retries + 1):
             try:
-                client = self.get_client()
+                current_key = self._wait_and_get_key()
+                client = self.get_client(current_key)
                 response = client.models.generate_content(
                     model=Config.GEMINI_MODEL,
                     contents=[f"{prompt}\n\n{content}"],
                     config=types.GenerateContentConfig(temperature=Config.GEMINI_TEMPERATURE)
                 )
-                self._last_request_time = time.time()
-                self._increment_daily_count()
                 return str(response.text).strip() if response.text else ""
             
             except Exception as e:
                 error_str = str(e).lower()
-                # Errores transitorios de servidor (Bug 1 y 2)
                 is_server_error = "503" in error_str or "disconnected" in error_str or "unavailable" in error_str or "overloaded" in error_str
+                is_tpm_error = "429" in error_str or "exhausted" in error_str
                 
+                if is_tpm_error:
+                    APIKeyPool().mark_tpm_limit(current_key, 60.0)
+                    self._report_status(f"Límite TPM alcanzado en la llave actual. Cambiando...")
+                    continue # Try again with a different key immediately
+
                 if is_server_error and attempt < max_retries:
-                    wait_time = base_delay * (2 ** attempt) # Exponential backoff
+                    wait_time = base_delay * (2 ** attempt)
                     for i in range(int(wait_time), 0, -1):
                         self._report_status(f"Servidor ocupado. Reintento {attempt+1}/{max_retries} en {i}s...")
                         time.sleep(1)
@@ -380,12 +441,11 @@ class GeminiProcessor(BaseAIProcessor):
                 return ["CANCELLED"] * len(images)
 
             try:
-                self._wait_for_rate_limit()
+                current_key = self._wait_and_get_key()
             except GeminiAPIError as e:
-                if "Límite diario" in str(e) or "Resource Exhausted" in str(e):
-                    if self._rotate_key(): continue
-                    else: return [f"[ERROR API: {e}]"] * len(images)
-                raise e
+                if cancel_event:
+                    cancel_event.set()
+                return [f"[ERROR API: {e}]"] * len(images)
 
             master_protocol = self.load_prompt(Config.AI_PROMPT) or "Traduce el manga."
             img_sep = "###---FIN_DE_PAGINA---###"
@@ -447,7 +507,7 @@ class GeminiProcessor(BaseAIProcessor):
                 final_api_images = all_slices
                 total_sections = len(all_slices)
 
-                client = self.get_client()
+                client = self.get_client(current_key)
                 self._report_status(f"Enviando {total_sections} secciones a {Config.GEMINI_MODEL}...")
 
                 # BATCH_SIZE restaurado a 3 para evitar límites de tokens de salida
@@ -516,18 +576,15 @@ class GeminiProcessor(BaseAIProcessor):
                         aggregated_results.extend(["[ERROR: Sin respuesta]"] * len(batch_paths))
 
                 self._report_status(f"Traducido con éxito ({len(aggregated_results)} secciones).")
-                self._last_request_time = time.time()
-                self._increment_daily_count()
                 return aggregated_results
 
             except Exception as e:
                 error_str = str(e).lower()
                 is_quota = "429" in error_str or "exhausted" in error_str
                 if is_quota:
-                    if Config.ENABLE_AUTO_MODEL_SWITCH and self._try_switch_model(): continue
-                    if self._rotate_key():
-                        if Config.GEMINI_MODEL != preferred_model: Config.GEMINI_MODEL = preferred_model
-                        continue
+                    APIKeyPool().mark_tpm_limit(current_key, 60.0)
+                    self._report_status(f"Límite TPM (429) en llave actual. Rotando...")
+                    continue
                 self._report_status(f"Error final: {str(e)[:50]}...")
                 return [f"[ERROR API: {e}]"] * len(images)
             finally:
