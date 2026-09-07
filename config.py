@@ -249,9 +249,8 @@ class Config:
         "Papago": "https://papago.naver.com/",
         "DeepL": "https://www.deepl.com/es/translator",
         "Google": "https://translate.google.com",
-        "Paddle": "https://aistudio.baidu.com/community/app/91660/webUI",
-        "Easy": "https://www.jaided.ai/easyocr/",
-        "Tesseract": "https://github.com/tesseract-ocr/tesseract/releases/tag/5.5.0",
+        "MIT48x": "https://huggingface.co/dreMaz/mit_models/resolve/main/ocr48px.zip",
+        "Paddle-VL": "https://huggingface.co/jzhang533/PaddleOCR-VL-For-Manga",
         "Gemini": "https://gemini.google.com/app",
         "Mistral": "https://chat.mistral.ai/chat",
         "HaruNeko": "https://github.com/manga-download/hakuneko",
@@ -280,71 +279,21 @@ class Config:
     SPECIFIED_TOOLS: Dict[str, List[Dict[str, Any]]] = {
         "ocr": [
             {
-                "name": "Paddle",
+                "name": "Paddle-VL",
                 "image_path": resource_path(
                     os.path.join("BBSL", "herramientas", "ocr", "paddle.png")
                 ),
-                "description": "OCR ligero y preciso con detección avanzada de texto.",
-                "rating": 5.7,
+                "description": "Modelo Vision-Language optimizado exclusivamente para leer Manga (Japonés).",
+                "rating": 5.0,
                 "access_paths": [
                     {
                         "label": "Ruta Principal",
                         "path": resource_path(
                             os.path.join("BBSL", "herramientas", "ocr")
                         ),
-                    },
-                    {
-                        "label": "Ruta Secundaria",
-                        "path": resource_path(
-                            os.path.join("BBSL", "herramientas", "ocr")
-                        ),
-                    },
+                    }
                 ],
-            },
-            {
-                "name": "Easy",
-                "image_path": resource_path(
-                    os.path.join("BBSL", "herramientas", "ocr", "easy.png")
-                ),
-                "description": "OCR de código abierto, sencillo y multilingüe.",
-                "rating": 5.2,
-                "access_paths": [
-                    {
-                        "label": "Ruta Principal",
-                        "path": resource_path(
-                            os.path.join("BBSL", "herramientas", "ocr")
-                        ),
-                    },
-                    {
-                        "label": "Ruta Secundaria",
-                        "path": resource_path(
-                            os.path.join("BBSL", "herramientas", "ocr")
-                        ),
-                    },
-                ],
-            },
-            {
-                "name": "Tesseract",
-                "image_path": resource_path(
-                    os.path.join("BBSL", "herramientas", "ocr", "tesseract.png")
-                ),
-                "description": "Herramienta OCR robusta y altamente personalizable por Google.",
-                "rating": 1.3,
-                "access_paths": [
-                    {
-                        "label": "Ruta Principal",
-                        "path": resource_path(
-                            os.path.join("BBSL", "herramientas", "ocr")
-                        ),
-                    },
-                    {
-                        "label": "Ruta Secundaria",
-                        "path": resource_path(
-                            os.path.join("BBSL", "herramientas", "ocr")
-                        ),
-                    },
-                ],
-            },
+            }
         ],
         "traductor": [
             {

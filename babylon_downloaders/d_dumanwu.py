@@ -217,27 +217,27 @@ def decrypt_images(html: str, seeds: list[bytes]) -> list[str]:
                     xored = _xor(raw, seed)
                     pad2 = (4 - len(xored) % 4) % 4
                     final = base64.b64decode(xored + b"=="[:pad2]).decode("utf-8", errors="ignore")
-                if "http" not in final:
+                    if "http" not in final:
+                        continue
+                    try:
+                        data = json.loads(final)
+                        if isinstance(data, list):
+                            urls = [str(u) for u in data if "http" in str(u)]
+                            if urls:
+                                return urls
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    raw_urls = re.findall(r"https?://[^\s\"',\[\]]+", final)
+                    urls2 = [
+                        u
+                        for u in raw_urls
+                        if any(e in u.lower() for e in [".jpg", ".jpeg", ".png", ".webp"])
+                        or any(cdn in u for cdn in ["ecombdimg", "shimolife", "tplv"])
+                    ]
+                    if urls2:
+                        return urls2
+                except Exception:
                     continue
-                try:
-                    data = json.loads(final)
-                    if isinstance(data, list):
-                        urls = [str(u) for u in data if "http" in str(u)]
-                        if urls:
-                            return urls
-                except (json.JSONDecodeError, ValueError):
-                    pass
-                raw_urls = re.findall(r"https?://[^\s\"',\[\]]+", final)
-                urls2 = [
-                    u
-                    for u in raw_urls
-                    if any(e in u.lower() for e in [".jpg", ".jpeg", ".png", ".webp"])
-                    or any(cdn in u for cdn in ["ecombdimg", "shimolife", "tplv"])
-                ]
-                if urls2:
-                    return urls2
-            except Exception:
-                continue
     return []
 
 

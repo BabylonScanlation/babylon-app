@@ -164,8 +164,8 @@ def init_global_logging():
         native_err.addHandler(UI_HANDLER)
 
         # Captura total de descriptores 1 (stdout) y 2 (stderr)
-        _ = FDCapturer(1, native_out, logging.INFO) # Cambiado de DEBUG a INFO
-        _ = FDCapturer(2, native_err, logging.WARNING)
+        # _ = FDCapturer(1, native_out, logging.INFO) # Cambiado de DEBUG a INFO
+        # _ = FDCapturer(2, native_err, logging.WARNING)
     except Exception as e:
         print(f"Error inicializando FDCapturer: {e}")
 

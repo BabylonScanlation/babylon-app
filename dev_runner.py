@@ -67,7 +67,7 @@ def main():
                     stderr=subprocess.PIPE,
                     env=env,  # Pasamos el entorno con UTF-8 forzado
                     # bufsize=1, # Line buffering no soportado en modo binario
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                    creationflags=0
                 )
 
                 # Hilos para leer stdout y stderr sin bloquear

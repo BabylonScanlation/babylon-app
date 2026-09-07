@@ -30,7 +30,12 @@ class GeminiConfigPanel(QWidget):
         self.gemini_model_combo.setCurrentText(Config.GEMINI_MODEL)
         self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
         self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
+        
+        # Bloquear señales para que no salte el QMessageBox de advertencia al abrir la ventana
+        self.ultra_high_quality_cb.blockSignals(True)
         self.ultra_high_quality_cb.setChecked(Config.GEMINI_ULTRA_HIGH_QUALITY)
+        self.ultra_high_quality_cb.blockSignals(False)
+        
         self.stitching_only_cb.setChecked(Config.GEMINI_STITCHING_ONLY)
         self.gemini_api_input.setText(Config.GEMINI_API_KEY)
         self.pending_system_instruction.setPlainText(Config.GEMINI_SYSTEM_INSTRUCTION)
@@ -78,7 +83,6 @@ class GeminiConfigPanel(QWidget):
             qproperty-alignment: AlignCenter;
             letter-spacing: 2px;
             border: none;
-            text-shadow: 0px 0px 5px rgba(150, 0, 150, 150);
             """
         )
         title_label.setFont(self.super_cartoon_font)
@@ -107,7 +111,7 @@ class GeminiConfigPanel(QWidget):
                 color: white;
                 border: 1px solid #572364;
                 border-radius: 5px;
-                padding: 10px 12px; # Reducido vertical de 12 a 10 para evitar recorte
+                padding: 10px 12px;
                 font-size: 14px;
             }
             QLineEdit:focus {
@@ -247,26 +251,46 @@ class GeminiConfigPanel(QWidget):
         options_group = QWidget()
         options_group.setStyleSheet("border: 1px solid rgba(150, 0, 150, 50); border-radius: 8px; padding: 10px;")
         options_layout = QVBoxLayout(options_group)
-        options_layout.setSpacing(6) # Espacio reducido entre cada checkbox
+        options_layout.setSpacing(2)
+
+        # Estilo compartido: padding-bottom evita que los descenders (p, j, q, g, y) se corten
+        cb_style_white = "color: white; font-size: 13px; border: none; padding-bottom: 4px;"
+        cb_style_red = "color: #ffcccc; font-size: 13px; border: none; font-weight: bold; padding-bottom: 4px;"
+        cb_style_green = "color: #ccffcc; font-size: 13px; border: none; font-weight: bold; padding-bottom: 4px;"
         
         self.gemini_thinking_cb = QCheckBox("Activar modo pensamiento (Thinking Mode)")
-        self.gemini_thinking_cb.setStyleSheet("color: white; font-size: 13px; border: none;")
+        self.gemini_thinking_cb.setStyleSheet(cb_style_white)
         self.gemini_thinking_cb.setFont(self.roboto_black_font)
         self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
 
         self.ultra_high_quality_cb = QCheckBox("Activar Ultra Alta Calidad (Experimental)")
-        self.ultra_high_quality_cb.setStyleSheet("color: #ffcccc; font-size: 13px; border: none; font-weight: bold;")
+        self.ultra_high_quality_cb.setToolTip(
+            "Maximiza la precisión del OCR usando la resolución más alta de Gemini.\n\n"
+            "• Resolución: ULTRA_HIGH (2240 tokens/imagen vs 1120 en modo normal)\n"
+            "• Slices/lienzos: 3840px (768×5 tiles, alineado al tiling de Gemini)\n"
+            "• Solo disponible en modelos Gemini 3+\n\n"
+            "⚠ Duplica el consumo de tokens. Solo procesa 1 imagen por tanda.\n"
+            "Recomendado para imágenes con texto muy pequeño o fuentes difíciles."
+        )
+        self.ultra_high_quality_cb.setStyleSheet(cb_style_red)
         self.ultra_high_quality_cb.setFont(self.roboto_black_font)
         self.ultra_high_quality_cb.setChecked(Config.GEMINI_ULTRA_HIGH_QUALITY)
         self.ultra_high_quality_cb.stateChanged.connect(self._on_ultra_high_toggled)
 
         self.auto_switch_checkbox = QCheckBox("Cambio automático de modelo en caso de saturación/error")
-        self.auto_switch_checkbox.setStyleSheet("color: white; font-size: 13px; border: none;")
+        self.auto_switch_checkbox.setStyleSheet(cb_style_white)
         self.auto_switch_checkbox.setFont(self.roboto_black_font)
         self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
 
-        self.stitching_only_cb = QCheckBox("Modo unión (Solo unir imágenes, Sin IA)")
-        self.stitching_only_cb.setStyleSheet("color: #ccffcc; font-size: 13px; border: none; font-weight: bold;")
+        self.stitching_only_cb = QCheckBox("Modo Unión (Pre-procesa y une imágenes sin traducir)")
+        self.stitching_only_cb.setToolTip(
+            "Une las imágenes del capítulo en lienzos optimizados para el tiling de Gemini (768px).\n"
+            "• Sin Ultra: lienzos de 3072px (768×4 tiles, 0 desperdicio)\n"
+            "• Con Ultra: lienzos de 3840px (768×5 tiles, 0 desperdicio)\n\n"
+            "Úsalo para preparar las imágenes ANTES de enviarlas a la IA, o para \n"
+            "unirlas sin traducir si luego las procesarás manualmente."
+        )
+        self.stitching_only_cb.setStyleSheet(cb_style_green)
         self.stitching_only_cb.setFont(self.roboto_black_font)
         self.stitching_only_cb.setChecked(Config.GEMINI_STITCHING_ONLY)
 
@@ -331,9 +355,11 @@ class GeminiConfigPanel(QWidget):
             QMessageBox.warning(
                 self, 
                 "Modo Ultra High Quality", 
-                "ATENCIÓN: Este modo maximiza la resolución (4500px) y la precisión del OCR, "
-                "pero duplica el consumo de tokens y solo permite procesar UNA imagen por tanda "
-                "para evitar errores de memoria en la API de Gemini."
+                "ATENCIÓN: Este modo maximiza la resolución y la precisión del OCR.\n\n"
+                "• Lienzos/slices: 3840px (768×5 tiles, alineado al tiling de Gemini)\n"
+                "• Resolución: ULTRA_HIGH (2240 tokens por imagen)\n"
+                "• Duplica el consumo de tokens vs el modo normal (1120 tokens)\n\n"
+                "Solo permite procesar UNA imagen por tanda para evitar errores de memoria."
             )
 
     def _validate_gemini_api_ui(self):
@@ -407,7 +433,12 @@ class GeminiConfigPanel(QWidget):
         self.gemini_thinking_cb.setChecked(Config.GEMINI_ENABLE_THINKING)
         self.stitching_only_cb.setChecked(Config.GEMINI_STITCHING_ONLY)
         self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
+        
+        # Bloquear señales para no lanzar el popup al cancelar
+        self.ultra_high_quality_cb.blockSignals(True)
         self.ultra_high_quality_cb.setChecked(Config.GEMINI_ULTRA_HIGH_QUALITY)
+        self.ultra_high_quality_cb.blockSignals(False)
+        
         self.gemini_api_input.setText(Config.GEMINI_API_KEY)
         self.pending_system_instruction.setPlainText(Config.GEMINI_SYSTEM_INSTRUCTION)
 

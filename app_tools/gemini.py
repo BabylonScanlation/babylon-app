@@ -155,11 +155,17 @@ class GeminiProcessor(BaseAIProcessor):
             models_iter = client.models.list()
             available_models: List[str] = []
             
-            ALLOWED_FAMILIES = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]
-            FORBIDDEN_TERMS = [
-                "pro", "2.0", "deep-research", "nano", "audio", "tts", 
-                "embedding", "aqa", "gemma", "image", "face", "screen",
-                "preview", "latest", "gemini-2.5-flash-lite"
+            # El usuario solicitó explícitamente esta lista de modelos que funcionaron bien
+            EXACT_ALLOWED_MODELS = [
+                "gemini-3.8-flash",
+                "gemini-3.7-flash",
+                "gemini-3.6-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-flash-lite",
+                "gemini-3.1-flash-lite-preview",
+                "gemini-3-flash-preview",
+                "gemini-2.5-flash-lite",
+                "gemini-flash-latest"
             ]
 
             for model in models_iter:
@@ -167,16 +173,9 @@ class GeminiProcessor(BaseAIProcessor):
                 if not model_name:
                     continue
                 name: str = str(model_name).lower().replace("models/", "")
-                is_gemini_3 = "gemini-3" in name
                 
-                if any(bad in name for bad in FORBIDDEN_TERMS):
-                    if is_gemini_3 and "preview" in name and not any(other_bad in name for other_bad in ["image", "audio", "tts"]):
-                        pass 
-                    else:
-                        continue
-                if not any(good in name for good in ALLOWED_FAMILIES):
-                    continue
-                available_models.append(name)
+                if name in EXACT_ALLOWED_MODELS:
+                    available_models.append(name)
             
             def sort_priority(m_name: str) -> Tuple:
                 # Extraer versión principal y sub-versión
@@ -312,7 +311,9 @@ class GeminiProcessor(BaseAIProcessor):
                 raise GeminiAPIError(str(e))
         return ""
 
-    def _slice_long_image(self, img_path: str, max_height: int = 3000, overlap: int = 400) -> List[str]:
+    def _slice_long_image(self, img_path: str, max_height: int = 3072, overlap: int = 200) -> List[str]:
+        """Corta imágenes verticales largas en trozos alineados al tiling de Gemini (768px).
+        Si el último trozo queda muy pequeño (<40% de max_height), se fusiona con el penúltimo."""
         try:
             with Image.open(img_path) as img:
                 width, height = img.size
@@ -335,9 +336,25 @@ class GeminiProcessor(BaseAIProcessor):
                     top += (max_height - overlap)
                     part += 1
 
+                # --- PROTECCIÓN ÚLTIMO TROZO ---
+                # Si el último trozo es muy pequeño (<40% de max_height), lo fusionamos
+                # con el penúltimo para evitar un tile de Gemini casi vacío.
+                min_useful_height = int(max_height * 0.4)  # ~1229px para 3072, ~1536px para 3840
+                if len(slices_info) >= 2:
+                    last_top, last_bottom, _ = slices_info[-1]
+                    last_h = last_bottom - last_top
+                    if last_h < min_useful_height:
+                        # Eliminar el último y extender el penúltimo hasta el final
+                        slices_info.pop()
+                        prev_top, _, prev_part = slices_info[-1]
+                        slices_info[-1] = (prev_top, height, prev_part)
+
                 self._report_status(f"Procesando {len(slices_info)} trozos en paralelo para: {base_name}")
                 
                 def process_single_slice(info: Tuple[int, int, int]):
+                    # Liberar GIL brevemente para evitar que la UI se congele (thread pool)
+                    time.sleep(0.005)
+                    
                     t, b, p = info
                     with Image.open(img_path) as thread_img:
                         cropped = thread_img.crop((0, t, width, b))
@@ -417,8 +434,18 @@ class GeminiProcessor(BaseAIProcessor):
         canvas = Image.new("RGB", (max_w, total_h), (255, 255, 255))
         y = 0
         for img in images:
-            x = (max_w - img.size[0]) // 2
-            canvas.paste(img, (x, y))
+            # Liberar GIL brevemente durante el procesado intensivo
+            time.sleep(0.005)
+            
+            if img.mode in ("RGBA", "P"):
+                # Si tiene transparencia, la pegamos usando la misma imagen como máscara
+                if img.mode == "RGBA":
+                    canvas.paste(img, ((max_w - img.size[0]) // 2, y), img)
+                else:
+                    img = img.convert("RGBA")
+                    canvas.paste(img, ((max_w - img.size[0]) // 2, y), img)
+            else:
+                canvas.paste(img, ((max_w - img.size[0]) // 2, y))
             y += img.size[1]
             img.close()
 
@@ -460,7 +487,10 @@ class GeminiProcessor(BaseAIProcessor):
 
             is_gemini_3 = "gemini-3" in Config.GEMINI_MODEL.lower()
             use_ultra_high = is_gemini_3 and Config.GEMINI_ULTRA_HIGH_QUALITY
-            slice_height = 4500 if use_ultra_high else 3000
+            # Alturas alineadas a múltiplos de 768px para 0 desperdicio de tiles:
+            # Normal: 3072px = 768×4 (4 tiles, 1032 tokens)
+            # Ultra:  3840px = 768×5 (5 tiles, 1290 tokens)
+            slice_height = 3840 if use_ultra_high else 3072
             
             resolution_enum = types.MediaResolution.MEDIA_RESOLUTION_HIGH
             if use_ultra_high:
@@ -468,7 +498,7 @@ class GeminiProcessor(BaseAIProcessor):
                     resolution_enum = getattr(types.MediaResolution, "MEDIA_RESOLUTION_ULTRA_HIGH")
                 else:
                     use_ultra_high = False
-                    slice_height = 3000
+                    slice_height = 3072
 
             config = types.GenerateContentConfig(
                 temperature=1.0,
@@ -492,7 +522,7 @@ class GeminiProcessor(BaseAIProcessor):
 
             try:
                 # --- PREPARACIÓN DE IMÁGENES ---
-                # Trocear imágenes largas siempre (comportamiento base necesario)
+                # Trocear imágenes largas con alturas alineadas al tiling de 768px
                 all_slices: List[str] = []
                 for img_p in images:
                     slices = self._slice_long_image(img_p, max_height=slice_height)
@@ -616,26 +646,36 @@ class GeminiProcessor(BaseAIProcessor):
         # --- MODO UNIÓN (SIN IA) ---
         if Config.GEMINI_STITCHING_ONLY:
             self._report_status(f"MODO UNIÓN ACTIVADO: Uniendo {len(image_files)} imágenes...")
-            canvas_height_limit = 4000
+            is_gemini_3 = "gemini-3" in Config.GEMINI_MODEL.lower()
+            use_ultra_high = is_gemini_3 and Config.GEMINI_ULTRA_HIGH_QUALITY
+            # Canvas alineado a múltiplos de 768px (idéntico al slice_height de la IA)
+            canvas_height_limit = 3840 if use_ultra_high else 3072
+            # Umbral mínimo: si el último lienzo queda más pequeño que esto,
+            # se fusiona con el anterior para evitar un tile de Gemini casi vacío.
+            min_useful_canvas = int(canvas_height_limit * 0.4)
             
             # Usar la lógica de stitching para crear las nuevas imágenes
             current_canvas_paths: List[str] = []
             current_h = 0
             stitch_count = 1
+            saved_canvases: List[Tuple[str, List[str], int]] = []  # (path, source_imgs, height)
             
             for img_p in image_files:
                 if cancel_event and cancel_event.is_set(): return "cancelled"
                 
+                # Liberar GIL brevemente para evitar que la UI se congele
+                time.sleep(0.005)
+
                 with Image.open(img_p) as img:
                     h = img.size[1]
                 
                 if h >= canvas_height_limit or (current_h + h > canvas_height_limit and current_canvas_paths):
                     if current_canvas_paths:
                         c_path, _ = self._stitch_and_save(current_canvas_paths, full_output_dir)
-                        # Renombrar para que sea legible
                         final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
                         if os.path.exists(final_p): os.remove(final_p)
                         os.rename(c_path, final_p)
+                        saved_canvases.append((final_p, list(current_canvas_paths), current_h))
                         stitch_count += 1
                         current_canvas_paths = []
                         current_h = 0
@@ -644,7 +684,13 @@ class GeminiProcessor(BaseAIProcessor):
                         # Si es una sola imagen muy grande, solo la copiamos
                         final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
                         with Image.open(img_p) as img:
-                            img.save(final_p, format="JPEG", quality=90)
+                            if img.mode in ("RGBA", "P"):
+                                bg = Image.new("RGB", img.size, (255, 255, 255))
+                                bg.paste(img, (0, 0), img if img.mode == "RGBA" else img.convert("RGBA"))
+                                bg.save(final_p, format="JPEG", quality=90)
+                            else:
+                                img.save(final_p, format="JPEG", quality=90)
+                        saved_canvases.append((final_p, [img_p], h))
                         stitch_count += 1
                     else:
                         current_canvas_paths = [img_p]
@@ -653,11 +699,28 @@ class GeminiProcessor(BaseAIProcessor):
                     current_canvas_paths.append(img_p)
                     current_h += h
             
+            # --- PROTECCIÓN ÚLTIMO LIENZO ---
+            # Si el último lote de imágenes genera un canvas muy pequeño,
+            # lo fusionamos con el canvas anterior para evitar desperdicio.
             if current_canvas_paths:
-                c_path, _ = self._stitch_and_save(current_canvas_paths, full_output_dir)
-                final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
-                if os.path.exists(final_p): os.remove(final_p)
-                os.rename(c_path, final_p)
+                if current_h < min_useful_canvas and saved_canvases:
+                    # Fusionar: deshacer el último canvas guardado y re-unir todo junto
+                    prev_path, prev_sources, prev_h = saved_canvases.pop()
+                    stitch_count -= 1
+                    try:
+                        if os.path.exists(prev_path): os.remove(prev_path)
+                    except Exception: pass
+                    merged_sources = prev_sources + current_canvas_paths
+                    c_path, _ = self._stitch_and_save(merged_sources, full_output_dir)
+                    final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
+                    if os.path.exists(final_p): os.remove(final_p)
+                    os.rename(c_path, final_p)
+                    self._report_status(f"Último lienzo fusionado con el anterior ({current_h}px < {min_useful_canvas}px mínimo).")
+                else:
+                    c_path, _ = self._stitch_and_save(current_canvas_paths, full_output_dir)
+                    final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
+                    if os.path.exists(final_p): os.remove(final_p)
+                    os.rename(c_path, final_p)
 
             self._report_status(f"MODO UNIÓN COMPLETADO: {stitch_count} lienzos creados en {full_output_dir}")
             return "success"

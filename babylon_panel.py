@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -47,6 +48,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -423,7 +425,7 @@ def search_site(
     query: str,
     filters: Optional[Dict[str, str]] = None,
     page: int = 1,
-) -> Tuple[List[Dict], bool]:
+) -> Tuple[List[Dict], bool, str]:
     """
     Retorna (items_para_esta_pagina, hay_mas_paginas).
 
@@ -1827,9 +1829,7 @@ class BabylonConfigPanel(QWidget):
             lbl.setFont(self.body_font)
         return lbl
 
-    def _float_spin(self, value: float, min_v: float, max_v: float) -> "QDoubleSpinBox":
-        from PySide6.QtWidgets import QDoubleSpinBox
-
+    def _float_spin(self, value: float, min_v: float, max_v: float) -> QDoubleSpinBox:
         sb = QDoubleSpinBox()
         sb.setRange(min_v, max_v)
         sb.setSingleStep(0.1)
@@ -1844,9 +1844,7 @@ class BabylonConfigPanel(QWidget):
             sb.setFont(self.body_font)
         return sb
 
-    def _int_spin(self, value: int, min_v: int, max_v: int) -> "QSpinBox":
-        from PySide6.QtWidgets import QSpinBox
-
+    def _int_spin(self, value: int, min_v: int, max_v: int) -> QSpinBox:
         sb = QSpinBox()
         sb.setRange(min_v, max_v)
         sb.setValue(value)
@@ -2066,9 +2064,9 @@ class BabylonConfigPanel(QWidget):
                     le = _ArrowLineEdit(ua)
                     le.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
                     le.setStyleSheet(
-                        "QLineEdit{background:rgba(5,5,8,0.85);color:#e0e0e0;"
-                        "border:1px solid rgba(157,70,255,0.3);border-radius:4px;padding:4px;}"
-                        "QLineEdit:focus{border:1px solid #9d46ff;}"
+                        "QLineEdit { background: rgba(5, 5, 8, 217); color: #e0e0e0; "
+                        "border: 1px solid rgba(157, 70, 255, 77); border-radius: 4px; padding: 4px; } "
+                        "QLineEdit:focus { border: 1px solid #9d46ff; }"
                     )
                     if self.body_font:
                         le.setFont(self.body_font)

@@ -5,7 +5,7 @@ import random
 import time
 import threading
 from typing import List, Optional, Any, Callable, Dict
-from mistralai import Mistral
+from mistralai.client import Mistral
 from app_tools.ai_service import BaseAIProcessor, AIAPIError
 from config import Config
 

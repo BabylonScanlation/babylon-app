@@ -46,9 +46,9 @@ try:
     httpx.Client.__init__ = lambda self, *args, **kwargs: _safe_patch_httpx(_original_client_init, self, *args, **kwargs)
     httpx.AsyncClient.__init__ = lambda self, *args, **kwargs: _safe_patch_httpx(_original_async_client_init, self, *args, **kwargs)
         
-    print("✅ Red: Forzado HTTP/1.1 (Safe Patch) activo")
+    logging.info("Red: Forzado HTTP/1.1 (Safe Patch) activo")
 except Exception as e:
-    print(f"⚠️ No se pudo aplicar el parche de red: {e}")
+    logging.warning(f"No se pudo aplicar el parche de red: {e}")
 # --------------------------------------------------------------
 
 from config import Config
@@ -99,7 +99,7 @@ except ImportError:
     deepl = None # type: ignore
 
 try:
-    from mistralai import Mistral
+    from mistralai.client import Mistral
 except ImportError:
     Mistral = None # type: ignore
 

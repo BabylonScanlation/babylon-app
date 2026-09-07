@@ -31,6 +31,8 @@ from app_tools.haruneko import DownloadThread, HaruNekoManager
 from app_tools.mistral import MistralAPIError
 from babylon_panel import BabylonPanel
 from config import Config, resource_path
+from app_tools.ocr_manager import OCRManager
+from app_tools.ocr_panel import OCRPanel
 
 # bibliotecas no nativas
 # pylint: disable=no-name-in-module
@@ -632,17 +634,32 @@ class ToolsManager(QObject):
                                 if os.path.exists(hakuneko_path):
                                     self.start_hakuneko()
                                 else:
-                                    reply = QMessageBox.question(
-                                        self.app.content_container,
+                                    msg_box = QMessageBox(
+                                        QMessageBox.Icon.Question,
                                         "Descargar HaruNeko",
                                         "HaruNeko no está instalado. ¿Deseas descargarlo ahora?",
-                                        QMessageBox.StandardButton.Yes
-                                        | QMessageBox.StandardButton.No,
+                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                        self.app.content_container
                                     )
-                                    if reply == QMessageBox.StandardButton.Yes:
+                                    msg_box.button(QMessageBox.StandardButton.Yes).setText("Sí")
+                                    if msg_box.exec() == QMessageBox.StandardButton.Yes:
                                         self.download_hakuneko()
                             elif t_name == "Babylon":
                                 self._create_babylon_panel()
+                            elif cat == "ocr":
+                                if OCRManager.check_engine_installed(t_name):
+                                    self._create_ocr_panel(t_name)
+                                else:
+                                    msg_box = QMessageBox(
+                                        QMessageBox.Icon.Question,
+                                        f"Descargar {t_name}",
+                                        f"El motor {t_name} no está instalado.\nSe instalará el entorno base de Python portable y las dependencias de {t_name} ({OCRManager.get_exact_download_size(t_name)}).\n¿Deseas descargarlo ahora?",
+                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                        self.app.content_container
+                                    )
+                                    msg_box.button(QMessageBox.StandardButton.Yes).setText("Sí")
+                                    if msg_box.exec() == QMessageBox.StandardButton.Yes:
+                                        self._install_ocr_engine(t_name, None, None)
                             else:
                                 if t_name in Config.TOOL_URLS:
                                     webbrowser.open(Config.TOOL_URLS[t_name])
@@ -876,6 +893,9 @@ class ToolsManager(QObject):
         )
 
         def open_tool_site(_event: Any):
+            # No abrir web si es una herramienta integrada como el OCR
+            if category == "ocr":
+                return
             if tool["name"] in Config.TOOL_URLS:
                 webbrowser.open(Config.TOOL_URLS[tool["name"]])
 
@@ -943,6 +963,18 @@ class ToolsManager(QObject):
             left_lay.addWidget(install_button, alignment=qt_any.AlignCenter)
         elif tool["name"] in ["Gemini", "Mistral"]:
             install_button.setEnabled(False)
+        elif category == "ocr":
+            # Smart button logic for OCR
+            is_installed = OCRManager.check_engine_installed(tool["name"])
+            if is_installed:
+                install_button.hide()
+            else:
+                size_est = OCRManager.get_download_size(tool["name"])
+                install_button.setText(f"Instalar\\n{size_est}")
+                install_button.setFixedSize(90, 34)
+                use_button.setEnabled(False)
+                install_button.clicked.connect(lambda _, t=tool["name"], ib=install_button, ub=use_button: self._install_ocr_engine(t, ib, ub))
+            left_lay.addWidget(install_button, alignment=qt_any.AlignCenter)
 
         lay.addLayout(left_lay)
 
@@ -1060,12 +1092,12 @@ class ToolsManager(QObject):
                 """
                 QLineEdit {
                     font-size: 13px; color: white;
-                    background-color: rgba(10, 12, 16, 0.6);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    background-color: rgba(10, 12, 16, 153);
+                    border: 1px solid rgba(255, 255, 255, 26);
                     border-radius: 6px; padding: 6px;
                 }
-                QLineEdit::placeholder { color: rgba(255, 255, 255, 0.3); font-style: italic; }
-                QLineEdit:focus { border: 1px solid #9d46ff; background-color: rgba(10, 12, 16, 0.8); }
+                QLineEdit::placeholder { color: rgba(255, 255, 255, 77); font-style: italic; }
+                QLineEdit:focus { border: 1px solid #9d46ff; background-color: rgba(10, 12, 16, 204); }
                 """
             )
             input_container.setFont(self.app.roboto_black_font)
@@ -1083,12 +1115,12 @@ class ToolsManager(QObject):
                 """
                 QTextEdit {
                     font-size: 13px; color: white;
-                    background-color: rgba(10, 12, 16, 0.6);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    background-color: rgba(10, 12, 16, 153);
+                    border: 1px solid rgba(255, 255, 255, 26);
                     border-radius: 6px; padding: 6px;
                 }
-                QTextEdit::placeholder { color: rgba(255, 255, 255, 0.3); font-style: italic; }
-                QTextEdit:focus { border: 1px solid #9d46ff; background-color: rgba(10, 12, 16, 0.8); }
+                QTextEdit::placeholder { color: rgba(255, 255, 255, 77); font-style: italic; }
+                QTextEdit:focus { border: 1px solid #9d46ff; background-color: rgba(10, 12, 16, 204); }
                 """
             )
             output_container.setFont(self.app.roboto_black_font)
@@ -1116,6 +1148,8 @@ class ToolsManager(QObject):
             use_button.clicked.connect(self.start_hakuneko)
         elif tool["name"] == "Babylon":
             use_button.clicked.connect(self._create_babylon_panel)
+        elif category == "ocr":
+            use_button.clicked.connect(lambda checked=False, t=tool["name"]: self._create_ocr_panel(t))
         elif category == "traductor":
             if "input_container" in locals() and "output_container" in locals():
                 use_button.clicked.connect(
@@ -1708,6 +1742,158 @@ class ToolsManager(QObject):
             else:
                 self.gemini_browse_folders_button.setToolTip("")
 
+    def _create_ocr_panel(self, engine_name: str):
+        """Crea y muestra el panel OCR para un motor específico."""
+        # Ocultar todas las demás vistas
+        cast(Any, self.app)._hide_all_sections()
+        
+        # Recrear si cambió el motor
+        if hasattr(self, 'ocr_panel') and self.ocr_panel is not None:
+            if self.ocr_panel.engine_name != engine_name:
+                self.ocr_panel.deleteLater()
+                self.ocr_panel = None
+
+        if not hasattr(self, 'ocr_panel') or self.ocr_panel is None:
+            self.ocr_panel = OCRPanel(engine_name, self.app)
+            self.ocr_panel.setGeometry(50, 50, 780, 500)
+        else:
+            self.ocr_panel.setParent(self.app.content_container)
+            self.ocr_panel.engine_name = engine_name
+            self.ocr_panel.init_ui() # Re-init for title
+            
+        self.ocr_panel.show()
+        self.ocr_panel.raise_()
+
+    def _install_ocr_engine(self, engine_name: str, install_button: Optional[QPushButton], use_button: Optional[QPushButton]):
+        from PySide6.QtWidgets import QInputDialog
+        from PySide6.QtCore import QTimer
+        
+        # Tamaños exactos calculados para las descargas de los Wheels de PyTorch / librerías en Bytes:
+        torch_cu118_bytes = 2619146901 + 4947556 # Torch + Torchvision CUDA
+        torch_cpu_bytes = 174036321 + 1190420 # Torch + Torchvision CPU
+        directml_bytes = torch_cpu_bytes + 3254000 # CPU + plugin DML
+        
+        # Preguntar por hardware con valores exactos
+        hw_options = [
+            f"NVIDIA (Máximo rendimiento - Descarga: {torch_cu118_bytes / (1024**3):.2f} GB)", 
+            f"AMD / Intel (DirectML GPU - Descarga: {directml_bytes / (1024**2):.2f} MB)",
+            f"Solo CPU (Básico - Descarga: {torch_cpu_bytes / (1024**2):.2f} MB)"
+        ]
+        
+        hw, ok = QInputDialog.getItem(
+            self.app.content_container, 
+            "Seleccionar Hardware", 
+            f"¿Qué hardware quieres usar para acelerar {engine_name}?", 
+            hw_options, 
+            0, 
+            False
+        )
+        
+        if not ok:
+            return # Usuario canceló
+            
+        hw_type = "cpu"
+        if "NVIDIA" in hw:
+            hw_type = "nvidia"
+        elif "AMD" in hw:
+            hw_type = "amd"
+            
+        if install_button:
+            install_button.setText("Instalando...")
+            install_button.setEnabled(False)
+            
+        cmd = OCRManager.get_install_command(engine_name, hw_type)
+        if not cmd:
+            QMessageBox.warning(self.app.content_container, "Aviso", f"El motor {engine_name} requiere instalación manual.")
+            if install_button:
+                install_button.setText("Req. Manual")
+            return
+        
+        from PySide6.QtWidgets import QProgressDialog
+        from PySide6.QtCore import QThread, Signal, Qt
+        
+        progress_dialog = QProgressDialog(f"Preparando instalación de {engine_name}...", None, 0, 100, self.app.content_container)
+        progress_dialog.setWindowTitle(f"Descargando {engine_name}")
+        progress_dialog.setWindowModality(Qt.ApplicationModal)
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.setValue(0)
+        progress_dialog.setFixedSize(400, 100)
+        progress_dialog.setCancelButton(None) # No permitir cancelar a mitad de pip
+        progress_dialog.show()
+
+        class InstallThread(QThread):
+            progress = Signal(int)
+            log_msg = Signal(str)
+            finished_signal = Signal(bool, str)
+            
+            def run(self):
+                try:
+                    process = subprocess.Popen(
+                        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, shell=True
+                    )
+                    
+                    while True:
+                        line = process.stdout.readline()
+                        if not line and process.poll() is not None:
+                            break
+                        if line:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            if "[PROGRESS]" in line:
+                                try:
+                                    pct = int(line.split("[PROGRESS]")[1].strip())
+                                    self.progress.emit(pct)
+                                except:
+                                    pass
+                            else:
+                                self.log_msg.emit(line)
+                                
+                    if process.returncode == 0:
+                        self.finished_signal.emit(True, "")
+                    else:
+                        self.finished_signal.emit(False, "Proceso terminó con error.")
+                except Exception as e:
+                    self.finished_signal.emit(False, str(e))
+
+        # Store a reference to avoid garbage collection
+        self._current_install_thread = InstallThread()
+        
+        from PySide6.QtCore import QObject, Slot
+        class UIUpdater(QObject):
+            @Slot(int)
+            def update_progress(self, val):
+                progress_dialog.setValue(val)
+                
+            @Slot(str)
+            def update_log(self, msg):
+                if len(msg) > 60:
+                    msg = msg[:57] + "..."
+                progress_dialog.setLabelText(msg)
+                
+            @Slot(bool, str)
+            def on_finished(self, success, err):
+                progress_dialog.close()
+                if success:
+                    if install_button:
+                        install_button.hide()
+                    if use_button:
+                        use_button.setEnabled(True)
+                    QMessageBox.information(self.app.content_container, "Éxito", f"Motor {engine_name} instalado correctamente en modo {hw_type.upper()}.")
+                else:
+                    if install_button:
+                        install_button.setText("Error")
+                        install_button.setEnabled(True)
+                    QMessageBox.critical(self.app.content_container, "Error", f"Falló la instalación de {engine_name}.\n{err}")
+
+        # Mantener referencias para evitar Garbage Collection
+        self._ui_updater = UIUpdater()
+        
+        self._current_install_thread.progress.connect(self._ui_updater.update_progress)
+        self._current_install_thread.log_msg.connect(self._ui_updater.update_log)
+        self._current_install_thread.finished_signal.connect(self._ui_updater.on_finished)
+        self._current_install_thread.start()
+
     def _create_babylon_panel(self):
         """Muestra el panel de Babylon Downloader."""
         # Ocultar todo lo demás
@@ -2215,20 +2401,18 @@ class ToolsManager(QObject):
                         )
 
                     processing_done.wait()
+                    self._handle_processing_finished(final_status, final_error)
                     return (final_status, final_error)
 
                 except GeminiAPIError as e:
-                    return (
-                        "error_gemini_api" if not retry_from_mistral else "error",
-                        str(e),
-                    )
+                    err_status = "error_gemini_api" if not retry_from_mistral else "error"
+                    self._handle_processing_finished(err_status, str(e))
+                    return (err_status, str(e))
                 except Exception as e:
+                    self._handle_processing_finished("error", str(e))
                     return ("error", str(e))
 
             worker = Worker(processing_task)
-            worker.signals.result.connect(
-                lambda res: self._handle_processing_finished(res[0], res[1])
-            )
             QThreadPool.globalInstance().start(worker)
 
             logging.info(
@@ -2248,12 +2432,7 @@ class ToolsManager(QObject):
             self.cancel_event.set()
             if hasattr(self, "gemini_cancel_button"):
                 self.gemini_cancel_button.setEnabled(False)
-
-            QMessageBox.information(
-                self.app,
-                "Cancelación Solicitada",
-                "Se ha solicitado la cancelación. El proceso se detendrá en el siguiente punto de control.",
-            )
+            # Removed QMessageBox to prevent nested dialogs freezing the UI thread
         else:
             QMessageBox.warning(
                 self.app,

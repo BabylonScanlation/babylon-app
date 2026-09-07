@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any, cast
 # bibliotecas no nativas
 import requests
 
-from PySide6.QtCore import Qt, QUrl, Signal, QSharedMemory, QTimer, QEvent
+from PySide6.QtCore import Qt, QUrl, Signal, QSharedMemory, QTimer, QEvent, qInstallMessageHandler, QtMsgType
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QPixmap, QMouseEvent, QCloseEvent
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtWidgets import (
@@ -32,8 +32,18 @@ from background_manager import BackgroundManager
 # 1. INICIALIZAR LOGGING GLOBAL INMEDIATAMENTE
 init_global_logging()
 
-# ELIMINADO: Ya no se silencian logs de librerías externas.
-# Queremos capturar absolutamente todo por petición del usuario.
+# Ocultar mensajes de inicialización informativos de FFmpeg de Qt Multimedia
+os.environ["QT_LOGGING_RULES"] = "qt.multimedia.ffmpeg.*=false"
+
+def qt_message_handler(mode, context, message):
+    if "Using Qt multimedia with FFmpeg" in message:
+        return
+    if mode == QtMsgType.QtWarningMsg:
+        logging.warning(f"[Qt] {message}")
+    elif mode in (QtMsgType.QtCriticalMsg, QtMsgType.QtFatalMsg):
+        logging.error(f"[Qt] {message}")
+
+qInstallMessageHandler(qt_message_handler)
 
 sys.excepthook = global_exception_handler
 
@@ -69,7 +79,7 @@ class App(QMainWindow):
         QApplication.instance().installEventFilter(self)
 
         self.timer: Optional[QTimer] = None # Inicialización temprana para evitar errores en _check_single_instance
-
+        
         if not self._check_single_instance():
             logging.info("Ya hay una instancia de la aplicación ejecutándose. Cerrando...")
             if hasattr(self, 'timer') and self.timer is not None and self.timer.isActive():
@@ -77,10 +87,8 @@ class App(QMainWindow):
             cap_any = cast(Any, getattr(self, 'cap', None))
             if cap_any and cap_any.isOpened():
                 cap_any.release()
-
             QApplication.quit()
             sys.exit(0) # Fallback exit
-
         self.menu_container: Optional[QWidget] = None
         self.content_container: Optional[QWidget] = None
         self.home_label: Optional[QFrame] = None
@@ -89,8 +97,8 @@ class App(QMainWindow):
         self.help_area: Optional[QScrollArea] = None
         self.about_area: Optional[QFrame] = None
         self.options_area: Optional[QWidget] = None
-        self.configuration_area: Optional[QWidget] = None # New configuration area
-        self.gemini_config_area: Optional[QWidget] = None # Gemini specific configuration area
+        self.configuration_area: Optional[QWidget] = None
+        self.gemini_config_area: Optional[QWidget] = None
         self.container: Optional[QWidget] = None
 
         self.background_manager: Optional[BackgroundManager] = None
@@ -881,6 +889,8 @@ class App(QMainWindow):
             self.tools_manager.mistral_container.hide()
         if hasattr(self.tools_manager, 'babylon_panel') and self.tools_manager.babylon_panel:
             self.tools_manager.babylon_panel.hide()
+        if hasattr(self.tools_manager, 'ocr_panel') and self.tools_manager.ocr_panel:
+            self.tools_manager.ocr_panel.hide()
 
     def show_gemini_configuration(self):
         """Muestra la sección de configuración de Gemini."""
@@ -899,6 +909,7 @@ class App(QMainWindow):
         self._hide_container_only("gemini_container", None)
         self._hide_container_only("gemini_container", self.tools_manager)
         self._hide_container_only("mistral_container", self.tools_manager)
+        self._hide_container_only("ocr_panel", self.tools_manager)
 
     def _hide_widgets(self, widget_attrs: List[str]):
         """Oculta varios adminículos si existen."""
@@ -924,6 +935,7 @@ class App(QMainWindow):
         # Preservar contenedores de IA en tools_manager
         self._hide_container_only("gemini_container", self.tools_manager)
         self._hide_container_only("mistral_container", self.tools_manager)
+        self._hide_container_only("ocr_panel", self.tools_manager)
 
     def _hide_projects_area(self):
         """Oculta la zona de proyectos si existe."""
@@ -1035,10 +1047,10 @@ class App(QMainWindow):
 
 
 if __name__ == "__main__":
-    # --- ACTIVAR DEPURACIÓN INTENSIVA DE QT ---
-    os.environ["QT_DEBUG_PLUGINS"] = "1"
-    os.environ["QT_LOGGING_RULES"] = "*.debug=true;qt.*=true"
-    os.environ["PYTHONWARNINGS"] = "always"
+    # --- DESACTIVAR DEPURACIÓN INTENSIVA DE QT (Evita bloqueos por stdout) ---
+    # os.environ["QT_DEBUG_PLUGINS"] = "1"
+    # os.environ["QT_LOGGING_RULES"] = "*.debug=true;qt.*=true"
+    # os.environ["PYTHONWARNINGS"] = "always"
     
     app = QApplication(sys.argv)
 
