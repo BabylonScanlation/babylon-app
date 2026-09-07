@@ -30,9 +30,8 @@ class OCRManager:
                 # Verificamos que el zip haya sido descargado y extraído
                 model_dir = os.path.join(os.getcwd(), "app_tools", "models", "mit48x")
                 return os.path.exists(os.path.join(model_dir, "ocr_ar_48px.ckpt"))
-            elif engine_name == "paddle-vl":
-                # Verificamos si transformers y torch están instalados (el modelo lo cachea HF)
-                subprocess.run([python_exe, "-c", "import transformers; import torch"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif engine_name == "paddleocr-v5":
+                subprocess.run([python_exe, "-c", "import paddleocr"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return True
         except subprocess.CalledProcessError:
             return False

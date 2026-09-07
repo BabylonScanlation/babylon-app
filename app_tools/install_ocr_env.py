@@ -90,10 +90,14 @@ def install_engine(engine_name, hw_type):
             with zipfile.ZipFile(model_zip, 'r') as zip_ref:
                 zip_ref.extractall(model_dir)
         subprocess.run([pip_exe, "install", "--progress-bar", "off", "Pillow"], check=True) # Requiere pillow para leer imagenes manuales si es necesario
-    elif engine_name == "paddle-vl":
-        # Instalar transformers, pillow y decord (opcional pero util para modelos de video/vl) o lib relacionadas
-        # El modelo se descargará automáticamente usando from_pretrained de transformers
-        subprocess.run([pip_exe, "install", "--progress-bar", "off", "transformers", "Pillow", "sentencepiece"], check=True)
+    elif engine_name == "paddleocr-v5":
+        print("Instalando PaddlePaddle...", flush=True)
+        if hw_type == "nvidia":
+            subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddlepaddle-gpu==3.0.0", "-i", "https://www.paddlepaddle.org.cn/packages/stable/cu118/"], check=True)
+        else:
+            subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddlepaddle==3.0.0", "-i", "https://www.paddlepaddle.org.cn/packages/stable/cpu/"], check=True)
+        print("Instalando paddleocr y dependencias...", flush=True)
+        subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddleocr", "Pillow"], check=True)
 
         
     print(f"Instalación de {engine_name} completada con éxito.", flush=True)

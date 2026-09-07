@@ -2,39 +2,37 @@ import json
 import os
 import sys
 
-def run_paddle_vl(images):
-    # Intentamos cargar el modelo VLM
+def run_paddleocr_v5(images):
     try:
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        import torch
+        from paddleocr import PaddleOCR
+        import logging
+        logging.getLogger('ppocr').setLevel(logging.ERROR) # Suppress debug logs
         
-        # Cargar con trust_remote_code por si es arquitectura personalizada
-        tokenizer = AutoTokenizer.from_pretrained("jzhang533/PaddleOCR-VL-For-Manga", trust_remote_code=True)
-        # Cargamos el modelo a CPU por defecto, o CUDA si está disponible
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = AutoModelForCausalLM.from_pretrained("jzhang533/PaddleOCR-VL-For-Manga", trust_remote_code=True).to(device).eval()
+        # Initialize PaddleOCR with the specific v5 Korean model
+        ocr = PaddleOCR(
+            text_recognition_model_name="korean_PP-OCRv5_mobile_rec",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=True,
+            show_log=False
+        )
         
         results = {}
         for path in images:
-            # Creamos el input usando el formato tipico de Qwen-VL / VLM
             try:
-                # El prompt exacto depende del entrenamiento, usamos uno genérico de OCR
-                query = tokenizer.from_list_format([
-                    {'image': path},
-                    {'text': 'Extract all text from the image.'},
-                ])
-                inputs = tokenizer(query, return_tensors='pt').to(device)
-                pred = model.generate(**inputs, max_new_tokens=512)
-                response = tokenizer.decode(pred.cpu()[0], skip_special_tokens=True)
-                # Limpiar la respuesta si devuelve el prompt incluido
-                if 'Extract all text from the image.' in response:
-                    response = response.split('Extract all text from the image.')[-1].strip()
-                results[path] = response
+                result = ocr.ocr(path, cls=True)
+                texts = []
+                if result:
+                    for line in result:
+                        if line:
+                            for word_info in line:
+                                texts.append(word_info[1][0])
+                results[path] = "\n".join(texts)
             except Exception as e:
-                results[path] = f"Error en inferencia de PaddleOCR-VL: {e}"
+                results[path] = f"Error procesando imagen: {e}"
         return results
     except Exception as e:
-        return {images[0]: f"Error cargando el entorno de transformers/torch: {e}"} if images else {}
+        return {images[0]: f"Error cargando paddleocr: {e}"} if images else {}
 
 
 
@@ -65,8 +63,8 @@ def main():
     if engine == "mit48x":
         results = run_mit48x(images)
         print(json.dumps(results))
-    elif engine == "paddle-vl":
-        results = run_paddle_vl(images)
+    elif engine == "paddleocr-v5":
+        results = run_paddleocr_v5(images)
         print(json.dumps(results))
     else:
         print(json.dumps({"error": f"Motor no soportado: {engine}"}))

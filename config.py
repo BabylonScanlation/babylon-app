@@ -250,7 +250,7 @@ class Config:
         "DeepL": "https://www.deepl.com/es/translator",
         "Google": "https://translate.google.com",
         "MIT48x": "https://huggingface.co/dreMaz/mit_models/resolve/main/ocr48px.zip",
-        "Paddle-VL": "https://huggingface.co/jzhang533/PaddleOCR-VL-For-Manga",
+        "PaddleOCR-v5": "https://huggingface.co/paddlepaddle/korean_PP-OCRv5_mobile_rec",
         "Gemini": "https://gemini.google.com/app",
         "Mistral": "https://chat.mistral.ai/chat",
         "HaruNeko": "https://github.com/manga-download/hakuneko",
@@ -279,10 +279,12 @@ class Config:
     SPECIFIED_TOOLS: Dict[str, List[Dict[str, Any]]] = {
         "ocr": [
             {
-                "name": "Paddle-VL",
+                "name": "PaddleOCR-v5",
                 "image_path": resource_path(
                     os.path.join("BBSL", "herramientas", "ocr", "paddle.png")
                 ),
+                "script": "app_tools.ocr_panel",
+                "class_name": "OCRPanel",
                 "description": "Modelo Vision-Language optimizado exclusivamente para leer Manga (Japonés).",
                 "rating": 5.0,
                 "access_paths": [
