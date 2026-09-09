@@ -33,6 +33,31 @@ class OptionsController(QObject):
         # Referencias para evitar reportUnusedImport en TYPE_CHECKING
         self._types: Union["OptionsMenu", "QMediaPlayer", "QTimer", None] = None
 
+    def save_secrets_keystore(self, passphrase: str):
+        """Descifra el keystore con la passphrase y la recuerda en este PC."""
+        from app_tools import secrets_store
+        if not passphrase:
+            QMessageBox.warning(self.app, "Claves cifradas", "Introduce la passphrase.")
+            return False
+        try:
+            secrets_store.unlock_with_passphrase(passphrase)
+        except Exception as exc:
+            logging.error(f"Fallo al desbloquear el keystore: {exc}")
+            QMessageBox.warning(self.app, "Claves cifradas",
+                                f"No se pudo descifrar el keystore:\n{exc}")
+            return False
+        QMessageBox.information(self.app, "Claves cifradas",
+                                "Claves desbloqueadas y recordadas en este PC.")
+        return True
+
+    def forget_secrets(self):
+        """Elimina la passphrase recordada (el keystore sigue en su sitio)."""
+        from app_tools import secrets_store
+        secrets_store.forget_passphrase()
+        QMessageBox.information(self.app, "Claves cifradas",
+                                "Clave recordada eliminada. Se pedirá la passphrase en la próxima apertura.")
+        return True
+
     def save_gemini_settings(
         self, model: str, thinking_enabled: bool, temperature: float
     ):
@@ -187,36 +212,9 @@ class OptionsController(QObject):
                 logging.exception(f"Error al cargar imagen desde URL: {url}")
 
     def update_image_source(self, source: Union[str, QPixmap]):
-        """Actualizar la fuente de la imagen."""
-        app_any = cast(Any, self.app)
-        if isinstance(source, str):
-            pixmap = QPixmap(source)
-        else:
-            pixmap = source
-        if not pixmap.isNull():
-            scaled_pixmap = pixmap.scaled(
-                app_any.width(),
-                app_any.height(),
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            if app_any.background_label is not None:
-                app_any.background_label.setPixmap(scaled_pixmap)
-                app_any.background_label.show()
-            if app_any.cap is not None:
-                if app_any.cap.isOpened():
-                    app_any.cap.release()
-                if app_any.timer is not None:
-                    app_any.timer.stop()
-        else:
-            if app_any.background_label is not None:
-                app_any.background_label.setStyleSheet("background-color: black;")
-                app_any.background_label.show()
-            if app_any.cap is not None:
-                if app_any.cap.isOpened():
-                    app_any.cap.release()
-                if app_any.timer is not None:
-                    app_any.timer.stop()
+        """Actualizar la fuente de la imagen. (Fondo de imagen deshabilitado)"""
+        # La app usa fondo procedural (UniverseWidget); no existen background_label/cap.
+        logging.info("Fondo de imagen deshabilitado: Babylon usa fondo procedural.")
 
     def handle_bg_type_change(self, bg_type: str):
         """Manejar cambio de tipo de fondo."""

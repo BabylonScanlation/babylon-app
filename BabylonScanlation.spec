@@ -2,6 +2,21 @@
 
 block_cipher = None
 
+import os
+
+
+def _walk_datas(src_root, dst_root, skip_dirs=()):
+    """Incluye archivo por archivo (evita que PyInstaller expanda el directorio
+    recursivamente e incluya python_ocr/models)."""
+    out = []
+    for root, dirs, files in os.walk(src_root):
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        rel = os.path.relpath(root, src_root)
+        dest = os.path.join(dst_root, rel) if rel != "." else dst_root
+        for file_name in files:
+            out.append((os.path.join(root, file_name), dest))
+    return out
+
 # EXCLUSIONES: Librerías pesadas detectadas que no se usan en el código fuente.
 excluded_modules = [
     'tkinter', 'test', 'unittest', 'pydoc', 
@@ -37,11 +52,9 @@ a = Analysis(
         ('BBSL', 'BBSL'),
         ('styles', 'styles'),
         ('app_media', 'app_media'),
-        ('app_tools', 'app_tools'),
-        ('babylon_downloaders', 'babylon_downloaders'),
-        ('.env', '.')
-    ],
-    hiddenimports=[],
+        ('babylon_downloaders', 'babylon_downloaders')
+    ] + _walk_datas('app_tools', 'app_tools', skip_dirs=('python_ocr', 'models', '__pycache__')),
+    hiddenimports=['win32crypt'],
     hookspath=['hooks'],
     hooksconfig={},
     runtime_hooks=[],
@@ -82,7 +95,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False, # Desactivado por falta de herramientas en el sistema
-    upx=True,
+    upx=False,
     upx_path='dev_tools/upx-5.0.2-win64', 
     upx_exclude=[
         'python3*.dll',

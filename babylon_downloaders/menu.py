@@ -459,11 +459,11 @@ def _site_menu(dl) -> None:
             has_creds = False
         if not has_creds:
             print(
-                f"  {C.YELLOW}Para login automático, editá d_picacomic.py y completá:{C.END}"
+                f"  {C.YELLOW}Para login automático, definí en .env:{C.END}"
             )
             print("    PICACOMIC_EMAIL    = 'tu@email.com'")
             print("    PICACOMIC_PASSWORD = 'tucontraseña'")
-            print(f"  {C.DIM}(o bien PICACOMIC_TOKEN con tu JWT){C.END}")
+            print(f"  {C.DIM}(o bien PICACOMIC_TOKEN con tu JWT; se puede incluir en el keystore){C.END}")
             print()
         if not _flow_picacomic_login(dl):
             _prompt("Sin login, volviendo… Enter ")

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 import time
 import uuid
@@ -18,11 +19,12 @@ from common import CFG, BaseDownloader
 
 BASE_URL = "https://picaapi.picacomic.com"
 
-# ── Credenciales (extraídas del script original) ──────────────────────────────
-PICACOMIC_EMAIL = "lucaaaa09"
-PICACOMIC_PASSWORD = "Aa0!Bb2?Cc4_"
-# Token JWT de respaldo (puede estar expirado; si falla se usa email+password):
-PICACOMIC_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OWFmYWM1MGZiMzgxZGM2ZjU5OWI1ZDYiLCJlbWFpbCI6Imx1Y2FhYWEwOSIsInJvbGUiOiJtZW1iZXIiLCJuYW1lIjoiTHVjYXMgR29sZHN0ZWluIiwidmVyc2lvbiI6IjIuMi4xLjIuMy4zIiwiYnVpbGRWZXJzaW9uIjoiNDQiLCJwbGF0Zm9ybSI6ImFuZHJvaWQiLCJpYXQiOjE3NzMxMjQ4MDQsImV4cCI6MTc3MzcyOTYwNH0.XHxBVgHxzhwnuRhLgABtlsmmVIx4NLY4WcALOBbW7F0"
+# Credenciales opcionales vía variables de entorno (NO hardcoded en el repo).
+# Se pueden definir en .env o en el entorno del sistema. También se puede
+# iniciar sesión interactivamente con DownloaderPicacomic.login(email, password).
+PICACOMIC_EMAIL = os.getenv("PICACOMIC_EMAIL", "")
+PICACOMIC_PASSWORD = os.getenv("PICACOMIC_PASSWORD", "")
+PICACOMIC_TOKEN = os.getenv("PICACOMIC_TOKEN", "")
 API_KEY = "C69BAF41DA5ABD1FFEDC6D2FEA56B"
 SECRET = r"~d}$Q7$eIni=V)9\RK/P.RM4;9[7|@/CA}b~OW!3?EV`:<>M7pddUBL5n|0/*Cn"
 APP_VER = "2.2.1.2.3.3"

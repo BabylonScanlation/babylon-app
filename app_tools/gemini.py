@@ -103,6 +103,7 @@ class GeminiProcessor(BaseAIProcessor):
     def __init__(self):
         super().__init__(model_name="Gemini")
         self._failed_models: Set[str] = set()
+        self._exhausted_keys: Set[str] = set()
 
     def _get_current_limits(self) -> Dict[str, int]:
         model = Config.GEMINI_MODEL.lower()
@@ -131,7 +132,7 @@ class GeminiProcessor(BaseAIProcessor):
     def get_client(self, api_key: Optional[str] = None) -> Any: # type: ignore
         return genai.Client(
             api_key=api_key or Config.GEMINI_API_KEY,
-            http_options={'api_version': 'v1alpha'}
+            http_options={'api_version': 'v1beta'}
         )
 
     def validate_key(self, api_key: str) -> Tuple[bool, str]:
@@ -162,7 +163,6 @@ class GeminiProcessor(BaseAIProcessor):
                 "gemini-3.6-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.1-flash-lite",
-                "gemini-3.1-flash-lite-preview",
                 "gemini-3-flash-preview",
                 "gemini-2.5-flash-lite",
                 "gemini-flash-latest"
@@ -206,11 +206,11 @@ class GeminiProcessor(BaseAIProcessor):
 
             available_models.sort(key=sort_priority, reverse=True)
             if not available_models:
-                return ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"]
+                return ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash"]
             return available_models
         except Exception as e:
             logging.error(f"Error obteniendo modelos: {e}")
-            return ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"]
+            return ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash"]
 
     def _try_switch_model(self) -> bool:
         """Intenta cambiar a otro modelo disponible si el actual falla."""
@@ -220,7 +220,7 @@ class GeminiProcessor(BaseAIProcessor):
         # Definir una jerarquía de fallback lógica basada en tus modelos disponibles
         # Orden: 3.1-lite -> 3-preview -> 2.5-flash
         hierarchy = [
-            "gemini-3.1-flash-lite-preview",
+            "gemini-3.1-flash-lite",
             "gemini-3-flash-preview",
             "gemini-2.5-flash"
         ]
@@ -267,9 +267,38 @@ class GeminiProcessor(BaseAIProcessor):
 
     def _reset_model_to_default(self):
         """Resetea el modelo al preferido al cambiar de API Key."""
-        default_model = "gemini-3.1-flash-lite-preview"
+        default_model = "gemini-3.1-flash-lite"
         self._report_status(f"Nueva Key: Reseteando modelo a {default_model}")
         Config.GEMINI_MODEL = default_model
+
+    @staticmethod
+    def _build_thinking_config(model: str) -> Optional["types.ThinkingConfig"]:
+        """Construye el ThinkingConfig según la familia del modelo y el nivel elegido.
+
+        - Serie 3.x: usa thinking_level (minimal/low/medium/high). No se puede apagar.
+        - Serie 2.5 y otros: usa thinking_budget (tokens; 0 = apagado, -1 = dinámico).
+        """
+        level = str(getattr(Config, "GEMINI_THINKING_LEVEL", "auto")).lower()
+        if level not in Config.THINKING_LEVELS:
+            level = "auto"
+        enabled = bool(Config.GEMINI_ENABLE_THINKING)
+
+        if "gemini-3" in model.lower():
+            if level == "auto" and enabled:
+                return types.ThinkingConfig(include_thoughts=True)
+            # 3.x no permite apagar el pensamiento: "off" = minimal
+            lvl = level if enabled else "minimal"
+            return types.ThinkingConfig(thinking_level=lvl)
+
+        # Serie 2.5 / otros
+        if not enabled:
+            return types.ThinkingConfig(thinking_budget=0, include_thoughts=False)
+        if level == "auto":
+            return types.ThinkingConfig(thinking_budget=-1, include_thoughts=True)
+        return types.ThinkingConfig(
+            thinking_budget=Config.THINKING_BUDGET_2_5.get(level, -1),
+            include_thoughts=True,
+        )
 
     def call_api(self, prompt: str, image_path: Optional[str] = None, content: Optional[str] = None) -> str:
         if image_path:
@@ -280,24 +309,44 @@ class GeminiProcessor(BaseAIProcessor):
         base_delay = 2
 
         for attempt in range(max_retries + 1):
+            current_key = ""
             try:
                 current_key = self._wait_and_get_key()
                 client = self.get_client(current_key)
+                config = types.GenerateContentConfig(temperature=Config.GEMINI_TEMPERATURE)
+                thinking_config = self._build_thinking_config(Config.GEMINI_MODEL)
+                if thinking_config is not None:
+                    config.thinking_config = thinking_config
                 response = client.models.generate_content(
                     model=Config.GEMINI_MODEL,
                     contents=[f"{prompt}\n\n{content}"],
-                    config=types.GenerateContentConfig(temperature=Config.GEMINI_TEMPERATURE)
+                    config=config
                 )
                 return str(response.text).strip() if response.text else ""
-            
+
             except Exception as e:
                 error_str = str(e).lower()
                 is_server_error = "503" in error_str or "disconnected" in error_str or "unavailable" in error_str or "overloaded" in error_str
+
+                # KEY INVÁLIDA/REVOCADA: marcar como agotada y rotar, no reintentar con la misma.
+                is_key_error = any(t in error_str for t in ("401", "403", "api key", "permission", "invalid"))
+                if is_key_error:
+                    if current_key:
+                        APIKeyPool().mark_exhausted(current_key)
+                    self._exhausted_keys.add(current_key)
+                    self._report_status(f"API Key rechazada. Marcando como inválida y rotando. {str(e)[:60]}")
+                    continue
+
                 is_tpm_error = "429" in error_str or "exhausted" in error_str
-                
                 if is_tpm_error:
-                    APIKeyPool().mark_tpm_limit(current_key, 60.0)
-                    self._report_status(f"Límite TPM alcanzado en la llave actual. Cambiando...")
+                    # "quota"/"daily" = límite diario (RPD): agotar por el día, no solo 60s.
+                    if "quota" in error_str or "daily" in error_str:
+                        if current_key:
+                            APIKeyPool().mark_exhausted(current_key)
+                        self._report_status(f"Cuota diaria alcanzada en la llave actual. Agotando para hoy y rotando...")
+                    else:
+                        APIKeyPool().mark_tpm_limit(current_key, 60.0)
+                        self._report_status(f"Límite TPM alcanzado en la llave actual. Cambiando...")
                     continue # Try again with a different key immediately
 
                 if is_server_error and attempt < max_retries:
@@ -494,8 +543,8 @@ class GeminiProcessor(BaseAIProcessor):
             
             resolution_enum = types.MediaResolution.MEDIA_RESOLUTION_HIGH
             if use_ultra_high:
-                if hasattr(types.MediaResolution, "MEDIA_RESOLUTION_ULTRA_HIGH"):
-                    resolution_enum = getattr(types.MediaResolution, "MEDIA_RESOLUTION_ULTRA_HIGH")
+                if hasattr(types.PartMediaResolutionLevel, "MEDIA_RESOLUTION_ULTRA_HIGH"):
+                    resolution_enum = types.PartMediaResolutionLevel.MEDIA_RESOLUTION_ULTRA_HIGH
                 else:
                     use_ultra_high = False
                     slice_height = 3072
@@ -513,8 +562,9 @@ class GeminiProcessor(BaseAIProcessor):
                     ]
                 ]
             )
-            if Config.GEMINI_ENABLE_THINKING:
-                config.thinking_config = types.ThinkingConfig(include_thoughts=True)
+            thinking_config = self._build_thinking_config(Config.GEMINI_MODEL)
+            if thinking_config is not None:
+                config.thinking_config = thinking_config
             if not use_ultra_high:
                 config.media_resolution = resolution_enum
 
@@ -590,7 +640,7 @@ class GeminiProcessor(BaseAIProcessor):
                                 else:
                                     if self._try_switch_model():
                                         self._report_status(f"Cambiando modelo a {Config.GEMINI_MODEL}...")
-                                        client = self.get_client()
+                                        client = self.get_client(current_key)
                                         api_attempt = 0 # Reiniciar intentos con el nuevo modelo
                                         continue
                             
@@ -610,10 +660,25 @@ class GeminiProcessor(BaseAIProcessor):
 
             except Exception as e:
                 error_str = str(e).lower()
+
+                # KEY INVÁLIDA/REVOCADA: marcar como agotada y rotar.
+                is_key_error = any(t in error_str for t in ("401", "403", "api key", "permission", "invalid"))
+                if is_key_error:
+                    if current_key:
+                        APIKeyPool().mark_exhausted(current_key)
+                    self._report_status(f"API Key rechazada. Marcando como inválida y rotando. {str(e)[:60]}")
+                    continue
+
                 is_quota = "429" in error_str or "exhausted" in error_str
                 if is_quota:
-                    APIKeyPool().mark_tpm_limit(current_key, 60.0)
-                    self._report_status(f"Límite TPM (429) en llave actual. Rotando...")
+                    # "quota"/"daily" = límite diario (RPD): agotar por el día, no solo 60s.
+                    if "quota" in error_str or "daily" in error_str:
+                        if current_key:
+                            APIKeyPool().mark_exhausted(current_key)
+                        self._report_status(f"Cuota diaria alcanzada en la llave actual. Agotando para hoy y rotando...")
+                    else:
+                        APIKeyPool().mark_tpm_limit(current_key, 60.0)
+                        self._report_status(f"Límite TPM (429) en llave actual. Rotando...")
                     continue
                 self._report_status(f"Error final: {str(e)[:50]}...")
                 return [f"[ERROR API: {e}]"] * len(images)

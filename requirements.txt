@@ -10,3 +10,5 @@ mistralai
 pentago
 pyinstaller
 python-dotenv
+beautifulsoup4
+cryptography

@@ -278,14 +278,24 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
             if translator_name == "Gemini":
                 if genai is None:
                     return "Error: google-genai no instalado."
-                client = cast(Any, genai).Client(api_key=Config.GEMINI_API_KEY)
                 prompt = PROMPT_IA.format(idioma=obtener_codigo("default", target_lang))
-                try:
-                    res = client.models.generate_content(model=GEMMA_TEXT_MODEL, contents=[f"{prompt}\n\nTexto: {text}"])
-                    return str(res.text).strip()
-                except Exception:
-                    res = client.models.generate_content(model=GEMINI_CHEAP_MODEL, contents=[f"{prompt}\n\nTexto: {text}"])
-                    return str(res.text).strip()
+                last_err: Any = None
+                keys = list(Config.GEMINI_API_KEYS) or [Config.GEMINI_API_KEY]
+                for api_key in keys:
+                    if not api_key:
+                        continue
+                    try:
+                        client = cast(Any, genai).Client(api_key=api_key)
+                        try:
+                            res = client.models.generate_content(model=GEMMA_TEXT_MODEL, contents=[f"{prompt}\n\nTexto: {text}"])
+                        except Exception:
+                            res = client.models.generate_content(model=GEMINI_CHEAP_MODEL, contents=[f"{prompt}\n\nTexto: {text}"])
+                        return str(res.text).strip()
+                    except Exception as e:
+                        last_err = e
+                        continue
+                if last_err is not None:
+                    return f"Error: {str(last_err)}"
             if translator_name == "Mistral":
                 if Mistral is None:
                     return "Error: mistralai no instalado."

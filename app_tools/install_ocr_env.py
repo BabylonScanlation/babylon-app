@@ -32,14 +32,28 @@ def setup_portable_python(env_dir):
             zip_ref.extractall(env_dir)
         os.remove(zip_path)
         
-        # Modificar el archivo _pth para habilitar pip y site-packages
+        # Modificar el archivo _pth para habilitar site-packages y pip.
+        # CRÍTICO: el Python "embed" NO incluye Lib\\site-packages en sys.path;
+        # sin esta línea los paquetes instalados con pip NO se importan.
         pth_file = os.path.join(env_dir, "python310._pth")
         if os.path.exists(pth_file):
             with open(pth_file, "r") as f:
                 content = f.read()
-            content = content.replace("#import site", "import site")
+            lines = []
+            has_site_packages = False
+            for ln in content.splitlines():
+                strip = ln.strip()
+                if strip == "#import site":
+                    lines.append("import site")
+                elif strip == "Lib\\site-packages":
+                    has_site_packages = True
+                    lines.append(ln)
+                else:
+                    lines.append(ln)
+            if not has_site_packages:
+                lines.append("Lib\\site-packages")
             with open(pth_file, "w") as f:
-                f.write(content)
+                f.write("\n".join(lines))
                 
     # Instalar pip si no existe
     scripts_dir = os.path.join(env_dir, "Scripts")
@@ -54,52 +68,28 @@ def setup_portable_python(env_dir):
     return python_exe, pip_exe
 
 def install_engine(engine_name, hw_type):
-    base_dir = os.path.join(os.getcwd(), "app_tools")
+    # Ruta base derivada del propio script (independiente del CWD del proceso).
+    app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base_dir = os.path.join(app_root, "app_tools")
     env_dir = os.path.join(base_dir, "python_ocr")
     
     print(f"Iniciando instalación para {engine_name} en modo {hw_type}...", flush=True)
     python_exe, pip_exe = setup_portable_python(env_dir)
     
-    # 1. Instalar dependencias de Hardware (PyTorch)
-    # MIT48x, Paddle-VL necesitan PyTorch
-    needs_torch = engine_name in ["mit48x", "paddle-vl"]
-    
-    if needs_torch:
-        print("Instalando motor base (PyTorch)...", flush=True)
-        if hw_type == "nvidia":
-            # PyTorch CUDA
-            subprocess.run([pip_exe, "install", "--progress-bar", "off", "torch", "torchvision", "--index-url", "https://download.pytorch.org/whl/cu118"], check=True)
-        elif hw_type == "amd":
-            # PyTorch + DirectML
-            subprocess.run([pip_exe, "install", "--progress-bar", "off", "torch", "torchvision", "--index-url", "https://download.pytorch.org/whl/cpu"], check=True)
-            subprocess.run([pip_exe, "install", "--progress-bar", "off", "torch-directml"], check=True)
-        else:
-            # CPU only
-            subprocess.run([pip_exe, "install", "--progress-bar", "off", "torch", "torchvision", "--index-url", "https://download.pytorch.org/whl/cpu"], check=True)
-            
-    # 2. Instalar el motor OCR específico
+    # 1. Instalar el motor OCR específico
     print(f"Instalando paquetes para {engine_name}...", flush=True)
-    if engine_name == "mit48x":
-        # Descargar el modelo
-        model_dir = os.path.join(base_dir, "models", "mit48x")
-        os.makedirs(model_dir, exist_ok=True)
-        model_zip = os.path.join(model_dir, "ocr48px.zip")
-        if not os.path.exists(model_zip):
-            download_file("https://huggingface.co/dreMaz/mit_models/resolve/main/ocr48px.zip", model_zip)
-            print("Extrayendo modelo MIT48x...", flush=True)
-            with zipfile.ZipFile(model_zip, 'r') as zip_ref:
-                zip_ref.extractall(model_dir)
-        subprocess.run([pip_exe, "install", "--progress-bar", "off", "Pillow"], check=True) # Requiere pillow para leer imagenes manuales si es necesario
-    elif engine_name == "paddleocr-v5":
+    if engine_name == "paddleocr-v5":
         print("Instalando PaddlePaddle...", flush=True)
         if hw_type == "nvidia":
-            subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddlepaddle-gpu==3.0.0", "-i", "https://www.paddlepaddle.org.cn/packages/stable/cu118/"], check=True)
+            subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddlepaddle-gpu==3.3.1", "-i", "https://www.paddlepaddle.org.cn/packages/stable/cu118/"], check=True)
         else:
-            subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddlepaddle==3.0.0", "-i", "https://www.paddlepaddle.org.cn/packages/stable/cpu/"], check=True)
+            subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddlepaddle==3.3.1", "-i", "https://www.paddlepaddle.org.cn/packages/stable/cpu/"], check=True)
         print("Instalando paddleocr y dependencias...", flush=True)
-        subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddleocr", "Pillow"], check=True)
+        subprocess.run([pip_exe, "install", "--progress-bar", "off", "paddleocr==3.7.0", "Pillow"], check=True)
+    else:
+        print(f"Motor no soportado por el instalador: {engine_name}", flush=True)
+        sys.exit(1)
 
-        
     print(f"Instalación de {engine_name} completada con éxito.", flush=True)
 
 if __name__ == "__main__":

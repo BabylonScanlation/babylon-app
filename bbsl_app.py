@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from log_console import LogConsole, init_global_logging
 from config import USER_DATA_DIR, Config, resource_path, global_exception_handler
+from app_tools.secrets_store import ensure_secrets
 from project_manager import ProjectManager
 from tools import ToolsManager
 from options_menu import OptionsMenu
@@ -143,6 +144,12 @@ class App(QMainWindow):
         # Sincronizar entorno
         self._sync_env_to_config()
 
+        # Desbloquear keystore cifrado si no hay .env ni claves en ajustes
+        try:
+            ensure_secrets(self)
+        except Exception as exc:
+            logging.error(f"No se pudo desbloquear el keystore: {exc}")
+
     def eventFilter(self, source: object, event: QEvent) -> bool:
         """Filtra los eventos de teclado para deshabilitar la tecla Tab y las flechas de dirección."""
         if event.type() == QEvent.Type.KeyPress:
@@ -163,7 +170,7 @@ class App(QMainWindow):
                 masked = k[:4] + "..." + k[-4:] if len(k) > 8 else "???"
                 logging.info(f"   [{i+1}] {masked}")
         else:
-            logging.warning("⚠️ GEMINI: No se encontraron claves en .env")
+            logging.warning("⚠️ GEMINI: No se encontraron claves en .env (se intentará con el keystore)")
 
         env_mistral = os.getenv("MISTRAL_API_KEY")
         if env_mistral:
@@ -369,8 +376,8 @@ class App(QMainWindow):
             padding: 0;
         }
         """
-        version_label = QLabel("Versión: 2.7.0")
-        snapshot_label = QLabel("Snapshot: U26062026")
+        version_label = QLabel("Versión: 2.7.3")
+        snapshot_label = QLabel("Snapshot: U08092026")
         for label in (version_label, snapshot_label):
             label.setStyleSheet(label_style)
             label.setFont(self.roboto_black_font)
@@ -793,6 +800,31 @@ class App(QMainWindow):
         main_layout.addStretch(1) # Push content to top
 
         return config_area
+
+    def _save_gemini_settings(
+        self,
+        model_name: Optional[str] = None,
+        enable_thinking: Optional[bool] = None,
+        enable_auto_switch: Optional[bool] = None,
+        system_instruction: Optional[str] = None,
+        thinking_level: Optional[str] = None,
+    ) -> None:
+        """Guarda la configuración de Gemini en disco y en memoria."""
+        settings: Dict[str, Any] = {}
+        if model_name is not None:
+            settings["GEMINI_MODEL"] = model_name
+        if enable_thinking is not None:
+            settings["GEMINI_ENABLE_THINKING"] = bool(enable_thinking)
+        if enable_auto_switch is not None:
+            settings["ENABLE_AUTO_MODEL_SWITCH"] = bool(enable_auto_switch)
+        if system_instruction is not None:
+            settings["GEMINI_SYSTEM_INSTRUCTION"] = system_instruction
+        if thinking_level is not None and thinking_level in Config.THINKING_LEVELS:
+            settings["GEMINI_THINKING_LEVEL"] = thinking_level
+        if settings:
+            Config.save_user_settings(settings)
+            for key, value in settings.items():
+                setattr(Config, key, value)
 
     def _clear_temp_files(self):
         """Limpiar archivos temporales creados por la aplicación."""

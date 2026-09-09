@@ -233,6 +233,54 @@ class MiscOptions:
         return self.bg_type_combo.currentText()
 
 
+class SecurityOptions:
+    """Clase para gestionar el desbloqueo del keystore de claves cifradas."""
+
+    def __init__(self, controller: 'OptionsController'):
+        self.controller = controller
+        self.status_label = QLabel("Estado: pendiente")
+        self.status_label.setWordWrap(True)
+        self.passphrase_input = QLineEdit()
+        self.passphrase_input.setPlaceholderText("Passphrase del keystore (secrets.bin)")
+        self.passphrase_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.unlock_btn = QPushButton("Desbloquear y recordar en este PC")
+        self.unlock_btn.clicked.connect(
+            lambda: self.controller.save_secrets_keystore(self.passphrase_input.text())
+        )
+        self.forget_btn = QPushButton("Olvidar clave recordada")
+        self.forget_btn.clicked.connect(self.controller.forget_secrets)
+
+    def create_page(self) -> QWidget:
+        """Crea la página de configuración de seguridad."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        group = QGroupBox("CLAVES CIFRADAS")
+        group.setStyleSheet("background-color: rgba(30, 30, 30, 100);")
+        inner = QVBoxLayout(group)
+        inner.addWidget(self.status_label)
+        inner.addWidget(self.passphrase_input)
+        inner.addWidget(self.unlock_btn)
+        inner.addWidget(self.forget_btn)
+        layout.addWidget(group)
+        layout.addStretch()
+        return page
+
+    def refresh(self):
+        """Actualiza el estado mostrado según el keystore y la clave recordada."""
+        from app_tools import secrets_store
+        if secrets_store.has_keystore():
+            if secrets_store.has_cached_passphrase():
+                self.status_label.setText("Estado: keystore detectado y clave recordada en este PC.")
+            else:
+                self.status_label.setText(
+                    "Estado: keystore detectado. Falta la passphrase (solo se pide una vez por PC)."
+                )
+        else:
+            self.status_label.setText(
+                "Estado: sin keystore (se usan .env o claves en ajustes si existen)."
+            )
+
+
 class OptionsMenu:
     """Clase para crear un menú de opciones con pestañas configurables."""
 
@@ -242,13 +290,14 @@ class OptionsMenu:
         self.option_buttons: Dict[str, QPushButton] = {}
         self.option_stack = QStackedWidget()
         self.controller = OptionsController(parent)
-        self.options_pages: Dict[str, Union[GeneralOptions, DisplayOptions, AudioOptions, VideoOptions, ImageOptions, MiscOptions]] = {
+        self.options_pages: Dict[str, Union[GeneralOptions, DisplayOptions, AudioOptions, VideoOptions, ImageOptions, MiscOptions, SecurityOptions]] = {
             "general": GeneralOptions(),
             "display": DisplayOptions(self.controller),
             "audio": AudioOptions(self.controller),
             "video": VideoOptions(self.controller, self),
             "image": ImageOptions(self.controller),
             "misc": MiscOptions(self.controller),
+            "seguridad": SecurityOptions(self.controller),
         }
         for page in self.options_pages.values():
             self.option_stack.addWidget(page.create_page())
@@ -291,6 +340,7 @@ class OptionsMenu:
             ("VIDEO", "Configuración de video"),
             ("IMAGEN", "Configuración de imagen"),
             ("MISCELÁNEA", "Opciones diversas"),
+            ("SEGURIDAD", "Claves cifradas"),
         ]
         for cat, tooltip in categories:
             btn = QPushButton(cat)
@@ -347,9 +397,12 @@ class OptionsMenu:
             "VIDEO": 3,
             "IMAGEN": 4,
             "MISCELÁNEA": 5,
+            "SEGURIDAD": 6,
         }
         self.controller.clear_warnings()
         self.option_stack.setCurrentIndex(page_mapping[category])
+        if category == "SEGURIDAD":
+            self.options_pages["seguridad"].refresh()
         for btn in self.option_buttons.values():
             btn.setStyleSheet(
                 btn.styleSheet().replace("rgba(80, 40, 100, 0)", "rgba(50, 50, 50, 0)")

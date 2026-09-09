@@ -42,8 +42,32 @@ def global_exception_handler(
 
 
 # --- Carga de Entorno ---
+def _load_env_file():
+    """Carga un .env priorizando el que esté junto al ejecutable (exe) o en la raíz del repo (dev).
+
+    Así el binario no necesita llevar las claves incrustadas: tu equipo puede colocar
+    un .env junto al .exe sin recompilar, y los que compilen desde GitHub usan su propio .env.
+    """
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(os.path.join(os.path.dirname(sys.executable), ".env"))
+        # Respaldo: .env embebido en el bundle (si se decidiera incluirlo)
+        candidates.append(resource_path(".env"))
+    else:
+        candidates.append(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        )
+        candidates.append(os.path.abspath(".env"))
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            load_dotenv(candidate, override=False)
+            return True
+    return False
+
+
 try:
-    load_dotenv(resource_path(".env"))
+    if not _load_env_file():
+        load_dotenv(override=False)
 except Exception as e:
     logging.warning(f"No se pudo cargar el archivo .env: {e}")
 
@@ -68,6 +92,7 @@ class Config:
         settings: Dict[str, Any] = {
             "GEMINI_MODEL": "gemini-2.5-flash",
             "GEMINI_ENABLE_THINKING": True,
+            "GEMINI_THINKING_LEVEL": "auto",
             "GEMINI_STITCHING_ONLY": False,
             "GEMINI_TEMPERATURE": 1.0,
             "GEMINI_ULTRA_HIGH_QUALITY": False,
@@ -127,7 +152,18 @@ class Config:
     MODEL_LIMITS: Dict[str, Dict[str, int]] = {
         "gemini-2.5-flash": {"RPM": 5, "TPM": 250000, "RPD": 20},
         "gemini-3-flash-preview": {"RPM": 5, "TPM": 250000, "RPD": 20},
-        "gemini-3.1-flash-lite-preview": {"RPM": 15, "TPM": 250000, "RPD": 500},
+        "gemini-3.1-flash-lite": {"RPM": 15, "TPM": 250000, "RPD": 500},
+    }
+
+    # --- NIVELES DE PENSAMIENTO (Thinking) ---
+    # 3.x: thinking_level (minimal/low/medium/high). No se puede apagar del todo.
+    # 2.5: thinking_budget (tokens; 0 = apagado, -1 = dinámico).
+    THINKING_LEVELS: tuple = ("auto", "minimal", "low", "medium", "high")
+    THINKING_BUDGET_2_5: Dict[str, int] = {
+        "minimal": 1024,
+        "low": 4096,
+        "medium": 8192,
+        "high": 16384,
     }
 
     # --- LÓGICA DE ROTACIÓN DE KEYS ---
@@ -165,6 +201,9 @@ class Config:
 
     GEMINI_MODEL: str = str(user_settings["GEMINI_MODEL"])
     GEMINI_ENABLE_THINKING: bool = bool(user_settings["GEMINI_ENABLE_THINKING"])
+    GEMINI_THINKING_LEVEL: str = str(
+        user_settings.get("GEMINI_THINKING_LEVEL", "auto")
+    )
     GEMINI_STITCHING_ONLY: bool = bool(user_settings.get("GEMINI_STITCHING_ONLY", False))
     GEMINI_TEMPERATURE: float = float(user_settings["GEMINI_TEMPERATURE"])
     GEMINI_ULTRA_HIGH_QUALITY: bool = bool(
@@ -249,7 +288,6 @@ class Config:
         "Papago": "https://papago.naver.com/",
         "DeepL": "https://www.deepl.com/es/translator",
         "Google": "https://translate.google.com",
-        "MIT48x": "https://huggingface.co/dreMaz/mit_models/resolve/main/ocr48px.zip",
         "PaddleOCR-v5": "https://huggingface.co/paddlepaddle/korean_PP-OCRv5_mobile_rec",
         "Gemini": "https://gemini.google.com/app",
         "Mistral": "https://chat.mistral.ai/chat",

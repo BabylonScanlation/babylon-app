@@ -146,7 +146,7 @@ class OCRPanel(QWidget):
         self.text_result.setText("Iniciando extracción de texto...")
 
         # Mapeo simple de idiomas
-        lang_map = {"Inglés": "en", "Japonés": "ja", "Coreano": "ko", "Chino": "ch_sim"}
+        lang_map = {"Inglés": "en", "Japonés": "ja", "Coreano": "ko", "Chino": "ch"}
         langs = [lang_map[self.lang_combo.currentText()]]
 
         self.worker = OCRWorker(self.engine_name, self.image_paths, langs)

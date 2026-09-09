@@ -5,7 +5,10 @@ import random
 import time
 import threading
 from typing import List, Optional, Any, Callable, Dict
-from mistralai import Mistral
+try:
+    from mistralai import Mistral
+except ImportError:  # SDK 2.x: la clase se movió a mistralai.client
+    from mistralai.client import Mistral
 from app_tools.ai_service import BaseAIProcessor, AIAPIError
 from config import Config
 
@@ -47,8 +50,9 @@ class MistralProcessor(BaseAIProcessor):
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                # Usamos pixtral-12b-2409 si hay imagen, de lo contrario mistral-large-latest
-                model = "pixtral-12b-2409" if image_path else "mistral-large-latest"
+                # Usamos un modelo de visión vigente si hay imagen, de lo contrario el de texto configurado.
+                # pixtral-12b-2409 fue retirado (12/31/2025); su reemplazo documentado es Ministral 3 14B.
+                model = "ministral-3-14b-25-12" if image_path else Config.MISTRAL_MODEL
                 
                 response = client.chat.complete(
                     model=model,
