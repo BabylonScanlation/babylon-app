@@ -272,6 +272,8 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
             if translator_name == "DeepL":
                 if deepl is None:
                     return "Error: deepl no instalado."
+                if not str(Config.DEEPL_API_KEY or "").strip():
+                    return "Error: No hay API key de DeepL configurada. Guárdala en Opciones → Seguridad o en el campo API."
                 t = cast(Any, deepl).Translator(Config.DEEPL_API_KEY)
                 res = t.translate_text(text, target_lang=obtener_codigo("deepl", target_lang))
                 return str(getattr(res, 'text', res))
@@ -279,8 +281,10 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
                 if genai is None:
                     return "Error: google-genai no instalado."
                 prompt = PROMPT_IA.format(idioma=obtener_codigo("default", target_lang))
-                last_err: Any = None
                 keys = list(Config.GEMINI_API_KEYS) or [Config.GEMINI_API_KEY]
+                if not any(k for k in keys if k):
+                    return "Error: No hay API keys de Gemini configuradas. Guárdalas en Opciones y reinicia la app."
+                last_err: Any = None
                 for api_key in keys:
                     if not api_key:
                         continue
@@ -299,6 +303,8 @@ def translatorz(translator_name: str, text: str, source_lang: str, target_lang: 
             if translator_name == "Mistral":
                 if Mistral is None:
                     return "Error: mistralai no instalado."
+                if not str(Config.MISTRAL_API_KEY or "").strip():
+                    return "Error: No hay API key de Mistral configurada. Guárdala en Opciones y reinicia la app."
                 client = cast(Any, Mistral)(api_key=Config.MISTRAL_API_KEY)
                 prompt = PROMPT_IA.format(idioma=obtener_codigo("default", target_lang))
                 res = client.chat.complete(model=Config.MISTRAL_MODEL, messages=[{"role": "user", "content": f"{prompt}\n\nTexto: {text}"}])

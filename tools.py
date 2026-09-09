@@ -1050,11 +1050,9 @@ class ToolsManager(QObject):
                     def save_api_key(text: str, t_name: str = tool["name"]):
                         clean_text = text.strip()
                         if t_name == "Gemini":
-                            Config.GEMINI_API_KEY = clean_text
-                            Config.save_user_settings({"GEMINI_API_KEY": clean_text})
+                            Config.set_gemini_api_key(clean_text)
                         elif t_name == "Mistral":
-                            Config.MISTRAL_API_KEY = clean_text
-                            Config.save_user_settings({"MISTRAL_API_KEY": clean_text})
+                            Config.set_mistral_api_key(clean_text)
 
                     route_input.textChanged.connect(save_api_key)
 

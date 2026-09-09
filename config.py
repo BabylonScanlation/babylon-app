@@ -190,6 +190,34 @@ class Config:
         except ValueError:
             return cls.GEMINI_API_KEYS[0]
 
+    # --- Helpers para guardar/borrar claves desde la UI (de forma consistente) ---
+    # Actualizan la variable, la lista de rotación, los ajustes y la bóveda DPAPI.
+
+    @classmethod
+    def set_gemini_api_key(cls, key: str) -> None:
+        key = (key or "").strip()
+        cls.GEMINI_API_KEY = key
+        cls.GEMINI_API_KEYS = [k.strip() for k in key.split(",") if k.strip()]
+        cls.save_user_settings({"GEMINI_API_KEY": key})
+        from app_tools.secrets_store import set_user_key_secret
+        set_user_key_secret("GEMINI_API_KEY", key)
+
+    @classmethod
+    def set_mistral_api_key(cls, key: str) -> None:
+        key = (key or "").strip()
+        cls.MISTRAL_API_KEY = key
+        cls.save_user_settings({"MISTRAL_API_KEY": key})
+        from app_tools.secrets_store import set_user_key_secret
+        set_user_key_secret("MISTRAL_API_KEY", key)
+
+    @classmethod
+    def set_deepl_api_key(cls, key: str) -> None:
+        key = (key or "").strip()
+        cls.DEEPL_API_KEY = key
+        cls.save_user_settings({"DEEPL_API_KEY": key})
+        from app_tools.secrets_store import set_user_key_secret
+        set_user_key_secret("DEEPL_API_KEY", key)
+
     MISTRAL_API_KEY: str = str(
         user_settings.get("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", ""))
     )

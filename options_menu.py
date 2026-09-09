@@ -247,7 +247,7 @@ class SecurityOptions:
         self.unlock_btn.clicked.connect(
             lambda: self.controller.save_secrets_keystore(self.passphrase_input.text())
         )
-        self.forget_btn = QPushButton("Olvidar clave recordada")
+        self.forget_btn = QPushButton("Borrar claves guardadas de este PC")
         self.forget_btn.clicked.connect(self.controller.forget_secrets)
 
     def create_page(self) -> QWidget:
@@ -266,9 +266,13 @@ class SecurityOptions:
         return page
 
     def refresh(self):
-        """Actualiza el estado mostrado según el keystore y la clave recordada."""
+        """Actualiza el estado mostrado según la bóveda/keystore y la clave recordada."""
         from app_tools import secrets_store
-        if secrets_store.has_keystore():
+        if secrets_store.has_vault() or secrets_store.user_configured():
+            self.status_label.setText(
+                "Estado: tus claves están guardadas de forma segura en este PC (Windows DPAPI)."
+            )
+        elif secrets_store.has_keystore():
             if secrets_store.has_cached_passphrase():
                 self.status_label.setText("Estado: keystore detectado y clave recordada en este PC.")
             else:

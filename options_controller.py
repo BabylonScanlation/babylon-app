@@ -51,11 +51,21 @@ class OptionsController(QObject):
         return True
 
     def forget_secrets(self):
-        """Elimina la passphrase recordada (el keystore sigue en su sitio)."""
+        """Borra las claves guardadas de este PC (bóveda DPAPI + passphrase recordada).
+
+        Deja la marca secrets_configured.flag para que el keystore empaquetado no
+        vuelva a inyectar claves silenciosamente después de un borrado a propósito.
+        """
         from app_tools import secrets_store
-        secrets_store.forget_passphrase()
+        secrets_store.delete_vault()      # elimina secrets_vault.bin (claves del usuario)
+        secrets_store.forget_passphrase() # limpia el cache DPAPI de la passphrase
+        Config.GEMINI_API_KEY = ""
+        Config.GEMINI_API_KEYS = []
+        Config.MISTRAL_API_KEY = ""
+        Config.DEEPL_API_KEY = ""
         QMessageBox.information(self.app, "Claves cifradas",
-                                "Clave recordada eliminada. Se pedirá la passphrase en la próxima apertura.")
+                                "Claves guardadas en este PC eliminadas. No se pedirá "
+                                "passphrase en las próximas aperturas.")
         return True
 
     def save_gemini_settings(

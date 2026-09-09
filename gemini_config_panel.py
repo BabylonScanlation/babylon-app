@@ -506,13 +506,13 @@ class GeminiConfigPanel(QWidget):
             "GEMINI_TEMPERATURE": 1.0
         }
         api_key = self.gemini_api_input.text().strip()
-        if api_key:
-            settings["GEMINI_API_KEY"] = api_key
-        
-        Config.save_user_settings(settings)
+        # La clave se persiste/borra con Config.set_gemini_api_key (ajustes + bóveda DPAPI)
+        Config.save_user_settings({k: v for k, v in settings.items() if k != "GEMINI_API_KEY"})
+        Config.set_gemini_api_key(api_key)
         # Update Config in memory
         for k, v in settings.items():
-            setattr(Config, k, v)
+            if k != "GEMINI_API_KEY":
+                setattr(Config, k, v)
         
         self.hide()
         self.closed.emit()
