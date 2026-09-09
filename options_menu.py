@@ -234,16 +234,16 @@ class MiscOptions:
 
 
 class SecurityOptions:
-    """Clase para gestionar el desbloqueo del keystore de claves cifradas."""
+    """Gestión de claves guardadas en este PC (bóveda DPAPI, sin passphrase)."""
 
     def __init__(self, controller: 'OptionsController'):
         self.controller = controller
         self.status_label = QLabel("Estado: pendiente")
         self.status_label.setWordWrap(True)
         self.passphrase_input = QLineEdit()
-        self.passphrase_input.setPlaceholderText("Passphrase del keystore (secrets.bin)")
+        self.passphrase_input.setPlaceholderText("Passphrase del keystore (solo si tienes una)")
         self.passphrase_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.unlock_btn = QPushButton("Desbloquear y recordar en este PC")
+        self.unlock_btn = QPushButton("Importar keystore a este PC (una vez)")
         self.unlock_btn.clicked.connect(
             lambda: self.controller.save_secrets_keystore(self.passphrase_input.text())
         )
@@ -254,9 +254,13 @@ class SecurityOptions:
         """Crea la página de configuración de seguridad."""
         page = QWidget()
         layout = QVBoxLayout(page)
-        group = QGroupBox("CLAVES CIFRADAS")
+        group = QGroupBox("CLAVES DE ESTE PC (WINDOWS DPAPI)")
         group.setStyleSheet("background-color: rgba(30, 30, 30, 100);")
         inner = QVBoxLayout(group)
+        info = QLabel("Las claves se guardan cifradas con tu cuenta de Windows y se cargan "
+                      "solas en cada apertura. No se pide ninguna contraseña.")
+        info.setWordWrap(True)
+        inner.addWidget(info)
         inner.addWidget(self.status_label)
         inner.addWidget(self.passphrase_input)
         inner.addWidget(self.unlock_btn)
@@ -266,22 +270,16 @@ class SecurityOptions:
         return page
 
     def refresh(self):
-        """Actualiza el estado mostrado según la bóveda/keystore y la clave recordada."""
+        """Actualiza el estado mostrado según la bóveda y la clave recordada."""
         from app_tools import secrets_store
         if secrets_store.has_vault() or secrets_store.user_configured():
             self.status_label.setText(
-                "Estado: tus claves están guardadas de forma segura en este PC (Windows DPAPI)."
+                "Estado: claves guardadas en este PC (Windows DPAPI). Se cargan solas."
             )
-        elif secrets_store.has_keystore():
-            if secrets_store.has_cached_passphrase():
-                self.status_label.setText("Estado: keystore detectado y clave recordada en este PC.")
-            else:
-                self.status_label.setText(
-                    "Estado: keystore detectado. Falta la passphrase (solo se pide una vez por PC)."
-                )
         else:
             self.status_label.setText(
-                "Estado: sin keystore (se usan .env o claves en ajustes si existen)."
+                "Estado: sin claves guardadas en este PC. Guárdalas desde la traducción "
+                "(campo API) o importa el keystore si lo tienes."
             )
 
 

@@ -144,7 +144,7 @@ class App(QMainWindow):
         # Sincronizar entorno
         self._sync_env_to_config()
 
-        # Desbloquear keystore cifrado si no hay .env ni claves en ajustes
+        # Garantizar claves (bóveda DPAPI > .env > keystore con passphrase recordada)
         try:
             ensure_secrets(self)
         except Exception as exc:

@@ -1,16 +1,17 @@
-"""Gestor de claves cifradas (keystore AES-GCM + recordatorio DPAPI en Windows).
+"""Gestor de claves cifradas (bóveda DPAPI + keystore legado).
 
-Flujo pensado para tu equipo dentro del exe:
-  1) El desarrollador genera BBSL/secrets.bin con app_tools/secrets_tool.py,
-     cifrando las claves del .env con una passphrase (el archivo viaja en el exe).
-  2) En runtime, si no hay .env ni claves en ajustes, la app descifra secrets.bin:
-       - usa la passphrase recordada localmente (DPAPI/CryptProtectData) si existe;
-       - si no, la pide una vez (QInputDialog) y la RECUERDA para futuras versiones.
-  3) Las claves se inyectan en Config y en os.environ (incluye PICACOMIC_*).
+Modelo actual (sin passphrase para el usuario final):
+  - Las claves del usuario se guardan en secrets_vault.bin, cifradas con la cuenta
+    de Windows (DPAPI) — estilo Windows Hello/WinCred. Se desbloquean solas en cada
+    apertura: NO hay prompts de passphrase.
+  - La marca secrets_configured.flag indica que el usuario ya definió sus claves
+    (aunque estén vacías), evitando que un keystore empaquetado vuelva a inyectar
+    claves antiguas tras un borrado intencional.
 
-Nota de seguridad: DPAPI ata el archivo de recordatorio a la cuenta de Windows del
-usuario. La passphrase está protegida en reposo; en runtime la app necesita las claves
-en claro para llamar a las APIs, así que viven en memoria mientras la app está abierta.
+Legado (solo si el usuario lo pide desde la UI):
+  - BBSL/secrets.bin cifrado con AES-GCM + passphrase. En el arranque ya NO se pide
+    la passphrase: solo se usa si está recordada en este PC (cache DPAPI). El
+    desbloqueo manual desde Opciones → Seguridad lo importa a la bóveda DPAPI.
 """
 
 import base64
@@ -363,28 +364,29 @@ def unlock_with_passphrase(passphrase: str) -> dict:
 
 
 def ensure_secrets(app=None, force: bool = False) -> bool:
-    """Disponibilidad de claves al arranque.
+    """Disponibilidad de claves al arranque (SIN prompts de passphrase).
 
-    Prioridad (sin prompts para el usuario final):
+    Prioridad:
       1) Claves ya cargadas en Config (.env o user_settings a nivel de proceso).
       2) Bóveda DPAPI del usuario (secrets_vault.bin) → se aplica sola.
          La marca secrets_configured.flag deja fuera el keystore aunque la
          bóveda esté vacía (el usuario borró sus claves a propósito).
-      3) Legado: keystore empaquetado (BBSL/secrets.bin). Si la passphrase está
-         recordada (DPAPI) se descifra solo; si no, se pide UNA vez por PC.
+      3) Legado: keystore empaquetado (BBSL/secrets.bin) SOLO si la passphrase
+         está recordada en este PC (cache DPAPI). Nunca se pide la passphrase
+         en el arranque; el desbloqueo manual se hace desde Opciones → Seguridad.
     Devuelve True si quedaron claves disponibles.
     """
     from config import Config
     if not force and (Config.GEMINI_API_KEY and Config.GEMINI_API_KEYS):
         return True
 
-    # 1) Bóveda del usuario (directo, sin passphrase).
+    # 1) Bóveda del usuario (directo, sin passphrase). Funciona aunque esté vacía.
     if has_vault() or user_configured():
         vault = load_vault()
         apply_vault(vault)
         return bool(Config.GEMINI_API_KEY)
 
-    # 2) Legado: keystore empaquetado.
+    # 2) Legado: keystore empaquetado, solo con passphrase ya recordada.
     if not has_keystore():
         if force:
             raise FileNotFoundError("No se encontró secrets.bin.")
@@ -396,32 +398,13 @@ def ensure_secrets(app=None, force: bool = False) -> bool:
             unlock_with_passphrase(cached)
             return True
         except Exception as e:
-            logging.warning(f"Passphrase recordada no válida, se pedirá de nuevo: {e}")
+            logging.warning(f"Passphrase recordada no válida: {e}")
 
-    if app is None:
-        return False
-
-    try:
-        from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox
-    except Exception:
-        return False
-
-    passphrase, ok = QInputDialog.getText(
-        app,
-        "Claves cifradas",
-        "Introduce la passphrase de las claves de Babylon:",
-        QLineEdit.EchoMode.Password,
-    )
-    if not ok or not passphrase:
-        return False
-    try:
-        secrets = decrypt_keystore_with(passphrase)
-    except Exception as e:
-        QMessageBox.warning(app, "Claves cifradas", f"No se pudo descifrar el keystore:\n{e}")
-        return False
-    save_passphrase(passphrase)
-    apply_secrets(secrets)
-    return True
+    # Sin passphrase y sin prompt: la app abre sin claves. El usuario las define
+    # desde la UI (campo API / panel Gemini) y quedan en la bóveda DPAPI.
+    logging.info("Sin claves configuradas en este PC: se abre sin claves "
+                 "(guárdalas en Opciones → Seguridad).")
+    return bool(Config.GEMINI_API_KEY)
 
 
 def decrypt_keystore_with(passphrase: str) -> dict:
