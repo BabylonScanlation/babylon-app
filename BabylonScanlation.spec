@@ -44,6 +44,8 @@ excluded_modules = [
     'shiboken6.Qt3DRender', 'shiboken6.QtCharts'
 ]
 
+env_datas = [('.env', '.')] if os.path.exists('.env') else []
+
 a = Analysis(
     ['bbsl_app.py'],
     pathex=[],
@@ -53,7 +55,7 @@ a = Analysis(
         ('styles', 'styles'),
         ('app_media', 'app_media'),
         ('babylon_downloaders', 'babylon_downloaders')
-    ] + _walk_datas('app_tools', 'app_tools', skip_dirs=('python_ocr', 'models', '__pycache__')),
+    ] + env_datas + _walk_datas('app_tools', 'app_tools', skip_dirs=('python_ocr', 'models', '__pycache__')),
     hiddenimports=['win32crypt'],
     hookspath=['hooks'],
     hooksconfig={},
