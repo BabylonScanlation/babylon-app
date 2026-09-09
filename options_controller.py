@@ -62,21 +62,32 @@ class OptionsController(QObject):
         return True
 
     def forget_secrets(self):
-        """Borra las claves guardadas de este PC (bóveda DPAPI + passphrase recordada).
+        """Borra TODAS las claves guardadas de este PC (bóveda DPAPI + ajustes + memoria + env).
 
         Deja la marca secrets_configured.flag para que el keystore empaquetado no
         vuelva a inyectar claves silenciosamente después de un borrado a propósito.
         """
         from app_tools import secrets_store
-        secrets_store.delete_vault()      # elimina secrets_vault.bin (claves del usuario)
-        secrets_store.forget_passphrase() # limpia el cache DPAPI de la passphrase
+        secrets_store.delete_vault()          # secrets_vault.bin (claves en bóveda DPAPI)
+        secrets_store.forget_passphrase()     # cache DPAPI de passphrase
+        Config.clear_saved_api_keys()         # user_settings.json
         Config.GEMINI_API_KEY = ""
         Config.GEMINI_API_KEYS = []
         Config.MISTRAL_API_KEY = ""
         Config.DEEPL_API_KEY = ""
-        QMessageBox.information(self.app, "Claves cifradas",
-                                "Claves guardadas en este PC eliminadas. No se pedirá "
-                                "passphrase en las próximas aperturas.")
+        for env_name in ("PICACOMIC_EMAIL", "PICACOMIC_PASSWORD", "PICACOMIC_TOKEN"):
+            os.environ.pop(env_name, None)
+        # Reflejar el cambio al instante en el menú de seguridad
+        try:
+            menu = getattr(self.app, "options_menu", None)
+            if menu is not None and "seguridad" in menu.options_pages:
+                menu.options_pages["seguridad"].refresh()
+        except Exception as exc:
+            logging.debug(f"No se pudo refrescar el estado de seguridad: {exc}")
+        QMessageBox.information(self.app, "Claves de este PC",
+                                "Se han borrado las claves guardadas en este PC.\n\n"
+                                "Gemini/Mistral/DeepL dejan de funcionar a partir de ahora y "
+                                "al reabrir la app no se recuperará ninguna clave.")
         return True
 
     def save_gemini_settings(

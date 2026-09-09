@@ -218,6 +218,18 @@ class Config:
         from app_tools.secrets_store import set_user_key_secret
         set_user_key_secret("DEEPL_API_KEY", key)
 
+    @classmethod
+    def clear_saved_api_keys(cls) -> None:
+        """Borra las claves API guardadas en user_settings.json (no toca la bóveda)."""
+        try:
+            settings = cls.load_user_settings()
+            for _k in ("GEMINI_API_KEY", "MISTRAL_API_KEY", "DEEPL_API_KEY"):
+                settings.pop(_k, None)
+            with open(USER_SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=4)
+        except Exception as e:
+            logging.error(f"[CONFIG] Error al limpiar claves guardadas: {e}")
+
     MISTRAL_API_KEY: str = str(
         user_settings.get("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", ""))
     )

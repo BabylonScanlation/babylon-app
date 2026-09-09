@@ -234,21 +234,16 @@ class MiscOptions:
 
 
 class SecurityOptions:
-    """Gestión de claves guardadas en este PC (bóveda DPAPI, sin passphrase)."""
+    """Gestión de las claves guardadas en este PC (bóveda DPAPI, sin passphrase)."""
 
     def __init__(self, controller: 'OptionsController'):
         self.controller = controller
         self.status_label = QLabel("Estado: pendiente")
         self.status_label.setWordWrap(True)
-        self.passphrase_input = QLineEdit()
-        self.passphrase_input.setPlaceholderText("Passphrase del keystore (solo si tienes una)")
-        self.passphrase_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.unlock_btn = QPushButton("Importar keystore a este PC (una vez)")
-        self.unlock_btn.clicked.connect(
-            lambda: self.controller.save_secrets_keystore(self.passphrase_input.text())
-        )
         self.forget_btn = QPushButton("Borrar claves guardadas de este PC")
-        self.forget_btn.clicked.connect(self.controller.forget_secrets)
+        self.forget_btn.clicked.connect(
+            lambda checked=False: self.controller.forget_secrets()
+        )
 
     def create_page(self) -> QWidget:
         """Crea la página de configuración de seguridad."""
@@ -262,24 +257,44 @@ class SecurityOptions:
         info.setWordWrap(True)
         inner.addWidget(info)
         inner.addWidget(self.status_label)
-        inner.addWidget(self.passphrase_input)
-        inner.addWidget(self.unlock_btn)
         inner.addWidget(self.forget_btn)
         layout.addWidget(group)
         layout.addStretch()
         return page
 
     def refresh(self):
-        """Actualiza el estado mostrado según la bóveda y la clave recordada."""
+        """Muestra el estado REAL de las claves guardadas en este PC."""
         from app_tools import secrets_store
-        if secrets_store.has_vault() or secrets_store.user_configured():
+        from config import Config
+        vault = secrets_store.load_vault()
+        active = []
+        if vault.get("GEMINI_API_KEY"):
+            active.append("Gemini")
+        if vault.get("MISTRAL_API_KEY"):
+            active.append("Mistral")
+        if vault.get("DEEPL_API_KEY"):
+            active.append("DeepL")
+        if vault.get("PICACOMIC_EMAIL"):
+            active.append("Picacomic")
+        settings = Config.load_user_settings()
+        for name, label in (("GEMINI_API_KEY", "Gemini"),
+                            ("MISTRAL_API_KEY", "Mistral"),
+                            ("DEEPL_API_KEY", "DeepL")):
+            if str(settings.get(name, "")).strip() and label not in active:
+                active.append(label)
+        if active:
             self.status_label.setText(
-                "Estado: claves guardadas en este PC (Windows DPAPI). Se cargan solas."
+                "Estado: claves en este PC: " + ", ".join(active) +
+                ". Se cargan solas (cifradas con tu cuenta de Windows)."
+            )
+        elif secrets_store.has_vault() or secrets_store.user_configured():
+            self.status_label.setText(
+                "Estado: sin claves guardadas en este PC (ya las borraste o aún no hay)."
             )
         else:
             self.status_label.setText(
-                "Estado: sin claves guardadas en este PC. Guárdalas desde la traducción "
-                "(campo API) o importa el keystore si lo tienes."
+                "Estado: sin claves. Guárdalas desde la traducción (campo API) "
+                "y quedarán guardadas aquí."
             )
 
 
