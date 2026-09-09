@@ -10,18 +10,25 @@ import subprocess
 # Lo inyectamos desde el spec para que `upx=True` funcione sin flags.
 from PyInstaller.config import CONF
 
-_upx_dir = os.path.join(SPECPATH, 'dev_tools', 'upx-5.2.0-win64')
-try:
-    subprocess.check_output(
-        [os.path.join(_upx_dir, 'upx'), '-V'],
-        stdin=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        encoding='utf-8',
-    )
+_upx_dir = None
+for _d in sorted(os.listdir(os.path.join(SPECPATH, 'dev_tools'))):
+    if not (_d.startswith('upx-') and _d.endswith('win64')):
+        continue
+    _cand = os.path.join(SPECPATH, 'dev_tools', _d)
+    try:
+        subprocess.check_output(
+            [os.path.join(_cand, 'upx'), '-V'],
+            stdin=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            encoding='utf-8',
+        )
+        _upx_dir = _cand
+        break
+    except Exception:
+        continue
+if _upx_dir is not None:
     CONF['upx_dir'] = _upx_dir
     CONF['upx_available'] = True
-except Exception:
-    pass
 
 
 def _walk_datas(src_root, dst_root, skip_dirs=()):
