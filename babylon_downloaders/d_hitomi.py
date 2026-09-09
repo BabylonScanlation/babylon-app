@@ -7,6 +7,7 @@ solo galerías con un ID numérico.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import struct
 import sys
@@ -115,6 +116,192 @@ def _term_url(term: str) -> str:
     return f"{base}/n/tag/{term}-all.nozomi"
 
 
+# ── Tag-index (trie sha256) ───────────────────────────────────────────────────
+# hitomi migró la búsqueda a un B-tree en tagindex.hitomi.la: el término se
+# hashea con sha256 (primeros 4 bytes) y se recorre el .index por rangos de
+# bytes; las hojas apuntan a rangos de un .data con los gallery IDs.
+
+TAG_INDEX_DOMAIN = "tagindex.hitomi.la"
+LTN_DOMAIN = "ltn.gold-usergeneratedcontent.net"
+INDEX_BUILD_B = 16
+MAX_NODE_SIZE = 464
+
+_VER_CACHE: dict[str, Optional[str]] = {}
+
+
+def _curl_session():
+    """Sesión browser-like para los endpoints de índice que exigen TLS real."""
+    try:
+        from curl_cffi.requests import Session as _Curl
+
+        s = _Curl(impersonate="chrome124")
+        s.headers["Referer"] = "https://hitomi.la/search.html"
+        return s
+    except Exception:
+        import requests as _r
+
+        s = _r.Session()
+        s.headers.update(HEADERS)
+        return s
+
+
+def _index_version(sess: requests.Session, name: str) -> Optional[str]:
+    """Versión vigente de un índice (p.ej. 'galleriesindex', 'tagindex')."""
+    if name not in _VER_CACHE:
+        try:
+            r = sess.get(f"https://{LTN_DOMAIN}/{name}/version", timeout=15)
+            _VER_CACHE[name] = (
+                r.text.strip() if r.status_code == 200 and r.text.strip() else None
+            )
+            if not _VER_CACHE[name]:
+                sess = _curl_session()
+                r = sess.get(f"https://{LTN_DOMAIN}/{name}/version", timeout=15)
+                _VER_CACHE[name] = (
+                    r.text.strip() if r.status_code == 200 and r.text.strip() else None
+                )
+        except Exception:
+            _VER_CACHE[name] = None
+    return _VER_CACHE[name]
+
+
+def _range_get(
+    sess: requests.Session, url: str, offset: int, length: int
+) -> Optional[bytes]:
+    try:
+        r = sess.get(
+            url,
+            headers={"Range": f"bytes={offset}-{offset + length - 1}"},
+            timeout=20,
+        )
+        if r.status_code in (200, 206) and r.content:
+            return r.content
+    except Exception:
+        pass
+    return None
+
+
+def _decode_node(data: bytes) -> Optional[dict]:
+    if len(data) < 8:
+        return None
+    try:
+        pos = 0
+        n_keys = struct.unpack_from(">i", data, pos)[0]
+        pos += 4
+        if n_keys > INDEX_BUILD_B or n_keys < 0:
+            return None
+        keys = []
+        for _ in range(n_keys):
+            ks = struct.unpack_from(">i", data, pos)[0]
+            pos += 4
+            if ks <= 0 or ks > 32 or pos + ks > len(data):
+                return None
+            keys.append(data[pos : pos + ks])
+            pos += ks
+        n_datas = struct.unpack_from(">i", data, pos)[0]
+        pos += 4
+        if n_datas > INDEX_BUILD_B or n_datas < 0:
+            return None
+        datas = []
+        for _ in range(n_datas):
+            off = struct.unpack_from(">Q", data, pos)[0]
+            pos += 8
+            ln = struct.unpack_from(">i", data, pos)[0]
+            pos += 4
+            datas.append((off, ln))
+        subnodes = []
+        for _ in range(INDEX_BUILD_B + 1):
+            subnodes.append(struct.unpack_from(">Q", data, pos)[0])
+            pos += 8
+        return {"keys": keys, "datas": datas, "subs": subnodes}
+    except Exception:
+        return None
+
+
+def _node_at(
+    sess: requests.Session,
+    index_dir: str,
+    version: str,
+    field: str,
+    address: int,
+) -> Optional[dict]:
+    url = f"https://{LTN_DOMAIN}/{index_dir}/{field}.{version}.index"
+    raw = _range_get(sess, url, address, MAX_NODE_SIZE)
+    if not raw:
+        return None
+    if len(raw) < 8:
+        sess = _curl_session()
+        raw = _range_get(sess, url, address, MAX_NODE_SIZE)
+    return _decode_node(raw) if raw else None
+
+
+def _bsearch_gallery(
+    sess: requests.Session,
+    version: str,
+    key: bytes,
+) -> Optional[tuple[int, int]]:
+    """Devuelve (offset, length) en el .data de galleries para el key, o None."""
+    node = _node_at(sess, "galleriesindex", version, "galleries", 0)
+    while node:
+        keys = node["keys"]
+        if not keys:
+            return None
+        where = 0
+        there = False
+        for i, k in enumerate(keys):
+            if key <= k:
+                if key == k:
+                    there = True
+                where = i
+                break
+        else:
+            where = len(keys)
+        if there:
+            off, ln = node["datas"][where]
+            return (off, ln)
+        if not any(node["subs"]):
+            return None
+        addr = node["subs"][where]
+        if addr == 0:
+            return None
+        node = _node_at(sess, "galleriesindex", version, "galleries", addr)
+    return None
+
+
+def _gallery_ids_from_data(
+    sess: requests.Session, version: str, data: tuple[int, int]
+) -> list[int]:
+    off, ln = data
+    url = f"https://{LTN_DOMAIN}/galleriesindex/galleries.{version}.data"
+    raw = _range_get(sess, url, off, ln)
+    if not raw or len(raw) < 4:
+        if raw is not None:
+            sess = _curl_session()
+            raw = _range_get(sess, url, off, ln)
+    if not raw or len(raw) < 4:
+        return []
+    try:
+        count = struct.unpack_from(">i", raw, 0)[0]
+        if count <= 0 or 4 + count * 4 != len(raw) or count > 10_000_000:
+            return []
+        return list(struct.unpack_from(f">{count}i", raw, 4))
+    except Exception:
+        return []
+
+
+def _term_ids(sess: requests.Session, term: str) -> list[int]:
+    """IDs de galerías para un término de texto plano (vía el trie sha256)."""
+    if ":" in term:
+        return _nozomi_ids(sess, _term_url(term))
+    ver = _index_version(sess, "galleriesindex")
+    if not ver:
+        return []
+    key = hashlib.sha256(term.encode("utf-8")).digest()[:4]
+    data = _bsearch_gallery(sess, ver, key)
+    if not data:
+        return []
+    return _gallery_ids_from_data(sess, ver, data)
+
+
 def fetch_catalog_ids(
     sess: requests.Session,
     language: str = "all",
@@ -159,39 +346,28 @@ def _apply_sort(
 def search_ids(
     sess: requests.Session, query: str, sort_terms: Optional[list[str]] = None
 ) -> list[int]:
-    parts = query.split()
+    q = query.replace("_", " ").strip().lower()
+    parts = [p for p in q.split() if p]
     if not parts:
         return []
     ids: set[int] = set()
-    # Primer término inicializa el set
-    for url in [_term_url(parts[0])]:
-        try:
-            r = sess.get(url, timeout=15)
-            if r.status_code == 200 and len(r.content) >= 4:
-                ids = {
-                    struct.unpack(">I", r.content[i * 4 : (i + 1) * 4])[0]
-                    for i in range(len(r.content) // 4)
-                }
-                break
-        except Exception:
-            pass
+    # Primer término inicializa el set (solo términos positivos)
+    for p in parts:
+        if p.startswith("-") or p.startswith("sort") or p.startswith("order"):
+            continue
+        ids = set(_term_ids(sess, p))
+        break
     if not ids:
         return []
-    # Términos adicionales: intersección; si el request falla, se omite (no vacía el set)
-    for p in parts[1:]:
-        if not ids:
-            break
-        try:
-            r = sess.get(_term_url(p), timeout=15)
-            if r.status_code == 200 and len(r.content) >= 4:
-                extra = {
-                    struct.unpack(">I", r.content[i * 4 : (i + 1) * 4])[0]
-                    for i in range(len(r.content) // 4)
-                }
-                ids.intersection_update(extra)
-            # Si falla o está vacío, omitimos este término
-        except Exception:
-            pass
+    # Términos adicionales positivos: intersección
+    for p in parts:
+        if p == parts[0]:
+            continue
+        if p.startswith("-") or p.startswith("sort") or p.startswith("order"):
+            continue
+        t = set(_term_ids(sess, p))
+        if t:
+            ids.intersection_update(t)
     if not ids:
         return []
     if sort_terms:
