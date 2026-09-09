@@ -95,8 +95,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False, # Desactivado por falta de herramientas en el sistema
-    upx=False,
-    upx_path='dev_tools/upx-5.0.2-win64', 
+    upx=True,
     upx_exclude=[
         'python3*.dll',
         'vcruntime*.dll', 
