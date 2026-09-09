@@ -5,6 +5,8 @@ Metadatos → baozimh.org  |  Catálogo API → baozimh.com  |  Imágenes → mi
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 import socket
 import sys
@@ -226,62 +228,143 @@ def fetch_catalog_api(
     return all_items
 
 
-def _fetch_chapters_apikk(sess_org: requests.Session, org_slug: str) -> list[dict]:
-    """Chapters from the live Astro frontend JSON: get data-mid, then apikk."""
+def _fetch_chapters_apikk(
+    sess_org: requests.Session, org_slug: str
+) -> tuple[Optional[str], list[dict]]:
+    """Chapters via la API nativa del frontend (baozimh.org) o el proxy apikk.
+
+    Devuelve (mid, chapters). El id REAL del capítulo es `ch.id` (p.ej. "747800");
+    `attributes.slug` solo es el orden (0,1,2…) y NO sirve para URLs.
+    """
+    mid = None
     try:
-        r = _get_raw(sess_org, f"{SITE_ORG}/manga/{org_slug}", SITE_ORG, retries=2)
-        if not r:
-            return []
-        html = r.decode("utf-8", errors="replace")
-        m = re.search(r'data-mid="(\d+)"', html)
-        if not m:
-            return []
-        mid = m.group(1)
-        api_url = f"{APIKK_HOST}/api/manga/get?mid={mid}"
-        r2 = _get_raw(
-            sess_org, api_url, SITE_ORG, retries=2
-        )
-        if not r2:
-            return []
-        data = r2.decode("utf-8", errors="replace")
+        raw = _get_raw(sess_org, f"{SITE_ORG}/manga/{org_slug}", SITE_ORG, retries=2)
+        if raw:
+            html = raw.decode("utf-8", errors="replace")
+            m = re.search(r'data-mid="(\d+)"', html)
+            if m:
+                mid = m.group(1)
+    except Exception:
+        pass
+    if not mid:
+        return None, []
+
+    payload = []
+    for base in (f"{SITE_ORG}/api/manga/get", f"{APIKK_HOST}/api/manga/get"):
+        raw = _get_raw(sess_org, f"{base}?mid={mid}&mode=all", SITE_ORG, retries=2)
+        if not raw:
+            continue
         try:
-            import json as _json
-
-            payload = _json.loads(data)
-            chapters_raw = (payload.get("data") or {}).get("chapters") or []
+            data = json.loads(raw.decode("utf-8", errors="replace"))
+            chapters_raw = (data.get("data") or {}).get("chapters") or []
+            if chapters_raw:
+                payload = chapters_raw
+                break
         except Exception:
-            return []
+            continue
+    if not payload:
+        return mid, []
 
-        chapters = []
-        seen: set = set()
-        for ch in chapters_raw:
-            attrs = ch.get("attributes") or {}
-            slug_i = str(attrs.get("slug") or "")
-            if not slug_i:
-                continue
-            key = slug_i.replace("-", "_")
-            if key in seen:
-                continue
-            seen.add(key)
-            chapters.append(
-                {
-                    "id": slug_i,
-                    "slug": slug_i,
-                    "key": key,
-                    "title": str(attrs.get("title") or slug_i),
-                }
-            )
+    chapters: list[dict] = []
+    seen: set = set()
+    for ch in payload:
+        cid = str(ch.get("id") or "")
+        attrs = ch.get("attributes") or {}
+        if not cid:
+            continue
+        if cid in seen:
+            continue
+        seen.add(cid)
+        chapters.append(
+            {
+                "id": cid,
+                "slug": cid,
+                "key": cid,
+                "mid": mid,
+                "title": str(attrs.get("title") or cid),
+            }
+        )
+    return mid, chapters
 
-        def _ord(c):
-            try:
-                return int((c.get("id", "") or "").split("-")[0])
-            except Exception:
-                return 0
 
-        chapters.sort(key=_ord)
-        return chapters
+# ── Imágenes (obfuscación J7r del reader apikk) ───────────────────────────────
+
+_IMG_STD = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+_IMG_CUSTOM = "_-9876543210abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_IMG_PREFIX, _IMG_SUFFIX, _IMG_M1, _IMG_M2 = "J7r", "nQ", "kD", "W4s"
+
+
+def _b64_decode_std(s: str) -> str:
+    t = s.replace("-", "+").replace("_", "/")
+    t += "=" * (-len(t) % 4)
+    return base64.b64decode(t).decode("utf-8", "replace")
+
+
+def _decode_apikk_images(blob: str) -> list[str]:
+    """Revierte el transform del decoder cliente (sin clave):
+    quitar J7r..nQ → trocear/reescribir segmentos → invertir bloques de 7 →
+    re-mapear alfabeto custom → base64url → JSON [{order, url}, …]."""
+    G = 7
+    body = blob[len(_IMG_PREFIX):len(blob) - len(_IMG_SUFFIX)]
+    pl = len(body) - len(_IMG_M1) - len(_IMG_M2)
+    a = pl // 3
+    b = (pl - a) // 2
+    c = pl - a - b
+    p1 = body[0:b]
+    p2 = body[b + len(_IMG_M1):b + len(_IMG_M1) + c]
+    p3 = body[b + len(_IMG_M1) + c + len(_IMG_M2):]
+    reordered = p3 + p1 + p2
+    sb = "".join(
+        (reordered[i:i + G][::-1] if (i // G) % 2 == 1 else reordered[i:i + G])
+        for i in range(0, len(reordered), G)
+    )
+    remapped = "".join(
+        _IMG_STD[_IMG_CUSTOM.index(ch)] if ch in _IMG_CUSTOM else ch for ch in sb
+    )
+    try:
+        arr = json.loads(_b64_decode_std(remapped))
     except Exception:
         return []
+    out: list[str] = []
+    for item in arr:
+        if isinstance(item, dict):
+            u = item.get("url")
+        elif isinstance(item, str):
+            u = item
+        else:
+            u = ""
+        if u and u not in out:
+            out.append(u)
+    return out
+
+
+def _fetch_chapter_images_apikk(
+    sess_org: requests.Session, mid: str, cid: str
+) -> list[str]:
+    """Páginas del capítulo vía la API oficial del reader (apikk) + decode."""
+    for host in (APIKK_HOST, "https://api-get-v3.mgsearcher.com"):
+        raw = _get_raw(
+            sess_org, f"{host}/api/v2/chapter/getinfo?m={mid}&c={cid}", SITE_ORG, retries=2
+        )
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw.decode("utf-8", errors="replace"))
+            info = (data.get("data") or {}).get("info") or {}
+            blob = info.get("images")
+            if isinstance(blob, dict):
+                blob = blob.get("images")
+            if not blob:
+                continue
+            rel = _decode_apikk_images(blob)
+            if not rel:
+                continue
+            line = info.get("line")
+            cdn = f"https://c-nd{line}-1.6wm.top" if line else "https://c-nd3-1.6wm.top"
+            return [u if u.startswith("http") else cdn + u for u in rel]
+        except Exception:
+            continue
+    return []
 
 
 # ── Search (baozimh.org) ──────────────────────────────────────────────────────
@@ -573,20 +656,27 @@ class DownloaderBaozimh(BaseDownloader):
         meta = _parse_series_meta_org(self._sess_org, slug) or dict(item)
         mirror = self._mirror or COM_MIRRORS[0]
         title = meta.get("title", item.get("title", ""))
-        chapters = _fetch_chapters_apikk(self._sess_org, slug)
-        if not chapters:
-            com_slug = _resolve_com_slug(self._sess_com, mirror, slug, title)
-            chapters = _get_chapter_list_com(self._sess_com, mirror, com_slug)
-            if not chapters and com_slug != slug:
-                chapters = _get_chapter_list_com(self._sess_com, mirror, slug)
-                if chapters:
-                    com_slug = slug
-            meta["com_slug"] = com_slug
-        else:
+        mid, chapters = _fetch_chapters_apikk(self._sess_org, slug)
+        if mid and chapters:
+            meta["mid"] = mid
             meta["com_slug"] = slug
+            return meta, chapters
+        com_slug = _resolve_com_slug(self._sess_com, mirror, slug, title)
+        chapters = _get_chapter_list_com(self._sess_com, mirror, com_slug)
+        if not chapters and com_slug != slug:
+            chapters = _get_chapter_list_com(self._sess_com, mirror, slug)
+            if chapters:
+                com_slug = slug
+        meta["com_slug"] = com_slug
         return meta, chapters
 
     def get_chapter_images(self, chapter: dict, series: dict) -> list[str]:
+        mid = chapter.get("mid") or series.get("mid")
+        cid = chapter.get("key") or chapter.get("slug") or chapter.get("id", "")
+        if mid and cid:
+            urls = _fetch_chapter_images_apikk(self._sess_org, mid, cid)
+            if urls:
+                return urls
         com_slug = series.get("com_slug", series.get("slug", series.get("id", "")))
         key = chapter.get("key", "")
         if not key:
@@ -597,4 +687,6 @@ class DownloaderBaozimh(BaseDownloader):
         return _get_raw(self._sess_com, url, referer or self._mirror or SITE_ORG)
 
     def get_referer(self, chapter: dict, series: dict) -> str:
+        if series.get("mid"):
+            return SITE_ORG
         return self._mirror or COM_MIRRORS[0]
