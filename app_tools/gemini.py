@@ -104,6 +104,9 @@ class GeminiProcessor(BaseAIProcessor):
         super().__init__(model_name="Gemini")
         self._failed_models: Set[str] = set()
         self._exhausted_keys: Set[str] = set()
+        # Los workers del ThreadPoolExecutor mutan modelo/key y estos sets de forma
+        # concurrente; un RLock serializa el fallback sin bloquear las lecturas.
+        self._cfg_lock = threading.RLock()
 
     def _get_current_limits(self) -> Dict[str, int]:
         model = Config.GEMINI_MODEL.lower()
@@ -214,6 +217,10 @@ class GeminiProcessor(BaseAIProcessor):
 
     def _try_switch_model(self) -> bool:
         """Intenta cambiar a otro modelo disponible si el actual falla."""
+        with self._cfg_lock:
+            return self._switch_model_locked()
+
+    def _switch_model_locked(self) -> bool:
         current = Config.GEMINI_MODEL.lower()
         self._failed_models.add(current)
         
@@ -235,6 +242,10 @@ class GeminiProcessor(BaseAIProcessor):
         return False
 
     def _rotate_key(self) -> bool:
+        with self._cfg_lock:
+            return self._rotate_key_locked()
+
+    def _rotate_key_locked(self) -> bool:
         # Marcar la key actual como "agotada" antes de cambiar
         self._exhausted_keys.add(Config.GEMINI_API_KEY)
         
@@ -267,9 +278,10 @@ class GeminiProcessor(BaseAIProcessor):
 
     def _reset_model_to_default(self):
         """Resetea el modelo al preferido al cambiar de API Key."""
-        default_model = "gemini-3.1-flash-lite"
-        self._report_status(f"Nueva Key: Reseteando modelo a {default_model}")
-        Config.GEMINI_MODEL = default_model
+        with self._cfg_lock:
+            default_model = "gemini-3.1-flash-lite"
+            self._report_status(f"Nueva Key: Reseteando modelo a {default_model}")
+            Config.GEMINI_MODEL = default_model
 
     @staticmethod
     def _build_thinking_config(model: str) -> Optional["types.ThinkingConfig"]:

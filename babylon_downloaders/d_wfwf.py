@@ -40,13 +40,11 @@ RETRY = 1.5
 
 HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) "
+        "Gecko/20100101 Firefox/125.0"
     ),
-    "Referer": BASE_URL,
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
 _UI_PATHS = ("/images/", "/bann/", "/img/", "/icons/", "/logo", "/thumb")
@@ -75,40 +73,47 @@ _SITE_KEYWORDS = ("toon=", "wfwf", "lng", "ing", "webtoon", "웹툰", "만화", 
 
 def _is_valid_wfwf_response(text: str) -> bool:
     lower = text.lower()
-    return any(kw in lower for kw in _SITE_KEYWORDS)
+    # Debe tener links de series (toon=) y keywords del sitio; rechaza páginas de Telegram/CAPTCHA
+    return any(kw in lower for kw in _SITE_KEYWORDS) and ("toon=" in lower or "num=" in lower)
 
 
 def _detect_base_url(sess: requests.Session) -> str:
     global BASE_URL
 
-    def _try(candidate: str) -> str:
+    def _try(candidate: str) -> tuple[str, int]:
         try:
             r = sess.get(candidate + "ing", timeout=6)
             if r.status_code == 200 and _is_valid_wfwf_response(r.text):
-                return candidate
+                n_toon = len(re.findall(r"[?&]toon=\d+", r.text))
+                if n_toon:
+                    return candidate, n_toon
             r2 = sess.get(candidate, timeout=5)
             if r2.status_code == 200 and _is_valid_wfwf_response(r2.text):
-                return candidate
+                n_toon = len(re.findall(r"[?&]toon=\d+", r2.text))
+                if n_toon:
+                    return candidate, n_toon
         except Exception:
             pass
-        return ""
+        return "", 0
 
     priority = _BASE_CANDIDATES[:20]
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(_try, priority))
 
-    for r in results:
-        if r:
-            BASE_URL = r
-            sess.headers.update({"Referer": BASE_URL})
-            return r
+    valid = [r for r in results if r[0]]
+    if valid:
+        valid.sort(key=lambda x: x[1], reverse=True)
+        base, n_toon = valid[0]
+        BASE_URL = base
+        sess.headers.update({"Referer": BASE_URL})
+        return base
 
     for candidate in _BASE_CANDIDATES[20:]:
-        found = _try(candidate)
-        if found:
-            BASE_URL = found
+        cand, n_toon = _try(candidate)
+        if cand:
+            BASE_URL = cand
             sess.headers.update({"Referer": BASE_URL})
-            return found
+            return cand
     return BASE_URL
 
 

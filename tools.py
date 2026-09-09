@@ -254,7 +254,9 @@ class ToolsManager(QObject):
         self.input_path: Optional[str] = None
         self.output_directory: Optional[str] = None
         self.image_to_category: Optional[Dict[int, str]] = None
-        self.cancel_event: Optional[threading.Event] = None
+        self.gemini_cancel_event: Optional[threading.Event] = None
+        self.mistral_cancel_event: Optional[threading.Event] = None
+        self.haruneko_cancel_event: Optional[threading.Event] = None
         self.download_state = "idle"
         self.processing_thread: Optional[threading.Thread] = None
         self.active_threads: List[Any] = []
@@ -2214,13 +2216,18 @@ class ToolsManager(QObject):
 
     def start_download(self):
         """Inicia el proceso de descarga/configuración con soporte para cancelación."""
-        self.cancel_event = threading.Event()
+        if self.download_in_progress:
+            logging.info("[HARUNEKO] Descarga en curso: se ignora el nuevo intento.")
+            return
+        self.haruneko_cancel_event = threading.Event()
         if self.install_button:
             self.install_button.setEnabled(False)
             self.install_button.setText("Descargando...")
         self.download_in_progress = True
         self.download_state = "downloading"
-        self.download_thread = DownloadThread(self.haruneko_manager, self.cancel_event)
+        self.download_thread = DownloadThread(
+            self.haruneko_manager, self.haruneko_cancel_event
+        )
         self.download_thread.finished.connect(self.on_download_finished)
         self.download_thread.error.connect(self.on_download_error)
         self.download_thread.start()
@@ -2364,7 +2371,7 @@ class ToolsManager(QObject):
             self.selected_files_for_processing = []
             self.input_path = None
 
-            self.cancel_event = threading.Event()
+            cancel_event = self.gemini_cancel_event = threading.Event()
 
             def status_updater(message: str):
                 self.status_update_signal.emit(message)
@@ -2387,14 +2394,14 @@ class ToolsManager(QObject):
                         self._process_selected_files_gemini(
                             current_files,
                             current_output,
-                            self.cancel_event,
+                            cancel_event,
                             on_finished_callback,
                         )
                     elif current_input:
                         cast(Any, self.gemini_processor).start_processing_in_background(
                             current_input,
                             current_output,
-                            self.cancel_event,
+                            cancel_event,
                             callback=on_finished_callback,
                         )
 
@@ -2426,8 +2433,8 @@ class ToolsManager(QObject):
 
     def _cancel_gemini_processing(self):
         """Cancela el procesamiento en curso de Gemini."""
-        if hasattr(self, "cancel_event") and self.cancel_event:
-            self.cancel_event.set()
+        if self.gemini_cancel_event is not None:
+            self.gemini_cancel_event.set()
             if hasattr(self, "gemini_cancel_button"):
                 self.gemini_cancel_button.setEnabled(False)
             # Removed QMessageBox to prevent nested dialogs freezing the UI thread
@@ -2464,7 +2471,7 @@ class ToolsManager(QObject):
             self.selected_files_for_processing = []
             self.input_path = None
 
-            self.cancel_event = threading.Event()
+            cancel_event = self.mistral_cancel_event = threading.Event()
 
             def processing_target_mistral():
                 try:
@@ -2476,7 +2483,7 @@ class ToolsManager(QObject):
                         self._process_selected_files_mistral(
                             current_files,
                             current_output,
-                            self.cancel_event,
+                            cancel_event,
                             on_finished,
                         )
                     elif current_input:
@@ -2485,7 +2492,7 @@ class ToolsManager(QObject):
                         ).start_processing_in_background(
                             current_input,
                             current_output,
-                            self.cancel_event,
+                            cancel_event,
                             callback=on_finished,
                         )
                 except Exception as e:
@@ -2556,8 +2563,8 @@ class ToolsManager(QObject):
 
     def _cancel_mistral_processing(self):
         """Cancela el procesamiento en curso de Mistral."""
-        if hasattr(self, "cancel_event") and self.cancel_event:
-            self.cancel_event.set()
+        if self.mistral_cancel_event is not None:
+            self.mistral_cancel_event.set()
             QMessageBox.information(
                 self.app,
                 "Procesamiento Cancelado",

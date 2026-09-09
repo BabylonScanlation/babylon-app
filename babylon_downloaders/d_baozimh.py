@@ -6,7 +6,9 @@ Metadatos → baozimh.org  |  Catálogo API → baozimh.com  |  Imágenes → mi
 from __future__ import annotations
 
 import re
+import socket
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
@@ -17,20 +19,23 @@ from bs4 import BeautifulSoup
 from common import CFG, BaseDownloader
 
 SITE_ORG = "https://baozimh.org"
+APIKK_HOST = "https://v2.apikk.top"
+
+socket.setdefaulttimeout(8)
 COM_MIRRORS = [
-    "https://www.twmanga.com",
-    "https://www.baozimh.com",
-    "https://baozimh.com",
     "https://www.webmota.com",
     "https://cn.webmota.com",
     "https://tw.webmota.com",
     "https://www.kukuc.co",
     "https://cn.kukuc.co",
+    "https://www.baozimh.com",
+    "https://baozimh.com",
+    "https://www.twmanga.com",
     "https://www.czmanga.com",
 ]
-TIMEOUT = (15, 45)
-RETRY_DELAY = 2.0
-REQUEST_DELAY = 0.4
+TIMEOUT = (8, 20)
+RETRY_DELAY = 1.5
+REQUEST_DELAY = 0.3
 
 _BASE_HEADERS = {
     "User-Agent": (
@@ -39,7 +44,7 @@ _BASE_HEADERS = {
         "Chrome/124.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Encoding": "gzip, deflate",
     "Accept": "text/html,application/xhtml+xml,application/xml;"
     "q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Connection": "keep-alive",
@@ -98,29 +103,22 @@ def _make_session(base_url: str) -> requests.Session:
 
 
 def _find_active_mirror(sess_com: requests.Session) -> str:
-    """Try all mirrors in parallel; return first that serves comic pages."""
+    """Try mirrors in priority order; return first that serves comic pages."""
 
-    def _try(mirror: str) -> str:
+    s = requests.Session()
+    s.headers.update(_BASE_HEADERS)
+
+    for mirror in COM_MIRRORS:
+        s.headers["Referer"] = mirror + "/"
         try:
-            s = requests.Session()
-            s.headers.update(_BASE_HEADERS)
-            s.headers["Referer"] = mirror + "/"
             r = s.get(mirror + "/", timeout=5)
             if r.status_code not in (200, 301, 302):
-                return ""
-            # Just check homepage - if it responds we can use it
+                continue
             if r.status_code == 200 and len(r.content) > 500:
                 sess_com.headers.update(s.headers)
                 return mirror
         except Exception:
-            pass
-        return ""
-
-    with ThreadPoolExecutor(max_workers=len(COM_MIRRORS)) as pool:
-        results = list(pool.map(_try, COM_MIRRORS))
-    for r in results:
-        if r:
-            return r
+            continue
     return COM_MIRRORS[0]  # fallback to first
 
 
@@ -226,6 +224,64 @@ def fetch_catalog_api(
                     _add(items)
         page += workers
     return all_items
+
+
+def _fetch_chapters_apikk(sess_org: requests.Session, org_slug: str) -> list[dict]:
+    """Chapters from the live Astro frontend JSON: get data-mid, then apikk."""
+    try:
+        r = _get_raw(sess_org, f"{SITE_ORG}/manga/{org_slug}", SITE_ORG, retries=2)
+        if not r:
+            return []
+        html = r.decode("utf-8", errors="replace")
+        m = re.search(r'data-mid="(\d+)"', html)
+        if not m:
+            return []
+        mid = m.group(1)
+        api_url = f"{APIKK_HOST}/api/manga/get?mid={mid}"
+        r2 = _get_raw(
+            sess_org, api_url, SITE_ORG, retries=2
+        )
+        if not r2:
+            return []
+        data = r2.decode("utf-8", errors="replace")
+        try:
+            import json as _json
+
+            payload = _json.loads(data)
+            chapters_raw = (payload.get("data") or {}).get("chapters") or []
+        except Exception:
+            return []
+
+        chapters = []
+        seen: set = set()
+        for ch in chapters_raw:
+            attrs = ch.get("attributes") or {}
+            slug_i = str(attrs.get("slug") or "")
+            if not slug_i:
+                continue
+            key = slug_i.replace("-", "_")
+            if key in seen:
+                continue
+            seen.add(key)
+            chapters.append(
+                {
+                    "id": slug_i,
+                    "slug": slug_i,
+                    "key": key,
+                    "title": str(attrs.get("title") or slug_i),
+                }
+            )
+
+        def _ord(c):
+            try:
+                return int((c.get("id", "") or "").split("-")[0])
+            except Exception:
+                return 0
+
+        chapters.sort(key=_ord)
+        return chapters
+    except Exception:
+        return []
 
 
 # ── Search (baozimh.org) ──────────────────────────────────────────────────────
@@ -392,25 +448,12 @@ def _fetch_chapters_api(
 def _get_chapter_list_com(
     sess_com: requests.Session, mirror: str, com_slug: str
 ) -> list[dict]:
-    raw = _get_raw(sess_com, f"{mirror}/comic/{com_slug}", mirror + "/")
+    raw = _get_raw(sess_com, f"{mirror}/comic/{com_slug}", mirror + "/", retries=1)
     if not raw:
         return []
     html = raw.decode("utf-8", errors="replace")
     chapters = _parse_com_chapters(html, com_slug)
     if not chapters:
-        # Try alternate mirrors for HTML chapters
-        for alt in COM_MIRRORS:
-            if alt == mirror:
-                continue
-            raw2 = _get_raw(sess_com, f"{alt}/comic/{com_slug}", alt + "/")
-            if raw2:
-                chapters = _parse_com_chapters(
-                    raw2.decode("utf-8", errors="replace"), com_slug
-                )
-                if chapters:
-                    break
-    if not chapters:
-        # Try JSON API fallback
         chapters = _fetch_chapters_api(sess_com, mirror, com_slug)
     return chapters
 
@@ -465,8 +508,27 @@ class DownloaderBaozimh(BaseDownloader):
         self._sess_com = requests.Session()
         self._sess_com.headers.update(_BASE_HEADERS)
         print("  Buscando mirror activo…", end=" ", flush=True)
-        self._mirror = _find_active_mirror(self._sess_com)
+        self._mirror = self._find_mirror_deadline()
         print(self._mirror or "ninguno")
+
+    def _find_mirror_deadline(self, seconds: int = 8) -> Optional[str]:
+        """Mirror probe with a hard wall-clock deadline so init never hangs."""
+
+        import queue as _queue
+
+        q: "_queue.Queue" = _queue.Queue(maxsize=1)
+
+        def _probe():
+            try:
+                q.put(_find_active_mirror(self._sess_com))
+            except Exception:
+                pass
+
+        threading.Thread(target=_probe, daemon=True).start()
+        try:
+            return q.get(timeout=seconds)
+        except _queue.Empty:
+            return None
 
     def search(self, query: str) -> list[dict]:
         return _search_org(self._sess_org, query)
@@ -475,21 +537,53 @@ class DownloaderBaozimh(BaseDownloader):
         self, type_: str = "all", region: str = "all", state: str = "all"
     ) -> list[dict]:
         mirror = self._mirror or COM_MIRRORS[0]
-        return fetch_catalog_api(self._sess_com, mirror, type_, region, state)
+        return fetch_catalog_api(self._sess_com, mirror, type_, region, state, workers=4)
+
+    def get_catalog_page(
+        self, page: int = 1, page_size: int = 20, **kwargs
+    ) -> tuple[list[dict], bool]:
+        mirror = self._mirror or COM_MIRRORS[0]
+        typ = kwargs.get("type_", "all")
+        region = kwargs.get("region", "all")
+        state = kwargs.get("state", "all")
+        items = self._api_page_deadline(mirror, typ, region, state, page)
+        if not items and page > 1:
+            items = self._api_page_deadline(mirror, typ, region, state, page)
+        return items[:page_size], len(items) >= 36
+
+    def _api_page_deadline(self, mirror, typ, region, state, page, seconds=15):
+        import queue as _queue
+
+        q: "_queue.Queue" = _queue.Queue(maxsize=1)
+
+        def _fetch():
+            try:
+                q.put(_fetch_api_page(self._sess_com, mirror, typ, region, state, page))
+            except Exception:
+                pass
+
+        threading.Thread(target=_fetch, daemon=True).start()
+        try:
+            return q.get(timeout=seconds) or []
+        except _queue.Empty:
+            return []
 
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
         slug = item.get("slug") or item.get("id", "")
         meta = _parse_series_meta_org(self._sess_org, slug) or dict(item)
         mirror = self._mirror or COM_MIRRORS[0]
         title = meta.get("title", item.get("title", ""))
-        com_slug = _resolve_com_slug(self._sess_com, mirror, slug, title)
-        chapters = _get_chapter_list_com(self._sess_com, mirror, com_slug)
-        # If no chapters found, try the original slug directly
-        if not chapters and com_slug != slug:
-            chapters = _get_chapter_list_com(self._sess_com, mirror, slug)
-            if chapters:
-                com_slug = slug
-        meta["com_slug"] = com_slug
+        chapters = _fetch_chapters_apikk(self._sess_org, slug)
+        if not chapters:
+            com_slug = _resolve_com_slug(self._sess_com, mirror, slug, title)
+            chapters = _get_chapter_list_com(self._sess_com, mirror, com_slug)
+            if not chapters and com_slug != slug:
+                chapters = _get_chapter_list_com(self._sess_com, mirror, slug)
+                if chapters:
+                    com_slug = slug
+            meta["com_slug"] = com_slug
+        else:
+            meta["com_slug"] = slug
         return meta, chapters
 
     def get_chapter_images(self, chapter: dict, series: dict) -> list[str]:

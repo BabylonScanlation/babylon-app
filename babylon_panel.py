@@ -324,6 +324,21 @@ _catalog_cache: Dict[str, List[Dict]] = {}
 # Última carpeta de destino — persiste entre series durante la sesión
 _last_dest_dir: str = os.path.join(os.path.expanduser("~"), "Downloads")
 
+# Sincronización: _dl_cache_lock evita instanciar dos veces el mismo downloader;
+# _site_lock serializa el acceso al downloader compartido por sitio (su estado
+# interno, p.ej. _cat_buf, no es thread-safe).
+_dl_cache_lock = threading.Lock()
+_site_locks: Dict[str, threading.Lock] = {}
+_site_locks_guard = threading.Lock()
+
+
+def _site_lock(site_type: str) -> threading.Lock:
+    with _site_locks_guard:
+        lk = _site_locks.get(site_type)
+        if lk is None:
+            lk = _site_locks[site_type] = threading.Lock()
+        return lk
+
 
 def _load_mod(site_type: str) -> Any:
     if site_type in _mod_cache:
@@ -343,14 +358,15 @@ def _load_mod(site_type: str) -> Any:
 
 
 def get_dl(site_type: str) -> Any:
-    if site_type not in _dl_cache:
-        mod = _load_mod(site_type)
-        _, class_name = _DOWNLOADER_MAP[site_type]
-        cls = getattr(mod, class_name)
-        logging.info(f"[Babylon] Inicializando {class_name}…")
-        _dl_cache[site_type] = cls()
-        logging.info(f"[Babylon] {class_name} lista.")
-    return _dl_cache[site_type]
+    with _dl_cache_lock:
+        if site_type not in _dl_cache:
+            mod = _load_mod(site_type)
+            _, class_name = _DOWNLOADER_MAP[site_type]
+            cls = getattr(mod, class_name)
+            logging.info(f"[Babylon] Inicializando {class_name}…")
+            _dl_cache[site_type] = cls()
+            logging.info(f"[Babylon] {class_name} lista.")
+        return _dl_cache[site_type]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -421,6 +437,21 @@ def get_series_url(site_type: str, item: Dict) -> str:
 
 
 def search_site(
+    site: Dict[str, str],
+    query: str,
+    filters: Optional[Dict[str, str]] = None,
+    page: int = 1,
+) -> Tuple[List[Dict], bool, str]:
+    """
+    Envuelve el acceso con un lock por sitio: el downloader se comparte entre
+    workers y su estado interno (p.ej. _cat_buf) no es thread-safe, así que
+    búsquedas/catálogos del mismo sitio se serializan.
+    """
+    with _site_lock(site["type"]):
+        return _search_site_impl(site, query, filters, page)
+
+
+def _search_site_impl(
     site: Dict[str, str],
     query: str,
     filters: Optional[Dict[str, str]] = None,
@@ -901,6 +932,10 @@ class BabylonSeriesWorker(QRunnable):
         self.signals = _SeriesSignals()
 
     def run(self) -> None:
+        with _site_lock(self.site_type):
+            self._run_impl()
+
+    def _run_impl(self) -> None:
         try:
             dl = get_dl(self.site_type)
             raw_item = self.item.get("_raw") or self.item
@@ -953,6 +988,10 @@ class BabylonDownloadWorker(QRunnable):
         self.signals = _DownloadSignals()
 
     def run(self) -> None:
+        with _site_lock(self.site_type):
+            self._run_impl()
+
+    def _run_impl(self) -> None:
         try:
             dl = get_dl(self.site_type)
         except Exception as e:
@@ -1024,6 +1063,10 @@ class BabylonDynamicOptsWorker(QRunnable):
         self.signals = _DynOptsSignals()
 
     def run(self) -> None:
+        with _site_lock(self.site["type"]):
+            self._run_impl()
+
+    def _run_impl(self) -> None:
         t = self.site["type"]
         try:
             dl = get_dl(t)

@@ -3,6 +3,25 @@
 block_cipher = None
 
 import os
+import subprocess
+
+# UPX: PyInstaller 6.x ignora `upx_path` en EXE(). El binario se localiza
+# mediante CONF['upx_dir'] (solo se puede pasar por CLI `--upx-dir`).
+# Lo inyectamos desde el spec para que `upx=True` funcione sin flags.
+from PyInstaller.config import CONF
+
+_upx_dir = os.path.join(SPECPATH, 'dev_tools', 'upx-5.2.0-win64')
+try:
+    subprocess.check_output(
+        [os.path.join(_upx_dir, 'upx'), '-V'],
+        stdin=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        encoding='utf-8',
+    )
+    CONF['upx_dir'] = _upx_dir
+    CONF['upx_available'] = True
+except Exception:
+    pass
 
 
 def _walk_datas(src_root, dst_root, skip_dirs=()):

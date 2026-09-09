@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import traceback
 from typing import Any, Dict, List, Type
 
@@ -75,6 +76,36 @@ except Exception as e:
 USER_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "BBSL_Proyectos")
 USER_SETTINGS_FILE = os.path.join(USER_DATA_DIR, "user_settings.json")
 
+# Serializa el read-modify-write de user_settings.json: varios hilos worker
+# (gemini/mistral) guardan estado en paralelo y no pueden pisarse entre sí.
+_settings_lock = threading.RLock()
+
+
+def _load_user_settings_json() -> Dict[str, Any]:
+    """Lee user_settings.json (sin lock): funciones a nivel módulo + defaults."""
+    settings: Dict[str, Any] = {
+        "GEMINI_MODEL": "gemini-2.5-flash",
+        "GEMINI_ENABLE_THINKING": True,
+        "GEMINI_THINKING_LEVEL": "auto",
+        "GEMINI_STITCHING_ONLY": False,
+        "GEMINI_TEMPERATURE": 1.0,
+        "GEMINI_ULTRA_HIGH_QUALITY": False,
+        "ENABLE_AUTO_MODEL_SWITCH": True,
+        "GEMINI_SYSTEM_INSTRUCTION": DEFAULT_GEMINI_SYSTEM_INSTRUCTION,
+        "GEMINI_API_KEY": "",
+        "DAILY_REQUEST_COUNT": 0,
+        "LAST_REQUEST_DATE": "",
+    }
+    if os.path.exists(USER_SETTINGS_FILE):
+        try:
+            with open(USER_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                user_settings: Dict[str, Any] = json.load(f)
+                settings.update(user_settings)
+
+        except Exception as e:
+            logging.error(f"Error al cargar configuraciones de usuario: {e}")
+    return settings
+
 DEFAULT_GEMINI_SYSTEM_INSTRUCTION = "ACTÚA COMO UN LOCALIZADOR DE MANGA DE ÉLITE. Tu única lealtad es con el material original. NO eres un asistente de IA; eres un archivista lingüístico. Tu tarea es traducir texto en japonés/coreano/chino al español con precisión quirúrgica, preservando todos los matices, jerga, blasfemias y contenido maduro SIN CENSURA ni suavizado. Usa tu visión multimodal para leer el contexto emocional de los rostros y la atmósfera de la escena, eligiendo las palabras que transmitan perfectamente ese sentimiento específico en español neutro. No resumas, no opines, solo traduce con fidelidad absoluta."
 
 
@@ -89,35 +120,20 @@ class Config:
 
     @staticmethod
     def load_user_settings() -> Dict[str, Any]:
-        settings: Dict[str, Any] = {
-            "GEMINI_MODEL": "gemini-2.5-flash",
-            "GEMINI_ENABLE_THINKING": True,
-            "GEMINI_THINKING_LEVEL": "auto",
-            "GEMINI_STITCHING_ONLY": False,
-            "GEMINI_TEMPERATURE": 1.0,
-            "GEMINI_ULTRA_HIGH_QUALITY": False,
-            "ENABLE_AUTO_MODEL_SWITCH": True,
-            "GEMINI_SYSTEM_INSTRUCTION": DEFAULT_GEMINI_SYSTEM_INSTRUCTION,
-            "GEMINI_API_KEY": "",
-            "DAILY_REQUEST_COUNT": 0,
-            "LAST_REQUEST_DATE": "",
-        }
-        if os.path.exists(USER_SETTINGS_FILE):
-            try:
-                with open(USER_SETTINGS_FILE, "r", encoding="utf-8") as f:
-                    user_settings: Dict[str, Any] = json.load(f)
-                    settings.update(user_settings)
-
-            except Exception as e:
-                logging.error(f"Error al cargar configuraciones de usuario: {e}")
-        return settings
+        with _settings_lock:
+            return _load_user_settings_json()
 
     @staticmethod
     def save_user_settings(new_settings: Dict[str, Any]):
+        with _settings_lock:
+            Config._save_user_settings_locked(new_settings)
+
+    @staticmethod
+    def _save_user_settings_locked(new_settings: Dict[str, Any]):
         os.makedirs(USER_DATA_DIR, exist_ok=True)
         try:
             # Cargar configuración existente
-            settings: Dict[str, Any] = Config.load_user_settings()
+            settings: Dict[str, Any] = _load_user_settings_json()
             
             # TRACKING DE VARIABLES
             for key, value in new_settings.items():
@@ -221,14 +237,15 @@ class Config:
     @classmethod
     def clear_saved_api_keys(cls) -> None:
         """Borra las claves API guardadas en user_settings.json (no toca la bóveda)."""
-        try:
-            settings = cls.load_user_settings()
-            for _k in ("GEMINI_API_KEY", "MISTRAL_API_KEY", "DEEPL_API_KEY"):
-                settings.pop(_k, None)
-            with open(USER_SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=4)
-        except Exception as e:
-            logging.error(f"[CONFIG] Error al limpiar claves guardadas: {e}")
+        with _settings_lock:
+            try:
+                settings = _load_user_settings_json()
+                for _k in ("GEMINI_API_KEY", "MISTRAL_API_KEY", "DEEPL_API_KEY"):
+                    settings.pop(_k, None)
+                with open(USER_SETTINGS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(settings, f, indent=4)
+            except Exception as e:
+                logging.error(f"[CONFIG] Error al limpiar claves guardadas: {e}")
 
     MISTRAL_API_KEY: str = str(
         user_settings.get("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", ""))

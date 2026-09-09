@@ -174,7 +174,8 @@ def _chapters_from_html(soup, manga_slug=""):
 
     for li in soup.select(
         "li.wp-manga-chapter, .chapter-list li, .chapters-list li,"
-        " .listing-chapters_wrap li"
+        " .listing-chapters_wrap li, .listing-chapters_main li,"
+        " li.chapter-loveYou, ul.main.version-chap li"
     ):
         a = li.select_one("a")
         if not a or not a.get("href"):

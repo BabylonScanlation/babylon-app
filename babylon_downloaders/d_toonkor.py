@@ -53,6 +53,13 @@ except ImportError:
                 def first(self):
                     return _ElemWrap(self._n[0]) if self._n else _ElemWrap(None)
 
+                def __iter__(self):
+                    for n in self._n:
+                        yield _ElemWrap(n)
+
+                def __len__(self):
+                    return len(self._n)
+
             return _Wrap(self._s.select(sel))
 
     class _ElemWrap:
@@ -75,6 +82,13 @@ except ImportError:
                 @property
                 def first(self):
                     return _ElemWrap(self._n[0] if self._n else None)
+
+                def __iter__(self):
+                    for n in self._n:
+                        yield _ElemWrap(n)
+
+                def __len__(self):
+                    return len(self._n)
 
             return _W(self._n.select(sel) if self._n else [])
 
