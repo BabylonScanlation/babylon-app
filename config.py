@@ -207,7 +207,8 @@ class Config:
             return cls.GEMINI_API_KEYS[0]
 
     # --- Helpers para guardar/borrar claves desde la UI (de forma consistente) ---
-    # Actualizan la variable, la lista de rotación, los ajustes y la bóveda DPAPI.
+    # Actualizan la variable, la lista de rotación y los ajustes (user_settings.json).
+    # Las claves viven en .env / user_settings; no hay bóveda cifrada.
 
     @classmethod
     def set_gemini_api_key(cls, key: str) -> None:
@@ -215,24 +216,18 @@ class Config:
         cls.GEMINI_API_KEY = key
         cls.GEMINI_API_KEYS = [k.strip() for k in key.split(",") if k.strip()]
         cls.save_user_settings({"GEMINI_API_KEY": key})
-        from app_tools.secrets_store import set_user_key_secret
-        set_user_key_secret("GEMINI_API_KEY", key)
 
     @classmethod
     def set_mistral_api_key(cls, key: str) -> None:
         key = (key or "").strip()
         cls.MISTRAL_API_KEY = key
         cls.save_user_settings({"MISTRAL_API_KEY": key})
-        from app_tools.secrets_store import set_user_key_secret
-        set_user_key_secret("MISTRAL_API_KEY", key)
 
     @classmethod
     def set_deepl_api_key(cls, key: str) -> None:
         key = (key or "").strip()
         cls.DEEPL_API_KEY = key
         cls.save_user_settings({"DEEPL_API_KEY": key})
-        from app_tools.secrets_store import set_user_key_secret
-        set_user_key_secret("DEEPL_API_KEY", key)
 
     @classmethod
     def clear_saved_api_keys(cls) -> None:

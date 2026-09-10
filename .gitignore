@@ -1,4 +1,4 @@
-# Archivos de Python generados
+﻿# Archivos de Python generados
 __pycache__/
 *.pyc
 build/
@@ -11,9 +11,8 @@ dev_tools/
 # Archivos de log
 *.log
 
-# Archivos específicos del proyecto que no deben subirse
+# Archivos especÃ­ficos del proyecto que no deben subirse
 gemini.md
 .env
 cf_clearance.json
-BBSL/secrets.bin
 app_tools/python_ocr/

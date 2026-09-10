@@ -233,17 +233,11 @@ class MiscOptions:
         return self.bg_type_combo.currentText()
 
 
-class SecurityOptions:
-    """Gestión de las claves guardadas en este PC (bóveda DPAPI, sin passphrase)."""
+class CloudflareOptions:
+    """Desbloqueo automático de Cloudflare para 18mh.org / bakamh.com (sin claves)."""
 
     def __init__(self, controller: 'OptionsController'):
         self.controller = controller
-        self.status_label = QLabel("Estado: pendiente")
-        self.status_label.setWordWrap(True)
-        self.forget_btn = QPushButton("Borrar claves guardadas de este PC")
-        self.forget_btn.clicked.connect(
-            lambda checked=False: self.controller.forget_secrets()
-        )
         from babylon_downloaders.cf_harvest import auto_solve_enabled, set_auto_solve
         self.cf_cb = QCheckBox("Desbloqueo automático de Cloudflare (18mh.org, bakamh.com)")
         self.cf_cb.setToolTip(
@@ -258,32 +252,20 @@ class SecurityOptions:
         self.cf_status_lbl.setStyleSheet("color:#999;background:transparent;border:none;")
 
     def create_page(self) -> QWidget:
-        """Crea la página de configuración de seguridad."""
+        """Crea la página de configuración de Cloudflare."""
         page = QWidget()
         layout = QVBoxLayout(page)
-        group = QGroupBox("CLAVES DE ESTE PC (WINDOWS DPAPI)")
-        group.setStyleSheet("background-color: rgba(30, 30, 30, 100);")
-        inner = QVBoxLayout(group)
-        info = QLabel("Las claves se guardan cifradas con tu cuenta de Windows y se cargan "
-                      "solas en cada apertura. No se pide ninguna contraseña.")
-        info.setWordWrap(True)
-        inner.addWidget(info)
-        inner.addWidget(self.status_label)
-        inner.addWidget(self.forget_btn)
-        layout.addWidget(group)
-
         cf_group = QGroupBox("CLOUDFLARE (18MH.ORG / BAKAMH.COM)")
         cf_group.setStyleSheet("background-color: rgba(30, 30, 30, 100);")
         cf_inner = QVBoxLayout(cf_group)
         cf_inner.addWidget(self.cf_cb)
         cf_inner.addWidget(self.cf_status_lbl)
         layout.addWidget(cf_group)
-
         layout.addStretch()
         return page
 
     def refresh(self):
-        """Muestra el estado REAL de las claves guardadas en este PC."""
+        """Actualiza el estado de Camoufox."""
         from babylon_downloaders.cf_harvest import auto_solve_enabled, camoufox_status
         self.cf_cb.setChecked(auto_solve_enabled())
         ok, msg = camoufox_status()
@@ -293,38 +275,6 @@ class SecurityOptions:
             self.cf_status_lbl.setText("Camoufox: FALTA → " + msg + "\n"
                                        "Mientras falte, el desbloqueo automático no podrá "
                                        "resolver el sitio (solo verás las instrucciones manuales).")
-        from app_tools import secrets_store
-        from config import Config
-        vault = secrets_store.load_vault()
-        active = []
-        if vault.get("GEMINI_API_KEY"):
-            active.append("Gemini")
-        if vault.get("MISTRAL_API_KEY"):
-            active.append("Mistral")
-        if vault.get("DEEPL_API_KEY"):
-            active.append("DeepL")
-        if vault.get("PICACOMIC_EMAIL"):
-            active.append("Picacomic")
-        settings = Config.load_user_settings()
-        for name, label in (("GEMINI_API_KEY", "Gemini"),
-                            ("MISTRAL_API_KEY", "Mistral"),
-                            ("DEEPL_API_KEY", "DeepL")):
-            if str(settings.get(name, "")).strip() and label not in active:
-                active.append(label)
-        if active:
-            self.status_label.setText(
-                "Estado: claves en este PC: " + ", ".join(active) +
-                ". Se cargan solas (cifradas con tu cuenta de Windows)."
-            )
-        elif secrets_store.has_vault() or secrets_store.user_configured():
-            self.status_label.setText(
-                "Estado: sin claves guardadas en este PC (ya las borraste o aún no hay)."
-            )
-        else:
-            self.status_label.setText(
-                "Estado: sin claves. Guárdalas desde la traducción (campo API) "
-                "y quedarán guardadas aquí."
-            )
 
 
 class OptionsMenu:
@@ -336,14 +286,14 @@ class OptionsMenu:
         self.option_buttons: Dict[str, QPushButton] = {}
         self.option_stack = QStackedWidget()
         self.controller = OptionsController(parent)
-        self.options_pages: Dict[str, Union[GeneralOptions, DisplayOptions, AudioOptions, VideoOptions, ImageOptions, MiscOptions, SecurityOptions]] = {
+        self.options_pages: Dict[str, Union[GeneralOptions, DisplayOptions, AudioOptions, VideoOptions, ImageOptions, MiscOptions, CloudflareOptions]] = {
             "general": GeneralOptions(),
             "display": DisplayOptions(self.controller),
             "audio": AudioOptions(self.controller),
             "video": VideoOptions(self.controller, self),
             "image": ImageOptions(self.controller),
             "misc": MiscOptions(self.controller),
-            "seguridad": SecurityOptions(self.controller),
+            "cloudflare": CloudflareOptions(self.controller),
         }
         for page in self.options_pages.values():
             self.option_stack.addWidget(page.create_page())
@@ -386,7 +336,7 @@ class OptionsMenu:
             ("VIDEO", "Configuración de video"),
             ("IMAGEN", "Configuración de imagen"),
             ("MISCELÁNEA", "Opciones diversas"),
-            ("SEGURIDAD", "Claves cifradas"),
+            ("CLOUDFLARE", "Desbloqueo de sitios con Cloudflare"),
         ]
         for cat, tooltip in categories:
             btn = QPushButton(cat)
@@ -443,12 +393,12 @@ class OptionsMenu:
             "VIDEO": 3,
             "IMAGEN": 4,
             "MISCELÁNEA": 5,
-            "SEGURIDAD": 6,
+            "CLOUDFLARE": 6,
         }
         self.controller.clear_warnings()
         self.option_stack.setCurrentIndex(page_mapping[category])
-        if category == "SEGURIDAD":
-            self.options_pages["seguridad"].refresh()
+        if category == "CLOUDFLARE":
+            self.options_pages["cloudflare"].refresh()
         for btn in self.option_buttons.values():
             btn.setStyleSheet(
                 btn.styleSheet().replace("rgba(80, 40, 100, 0)", "rgba(50, 50, 50, 0)")

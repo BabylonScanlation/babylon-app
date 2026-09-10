@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
 
 from log_console import LogConsole, init_global_logging
 from config import USER_DATA_DIR, Config, resource_path, global_exception_handler
-from app_tools.secrets_store import ensure_secrets
 from project_manager import ProjectManager
 from tools import ToolsManager
 from options_menu import OptionsMenu
@@ -144,12 +143,6 @@ class App(QMainWindow):
         # Sincronizar entorno
         self._sync_env_to_config()
 
-        # Garantizar claves (bóveda DPAPI > .env; sin passphrase ni keystore)
-        try:
-            ensure_secrets(self)
-        except Exception as exc:
-            logging.error(f"No se pudo desbloquear el keystore: {exc}")
-
     def eventFilter(self, source: object, event: QEvent) -> bool:
         """Filtra los eventos de teclado para deshabilitar la tecla Tab y las flechas de dirección."""
         if event.type() == QEvent.Type.KeyPress:
@@ -170,7 +163,7 @@ class App(QMainWindow):
                 masked = k[:4] + "..." + k[-4:] if len(k) > 8 else "???"
                 logging.info(f"   [{i+1}] {masked}")
         else:
-            logging.warning("⚠️ GEMINI: No se encontraron claves en .env (se intentará con el keystore)")
+            logging.warning("⚠️ GEMINI: No se encontraron claves en .env (se intentará con user_settings.json)")
 
         env_mistral = os.getenv("MISTRAL_API_KEY")
         if env_mistral:

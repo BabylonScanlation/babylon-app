@@ -33,33 +33,6 @@ class OptionsController(QObject):
         # Referencias para evitar reportUnusedImport en TYPE_CHECKING
         self._types: Union["OptionsMenu", "QMediaPlayer", "QTimer", None] = None
 
-    def forget_secrets(self):
-        """Borra TODAS las claves guardadas de este PC (bóveda DPAPI + ajustes + memoria + env).
-
-        Tras el borrado intencional se deja la marca secrets_configured.flag.
-        """
-        from app_tools import secrets_store
-        secrets_store.delete_vault()          # secrets_vault.bin (claves en bóveda DPAPI)
-        Config.clear_saved_api_keys()         # user_settings.json
-        Config.GEMINI_API_KEY = ""
-        Config.GEMINI_API_KEYS = []
-        Config.MISTRAL_API_KEY = ""
-        Config.DEEPL_API_KEY = ""
-        for env_name in ("PICACOMIC_EMAIL", "PICACOMIC_PASSWORD", "PICACOMIC_TOKEN"):
-            os.environ.pop(env_name, None)
-        # Reflejar el cambio al instante en el menú de seguridad
-        try:
-            menu = getattr(self.app, "options_menu", None)
-            if menu is not None and "seguridad" in menu.options_pages:
-                menu.options_pages["seguridad"].refresh()
-        except Exception as exc:
-            logging.debug(f"No se pudo refrescar el estado de seguridad: {exc}")
-        QMessageBox.information(self.app, "Claves de este PC",
-                                "Se han borrado las claves guardadas en este PC.\n\n"
-                                "Gemini/Mistral/DeepL dejan de funcionar a partir de ahora y "
-                                "al reabrir la app no se recuperará ninguna clave.")
-        return True
-
     def save_gemini_settings(
         self, model: str, thinking_enabled: bool, temperature: float
     ):
