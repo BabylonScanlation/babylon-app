@@ -24,7 +24,8 @@ from Crypto.Util.Padding import unpad
 
 from common import BaseDownloader
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if not (isinstance(sys.stdout, io.TextIOWrapper) and getattr(sys.stdout, "encoding", "").lower() in ("utf-8", "utf8")):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # ─── CONFIG ──────────────────────────────────────────────────
 BASE_URL    = "https://www.pigmh.com"

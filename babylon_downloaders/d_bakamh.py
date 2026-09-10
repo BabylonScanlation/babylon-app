@@ -382,10 +382,13 @@ def _get_catalog_page(sess, page=1, genre_slug="", sort="latest"):
             f"{BASE_URL}/{GENRE_URL_TYPE}/{genre_slug}/page/{page}/",
         ]
     else:
+        # El catalogo real vive en /manga/page/N/ (12 por pagina). /blgl/ solo
+        # repite las 2 primeras paginas de /manga/, asi que usarlo cortaba el
+        # recorrido en 24 series.
         candidates = (
-            [f"{BASE_URL}/blgl/", f"{BASE_URL}/manga/"]
+            [f"{BASE_URL}/manga/"]
             if page == 1
-            else [f"{BASE_URL}/blgl/page/{page}/", f"{BASE_URL}/manga/page/{page}/"]
+            else [f"{BASE_URL}/manga/page/{page}/"]
         )
     params = {"m_orderby": sort} if sort != "latest" else None
     for url in candidates:
