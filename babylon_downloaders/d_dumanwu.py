@@ -16,6 +16,13 @@ from typing import Optional, TypedDict
 import requests
 from common import CFG, BaseDownloader
 
+# Consola Windows: stdout cp1252 rompe al imprimir CJK (mismo patrón que d_pigmh)
+try:
+    if sys.stdout and getattr(sys.stdout, "buffer", None):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 BASE_URL = "https://dumanwu.com"
 TIMEOUT = (15, 45)
 RETRY = 2.0
