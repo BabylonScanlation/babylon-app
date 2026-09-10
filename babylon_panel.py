@@ -2626,6 +2626,40 @@ class BabylonSiteDetailPanel(QWidget):
                 lbl.setFont(self.body_font)
             self._res_layout.insertWidget(0, lbl)
             self._lbl_status.setText("Sin resultados")
+
+            cf_hint_txt = ""
+            try:
+                dl = get_dl(self.site.get("type", ""))
+                if getattr(dl, "cf_blocked", False):
+                    cf_hint_txt = getattr(dl, "cf_hint", "") or ""
+            except Exception:
+                cf_hint_txt = ""
+            if cf_hint_txt:
+                lbl.setText("Bloqueado por Cloudflare.")
+                lbl.setStyleSheet("color:#e88b3c;background:transparent;border:none;font-weight:bold;")
+                try:
+                    from babylon_downloaders.cf_harvest import (
+                        auto_solve_enabled, camoufox_status,
+                    )
+                    camo_ok, camo_msg = camoufox_status()
+                    if not camo_ok:
+                        use = ("El desbloqueo automático está ACTIVADO pero "
+                               "está incompleto:\n" if auto_solve_enabled()
+                               else "Desbloqueo automático (opcional): falta instalar Camoufox.\n")
+                        cf_hint_txt = (
+                            use + camo_msg + "\n\n"
+                            "--- Desbloqueo manual (sin Camoufox) ---\n\n" + cf_hint_txt
+                        )
+                except Exception:
+                    pass
+                hlbl = QLabel(cf_hint_txt)
+                hlbl.setWordWrap(True)
+                hlbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                hlbl.setStyleSheet("color:#999;background:transparent;border:none;")
+                if self.body_font:
+                    hlbl.setFont(self.body_font)
+                self._res_layout.insertWidget(1, hlbl)
+                self._lbl_status.setText("Cloudflare bloqueó el sitio")
         else:
             for item in items:
                 self._res_layout.insertWidget(

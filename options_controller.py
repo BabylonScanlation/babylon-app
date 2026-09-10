@@ -33,43 +33,13 @@ class OptionsController(QObject):
         # Referencias para evitar reportUnusedImport en TYPE_CHECKING
         self._types: Union["OptionsMenu", "QMediaPlayer", "QTimer", None] = None
 
-    def save_secrets_keystore(self, passphrase: str):
-        """Desbloquea el keystore con la passphrase e importa las claves a la bóveda DPAPI.
-
-        A partir de este momento la app ya no necesita la passphrase: las claves
-        viven cifradas con la cuenta de Windows y se cargan solas en cada apertura.
-        """
-        from app_tools import secrets_store
-        if not passphrase:
-            QMessageBox.warning(self.app, "Claves cifradas", "Introduce la passphrase.")
-            return False
-        try:
-            secrets = secrets_store.unlock_with_passphrase(passphrase)
-        except Exception as exc:
-            logging.error(f"Fallo al desbloquear el keystore: {exc}")
-            QMessageBox.warning(self.app, "Claves cifradas",
-                                f"No se pudo descifrar el keystore:\n{exc}")
-            return False
-        # Sembrar la bóveda DPAPI con las claves del keystore (sin passphrase desde ahora).
-        for name, value in secrets.items():
-            try:
-                secrets_store.set_user_key_secret(name, str(value))
-            except Exception as exc:
-                logging.error(f"No se pudo guardar {name} en la bóveda: {exc}")
-        QMessageBox.information(self.app, "Claves cifradas",
-                                "Claves desbloqueadas y guardadas en este PC (Windows DPAPI). "
-                                "Ya no se pedirá la passphrase.")
-        return True
-
     def forget_secrets(self):
         """Borra TODAS las claves guardadas de este PC (bóveda DPAPI + ajustes + memoria + env).
 
-        Deja la marca secrets_configured.flag para que el keystore empaquetado no
-        vuelva a inyectar claves silenciosamente después de un borrado a propósito.
+        Tras el borrado intencional se deja la marca secrets_configured.flag.
         """
         from app_tools import secrets_store
         secrets_store.delete_vault()          # secrets_vault.bin (claves en bóveda DPAPI)
-        secrets_store.forget_passphrase()     # cache DPAPI de passphrase
         Config.clear_saved_api_keys()         # user_settings.json
         Config.GEMINI_API_KEY = ""
         Config.GEMINI_API_KEYS = []

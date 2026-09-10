@@ -4,19 +4,32 @@ d_18mh.py — 18mh.org downloader (sin menú)
 
 from __future__ import annotations
 
+import logging
 import re
+import sys
 import time
 from typing import Optional
 from urllib.parse import quote, urljoin
 
-import requests
 from bs4 import BeautifulSoup
+from cf_harvest import CFChallengedSession, detect_challenge, hint
 from common import CFG, BaseDownloader
+import requests
 
 SITE_URL = "https://18mh.org"
 REQUEST_DELAY = 0.4
 TIMEOUT = (15, 45)
 RETRY_DELAY = 2.0
+
+try:
+    from curl_cffi.requests import Session as CurlSession
+    from curl_cffi.requests import RequestException as CurlReqError
+
+    _USE_CURL = True
+except ImportError:
+    CurlSession = None
+    CurlReqError = None
+    _USE_CURL = False
 
 _BASE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -31,28 +44,58 @@ _BASE_HEADERS = {
 
 _EXCLUDE_IMG = ("/logo", "/icon", "/ads", "ad/", "cover/", "avatar", ".gif")
 
+_WARNED_CF: set[str] = set()
+
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 
-def _make_session() -> requests.Session:
-    s = requests.Session()
+def _req_error():
+    return CurlReqError if _USE_CURL else requests.RequestException
+
+
+def _make_session(impersonate: Optional[str] = None):
+    if _USE_CURL:
+        s = CurlSession(impersonate=impersonate or "chrome124")
+    else:
+        s = requests.Session()
     s.headers.update(_BASE_HEADERS)
     return s
 
 
-def _get_raw(
-    session: requests.Session, url: str, referer: str = "", retries: int = 3
-) -> Optional[bytes]:
+def _warn_cf() -> None:
+    if "18mh" in _WARNED_CF:
+        return
+    _WARNED_CF.add("18mh")
+    try:
+        Downloader18mh.cf_blocked = True
+    except Exception:
+        pass
+    logging.getLogger(__name__).warning(
+        "Cloudflare bloquea 18mh.org: resolve el challenge una vez y pega "
+        "la cookie (ver cf_harvest.hint)."
+    )
+    try:
+        print(hint("18mh", SITE_URL + "/"), file=sys.stderr)
+    except Exception:
+        pass
+
+
+def _get_raw(session, url: str, referer: str = "", retries: int = 3) -> Optional[bytes]:
     hdrs = {"Referer": referer} if referer else {}
     for attempt in range(retries):
         try:
             r = session.get(url, timeout=TIMEOUT, headers=hdrs)
             if r.status_code == 200 and r.content:
                 return r.content
-            if r.status_code in (403, 404):
+            if r.status_code == 403:
+                snippet = (r.content or b"")[:4096].decode("utf-8", "ignore")
+                if detect_challenge(snippet):
+                    _warn_cf()
                 return None
-        except requests.RequestException:
+            if r.status_code == 404:
+                return None
+        except _req_error():
             if attempt < retries - 1:
                 time.sleep(RETRY_DELAY * (attempt + 1))
     return None
@@ -217,6 +260,7 @@ class Downloader18mh(BaseDownloader):
     NAME = "18MH  (18mh.org)"
     HAS_CATALOG = True
     HAS_SEARCH = True
+    cf_blocked = False  # bandera de clase: se activa al detectar challenge
 
     CATALOG_SECTIONS = {
         "hots": "人氣推薦 (Recomendadas)",
@@ -226,9 +270,12 @@ class Downloader18mh(BaseDownloader):
     }
 
     def __init__(self):
-        self._sess = _make_session()
+        self._sess = CFChallengedSession("18mh", _make_session, warn=_warn_cf)
+        self.cf_hint = hint("18mh", SITE_URL + "/")
         try:
             self._sess.get(SITE_URL + "/", timeout=8)
+        except _req_error():
+            pass
         except Exception:
             pass
 

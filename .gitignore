@@ -14,3 +14,6 @@ dev_tools/
 # Archivos específicos del proyecto que no deben subirse
 gemini.md
 .env
+cf_clearance.json
+BBSL/secrets.bin
+app_tools/python_ocr/

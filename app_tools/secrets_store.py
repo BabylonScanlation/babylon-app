@@ -1,17 +1,15 @@
-"""Gestor de claves cifradas (bóveda DPAPI + keystore legado).
+"""Gestor de claves cifradas (bóveda DPAPI).
 
-Modelo actual (sin passphrase para el usuario final):
+Modelo actual (sin passphrase):
   - Las claves del usuario se guardan en secrets_vault.bin, cifradas con la cuenta
     de Windows (DPAPI) — estilo Windows Hello/WinCred. Se desbloquean solas en cada
-    apertura: NO hay prompts de passphrase.
+    apertura: NO hay prompts de passphrase y NO se usa ningún keystore con clave.
   - La marca secrets_configured.flag indica que el usuario ya definió sus claves
-    (aunque estén vacías), evitando que un keystore empaquetado vuelva a inyectar
-    claves antiguas tras un borrado intencional.
-
-Legado (solo si el usuario lo pide desde la UI):
-  - BBSL/secrets.bin cifrado con AES-GCM + passphrase. En el arranque ya NO se pide
-    la passphrase: solo se usa si está recordada en este PC (cache DPAPI). El
-    desbloqueo manual desde Opciones → Seguridad lo importa a la bóveda DPAPI.
+    (aunque estén vacías).
+  - La passphrase/keystore legado (BBSL/secrets.bin cifrado con AES-GCM) está
+    DESACTIVADO: la app ya no lo lee ni lo desbloquea en ningún momento. El
+    CLI app_tools/secrets_tool.py conserva las funciones de cifrado solo como
+    utilidad de desarrollo.
 """
 
 import base64
@@ -26,7 +24,6 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 KEYSTORE_MAGIC = "BABYLON-SECRETS-V1"
 KDF_ITERATIONS = 600_000
-_ENTROPY = b"babylon-secrets-unlock"
 
 
 def _b64e(data: bytes) -> str:
@@ -46,101 +43,6 @@ def _app_root() -> str:
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def resolve_keystore() -> str:
-    """Busca secrets.bin: junto al exe > embebido en BBSL (_MEIPASS) > BBSL del repo."""
-    candidates = []
-    if getattr(sys, "frozen", False):
-        candidates.append(os.path.join(os.path.dirname(sys.executable), "secrets.bin"))
-        meipass = getattr(sys, "_MEIPASS", None)
-        if meipass:
-            candidates.append(os.path.join(meipass, "BBSL", "secrets.bin"))
-    candidates.append(os.path.join(_app_root(), "BBSL", "secrets.bin"))
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return ""
-
-
-def has_keystore() -> bool:
-    return bool(resolve_keystore())
-
-
-def _cache_path() -> str:
-    import config as config_mod
-    return os.path.join(config_mod.USER_DATA_DIR, "secrets_unlock.bin")
-
-
-# ─────────────────────────────────────────────────────────────────────────
-#  Recordatorio de passphrase (DPAPI en Windows, permiso 0600 en otros)
-# ─────────────────────────────────────────────────────────────────────────
-
-def _dpapi_protect(data: bytes) -> bytes:
-    try:
-        import win32crypt
-        blob = win32crypt.CryptProtectData(data, "Babylon secrets unlock", _ENTROPY, None, None, 0)
-        return b"DPAPI" + blob
-    except Exception:
-        return None
-
-
-def _dpapi_unprotect(blob: bytes) -> bytes:
-    try:
-        import win32crypt
-        _, data = win32crypt.CryptUnprotectData(blob[5:], _ENTROPY, None, None, 0)
-        return data
-    except Exception:
-        raise ValueError("No se pudo descifrar la passphrase recordada (cuenta de Windows?).")
-
-
-def save_passphrase(passphrase: str) -> None:
-    """Guarda la passphrase protegida con la cuenta de Windows (o texto con 0600)."""
-    data = passphrase.encode("utf-8")
-    blob = _dpapi_protect(data)
-    plain_fallback = blob is None
-    if blob is None:
-        blob = data
-    path = _cache_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(blob)
-    if plain_fallback:
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-        logging.warning("win32crypt no disponible: passphrase guardada en texto plano con permisos restringidos.")
-
-
-def load_passphrase() -> str:
-    """Devuelve la passphrase recordada o '' si no existe / no se puede usar."""
-    path = _cache_path()
-    if not os.path.exists(path):
-        return ""
-    with open(path, "rb") as f:
-        blob = f.read()
-    try:
-        if blob.startswith(b"DPAPI"):
-            return _dpapi_unprotect(blob).decode("utf-8")
-        return blob.decode("utf-8")  # fallback no-Windows
-    except Exception as e:
-        logging.warning(f"No se pudo recuperar la passphrase guardada: {e}")
-        return ""
-
-
-def has_cached_passphrase() -> bool:
-    return os.path.exists(_cache_path())
-
-
-def forget_passphrase() -> None:
-    """Elimina la passphrase recordada (el keystore sigue existiendo)."""
-    path = _cache_path()
-    if os.path.exists(path):
-        try:
-            os.remove(path)
-        except OSError as e:
-            logging.error(f"No se pudo olvidar la clave: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -350,30 +252,16 @@ def apply_vault(secrets: dict) -> None:
             setattr(Config, name, value)
 
 
-def unlock_with_passphrase(passphrase: str) -> dict:
-    """Descifra el keystore, recuerda la passphrase y aplica las claves. Devuelve los secretos."""
-    keystore = resolve_keystore()
-    if not keystore:
-        raise FileNotFoundError("No se encontró secrets.bin.")
-    with open(keystore, "rb") as f:
-        secrets = decrypt_secrets(f.read(), passphrase)
-    save_passphrase(passphrase)
-    apply_secrets(secrets)
-    logging.info("✅ Keystore desbloqueado: claves aplicadas.")
-    return secrets
-
-
 def ensure_secrets(app=None, force: bool = False) -> bool:
-    """Disponibilidad de claves al arranque (SIN prompts de passphrase).
+    """Disponibilidad de claves al arranque (sin passphrase ni keystore).
 
     Prioridad:
       1) Claves ya cargadas en Config (.env o user_settings a nivel de proceso).
       2) Bóveda DPAPI del usuario (secrets_vault.bin) → se aplica sola.
-         La marca secrets_configured.flag deja fuera el keystore aunque la
-         bóveda esté vacía (el usuario borró sus claves a propósito).
-      3) Legado: keystore empaquetado (BBSL/secrets.bin) SOLO si la passphrase
-         está recordada en este PC (cache DPAPI). Nunca se pide la passphrase
-         en el arranque; el desbloqueo manual se hace desde Opciones → Seguridad.
+         La marca secrets_configured.flag se respeta (el usuario puede haber
+         borrado sus claves a propósito).
+    El keystore legado con passphrase (BBSL/secrets.bin) está desactivado y no
+    se consulta en ningún caso.
     Devuelve True si quedaron claves disponibles.
     """
     from config import Config
@@ -386,31 +274,9 @@ def ensure_secrets(app=None, force: bool = False) -> bool:
         apply_vault(vault)
         return bool(Config.GEMINI_API_KEY)
 
-    # 2) Legado: keystore empaquetado, solo con passphrase ya recordada.
-    if not has_keystore():
-        if force:
-            raise FileNotFoundError("No se encontró secrets.bin.")
-        return bool(Config.GEMINI_API_KEY)
+    if force:
+        raise FileNotFoundError("No se encontró la bóveda de claves (secrets_vault.bin).")
 
-    cached = load_passphrase()
-    if cached:
-        try:
-            unlock_with_passphrase(cached)
-            return True
-        except Exception as e:
-            logging.warning(f"Passphrase recordada no válida: {e}")
-
-    # Sin passphrase y sin prompt: la app abre sin claves. El usuario las define
-    # desde la UI (campo API / panel Gemini) y quedan en la bóveda DPAPI.
     logging.info("Sin claves configuradas en este PC: se abre sin claves "
                  "(guárdalas en Opciones → Seguridad).")
     return bool(Config.GEMINI_API_KEY)
-
-
-def decrypt_keystore_with(passphrase: str) -> dict:
-    """Solo descifra (sin recordar); lo usa la UI del menú de seguridad."""
-    keystore = resolve_keystore()
-    if not keystore:
-        raise FileNotFoundError("No se encontró secrets.bin.")
-    with open(keystore, "rb") as f:
-        return decrypt_secrets(f.read(), passphrase)

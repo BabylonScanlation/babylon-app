@@ -5,11 +5,14 @@ WordPress + curl_cffi (fallback a requests).
 
 from __future__ import annotations
 
+import logging
 import re
+import sys
 import time
 from typing import Optional
 from urllib.parse import quote, unquote, urljoin
 
+from cf_harvest import CFChallengedSession, detect_challenge, hint
 from common import CFG, BaseDownloader
 
 BASE_URL = "https://bakamh.com"
@@ -71,10 +74,30 @@ _UI_BUTTON_TEXTS = {
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
+_WARNED_CF: set[str] = set()
 
-def _make_session():
+
+def _warn_cf() -> None:
+    if "bakamh" in _WARNED_CF:
+        return
+    _WARNED_CF.add("bakamh")
+    try:
+        DownloaderBakamh.cf_blocked = True
+    except Exception:
+        pass
+    logging.getLogger(__name__).warning(
+        "Cloudflare bloquea bakamh.com: resolve el challenge una vez y pega "
+        "la cookie (ver cf_harvest.hint)."
+    )
+    try:
+        print(hint("bakamh", BASE_URL + "/"), file=sys.stderr)
+    except Exception:
+        pass
+
+
+def _make_session(impersonate=None):
     if _USE_CURL:
-        s = CurlSession(impersonate="chrome123")
+        s = CurlSession(impersonate=impersonate or "chrome123")
     else:
         import requests as _req
 
@@ -90,7 +113,12 @@ def _get(sess, url, params=None, referer=None, retries=3):
             r = sess.get(url, params=params, headers=hdrs, timeout=25)
             if r.status_code == 200:
                 return r
-            if r.status_code in (403, 404):
+            if r.status_code == 403:
+                snippet = (r.text or "")[:4096]
+                if detect_challenge(snippet):
+                    _warn_cf()
+                return None
+            if r.status_code == 404:
                 return None
         except Exception:
             pass
@@ -111,6 +139,11 @@ def _post(sess, url, data, referer=None, retries=3):
             r = sess.post(url, data=data, headers=hdrs, timeout=25)
             if r.status_code == 200:
                 return r
+            if r.status_code == 403:
+                snippet = (r.text or "")[:4096]
+                if detect_challenge(snippet):
+                    _warn_cf()
+                return None
         except Exception:
             pass
         if i < retries - 1:
@@ -285,7 +318,12 @@ def _get_chapter_images(sess, manga_slug, chapter_slug):
             " img.wp-manga-chapter-img, .reading-content noscript img"
         ):
             src = (
-                img.get("data-lazy-src") or img.get("data-src") or img.get("src") or ""
+                img.get("data-lazy-src")
+                or img.get("data-src")
+                or img.get("data-original")
+                or img.get("data-manga-src")
+                or img.get("src")
+                or ""
             ).strip()
             if src and not src.startswith("data:"):
                 if src.startswith("//"):
@@ -368,9 +406,11 @@ class DownloaderBakamh(BaseDownloader):
     NAME = "BAKAMH  (bakamh.com)"
     HAS_CATALOG = True
     HAS_SEARCH = True
+    cf_blocked = False  # bandera de clase: se activa al detectar challenge
 
     def __init__(self):
-        self._sess = _make_session()
+        self._sess = CFChallengedSession("bakamh", _make_session, warn=_warn_cf)
+        self.cf_hint = hint("bakamh", BASE_URL + "/")
 
     def search(self, query: str) -> list[dict]:
         import requests as _req
@@ -386,6 +426,8 @@ class DownloaderBakamh(BaseDownloader):
                 soup = _soup(r.text)
                 items = _parse_manga_cards(soup)
                 return items
+            if r.status_code == 403 and detect_challenge((r.text or "")[:4096]):
+                _warn_cf()
         except Exception:
             pass
         return []

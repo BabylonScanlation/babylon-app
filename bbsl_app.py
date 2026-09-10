@@ -144,7 +144,7 @@ class App(QMainWindow):
         # Sincronizar entorno
         self._sync_env_to_config()
 
-        # Garantizar claves (bóveda DPAPI > .env > keystore con passphrase recordada)
+        # Garantizar claves (bóveda DPAPI > .env; sin passphrase ni keystore)
         try:
             ensure_secrets(self)
         except Exception as exc:

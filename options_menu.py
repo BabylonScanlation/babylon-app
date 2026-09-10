@@ -244,6 +244,18 @@ class SecurityOptions:
         self.forget_btn.clicked.connect(
             lambda checked=False: self.controller.forget_secrets()
         )
+        from babylon_downloaders.cf_harvest import auto_solve_enabled, set_auto_solve
+        self.cf_cb = QCheckBox("Desbloqueo automático de Cloudflare (18mh.org, bakamh.com)")
+        self.cf_cb.setToolTip(
+            "Usa un navegador real (Camoufox) para pasar el challenge de Cloudflare "
+            "en esos dos sitios. Requiere:  pip install camoufox  y  python -m camoufox fetch. "
+            "Si está desactivado, la app solo te muestra cómo pegar la cookie a mano."
+        )
+        self.cf_cb.setChecked(auto_solve_enabled())
+        self.cf_cb.toggled.connect(lambda on: set_auto_solve(on))
+        self.cf_status_lbl = QLabel("")
+        self.cf_status_lbl.setWordWrap(True)
+        self.cf_status_lbl.setStyleSheet("color:#999;background:transparent;border:none;")
 
     def create_page(self) -> QWidget:
         """Crea la página de configuración de seguridad."""
@@ -259,11 +271,28 @@ class SecurityOptions:
         inner.addWidget(self.status_label)
         inner.addWidget(self.forget_btn)
         layout.addWidget(group)
+
+        cf_group = QGroupBox("CLOUDFLARE (18MH.ORG / BAKAMH.COM)")
+        cf_group.setStyleSheet("background-color: rgba(30, 30, 30, 100);")
+        cf_inner = QVBoxLayout(cf_group)
+        cf_inner.addWidget(self.cf_cb)
+        cf_inner.addWidget(self.cf_status_lbl)
+        layout.addWidget(cf_group)
+
         layout.addStretch()
         return page
 
     def refresh(self):
         """Muestra el estado REAL de las claves guardadas en este PC."""
+        from babylon_downloaders.cf_harvest import auto_solve_enabled, camoufox_status
+        self.cf_cb.setChecked(auto_solve_enabled())
+        ok, msg = camoufox_status()
+        if ok:
+            self.cf_status_lbl.setText("Camoufox: " + msg)
+        else:
+            self.cf_status_lbl.setText("Camoufox: FALTA → " + msg + "\n"
+                                       "Mientras falte, el desbloqueo automático no podrá "
+                                       "resolver el sitio (solo verás las instrucciones manuales).")
         from app_tools import secrets_store
         from config import Config
         vault = secrets_store.load_vault()
