@@ -239,9 +239,9 @@ def _get_catalog_page(session: requests.Session, path: str, page: int) -> list[d
         [f"{SITE_URL}{path}"]
         if page == 1
         else [
+            f"{SITE_URL}{path}/page/{page}",
             f"{SITE_URL}{path}?page={page}",
             f"{SITE_URL}{path}/{page}",
-            f"{SITE_URL}{path}/page/{page}",
         ]
     )
     for url in urls:
