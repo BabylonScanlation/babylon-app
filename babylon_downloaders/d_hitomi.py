@@ -295,7 +295,7 @@ def _term_ids(sess: requests.Session, term: str) -> list[int]:
     ver = _index_version(sess, "galleriesindex")
     if not ver:
         return []
-    key = hashlib.sha256(term.encode("utf-8")).digest()[:4]
+    key = hashlib.sha256(term.replace("_", " ").encode("utf-8")).digest()[:4]
     data = _bsearch_gallery(sess, ver, key)
     if not data:
         return []
@@ -346,7 +346,7 @@ def _apply_sort(
 def search_ids(
     sess: requests.Session, query: str, sort_terms: Optional[list[str]] = None
 ) -> list[int]:
-    q = query.replace("_", " ").strip().lower()
+    q = query.strip().lower()
     parts = [p for p in q.split() if p]
     if not parts:
         return []
@@ -355,7 +355,7 @@ def search_ids(
     for p in parts:
         if p.startswith("-") or p.startswith("sort") or p.startswith("order"):
             continue
-        ids = set(_term_ids(sess, p))
+        ids = set(_term_ids(sess, p.replace("_", " ")))
         break
     if not ids:
         return []
@@ -365,7 +365,7 @@ def search_ids(
             continue
         if p.startswith("-") or p.startswith("sort") or p.startswith("order"):
             continue
-        t = set(_term_ids(sess, p))
+        t = set(_term_ids(sess, p.replace("_", " ")))
         if t:
             ids.intersection_update(t)
     if not ids:
