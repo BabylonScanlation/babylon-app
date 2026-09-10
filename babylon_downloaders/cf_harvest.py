@@ -72,6 +72,17 @@ def detect_challenge(text: str) -> bool:
     return any(m in text for m in _CHALLENGE_MARKERS)
 
 
+def jsd_needed(text: str) -> bool:
+    """True si el body parece el wrapper jsd (challenge invisible/oneshot)."""
+    if not text:
+        return False
+    try:
+        from cf_jsd import jsd_needed as _j
+    except Exception:
+        return False
+    return _j(text)
+
+
 def _data_dir() -> str:
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
@@ -228,7 +239,7 @@ COOLDOWN = max(30.0, float(os.getenv("CF_SOLVE_COOLDOWN", "90")))
 WINDOW = max(1.0, float(os.getenv("CF_SOLVE_WINDOW_H", "12")) * 3600)
 SOLVE_TIMEOUT = max(60, int(os.getenv("CF_SOLVE_TIMEOUT", "180")))
 
-_FIREFOX_IMP = [147, 144, 135, 133]
+_FIREFOX_IMP = [135, 133]
 
 
 def auto_solve_enabled() -> bool:
@@ -291,25 +302,44 @@ def camoufox_available() -> bool:
 
 def impersonate_for(ua: str) -> str:
     m = re.search(r"Firefox/(\d+)", ua or "")
-    if not m:
-        return ""
-    maj = int(m.group(1))
-    imp = next((x for x in _FIREFOX_IMP if x <= maj), _FIREFOX_IMP[-1])
-    return "firefox" + str(imp)
+    if m:
+        maj = int(m.group(1))
+        ver = next((x for x in _FIREFOX_IMP if x <= maj), _FIREFOX_IMP[-1])
+        return f"firefox{ver}"
+    m = re.search(r"Chrome/(\d+)", ua or "")
+    if m:
+        maj = int(m.group(1))
+        if maj < 120:
+            return "chrome120"
+        return "chrome136"
+    return ""
 
 
-def solve_for(host: str, url: str, force: bool = False) -> Optional[dict]:
-    """Resuelve el challenge con Camoufox y persiste la cookie.
+def solve_for(host: str, url: str, force: bool = False,
+              kind: str = "") -> Optional[dict]:
+    """Resuelve el challenge y persiste la cookie.
 
-    Devuelve {"cookie", "ua"} o None. Guardas anti-flag: lock global,
-    caps de intentos y cooldown por dominio.
+    kind: "jsd" (invisible/oneshot, resolver sin navegador), "managed"
+    (turnstile/checkbox, requiere Camoufox) o "" (detectarlo mirando url).
+    Guardas anti-flag: lock global, caps y cooldown.
+
+    Devuelve {"cookie", "ua"} o None.
     """
     if not (force or auto_solve_enabled()):
         return None
+    host = normalize_host(host)
+
+    # 1) Intento nativo si el challenge es (o puede ser) invisible jsd.
+    if kind != "managed":
+        site = _site_of(url) or ("https://" + HOSTS.get(host, host))
+        jsd_res = _solve_jsd_first(site)
+        if jsd_res:
+            save_clearance(host, jsd_res["cookie"], jsd_res["ua"])
+            return jsd_res
+
     if not camoufox_available():
         log.warning("Camoufox no esta instalado: pip install camoufox")
         return None
-    host = normalize_host(host)
     with SOLVE_LOCK:
         now = time.time()
         log_ = _attempt_log.setdefault(host, [])
@@ -328,7 +358,37 @@ def solve_for(host: str, url: str, force: bool = False) -> Optional[dict]:
             )
             return None
         log_.append(now)
-    return _solve_in_browser(host, url)
+    res = _solve_in_browser(host, url)
+    if res:
+        save_clearance(host, res["cookie"], res["ua"])
+    return res
+
+
+def _site_of(url: str) -> str:
+    if not url:
+        return ""
+    try:
+        p = urlparse(url)
+        return f"{p.scheme}://{p.netloc}"
+    except Exception:
+        return ""
+
+
+def _solve_jsd_first(site: str) -> Optional[dict]:
+    """Intenta el solver JSD nativo. En challenges managed no encontrara
+    el endpoint jsd y devolvera None rapidamente (sin navegador)."""
+    if not site:
+        return None
+    try:
+        from cf_jsd import solve_jsd_for_site
+    except Exception as e:
+        log.warning("cf_jsd import err: %s", e)
+        return None
+    try:
+        return solve_jsd_for_site(site)
+    except Exception as e:
+        log.warning("cf_jsd solve err: %s", e)
+        return None
 
 
 def _solve_in_browser(host: str, url: str) -> Optional[dict]:
@@ -416,7 +476,8 @@ class CFChallengedSession:
     ) -> None:
         self.host = normalize_host(host)
         self._factory = factory
-        self._s = factory(None)
+        cleared = load_clearance(self.host)
+        self._s = factory(impersonate_for(cleared.get("ua", "")) if cleared else None)
         self._warn = warn or (lambda: None)
         self._max_retry = 2  # 1 intento normal + 1 reintento tras solve
         apply_clearance(self._s, self.host)
@@ -438,22 +499,41 @@ class CFChallengedSession:
         except Exception:
             pass
         for attempt in range(self._max_retry):
-            last = getattr(self._s, method)(url, **kw)
-            if getattr(last, "status_code", None) == 403:
-                snippet = (_body_snippet(last) or "")[:4096]
-                if detect_challenge(snippet):
-                    if attempt < self._max_retry - 1:
-                        solved = solve_for(host_for, url)
-                        if solved:
-                            log.info(
-                                "%s: challenge resuelto, reintentando…", host_for
-                            )
-                            self._s = self._factory(
-                                impersonate_for(solved.get("ua", "")) or None
-                            )
-                            apply_clearance(self._s, host_for)
-                            continue
-                    self._warn()
+            try:
+                last = getattr(self._s, method)(url, **kw)
+            except Exception as e:
+                # RST / TLS reset / conexion rota: tipico de Cloudflare cuando
+                # rechaza la huella JA3 o falta clearance (rechazo a nivel TCP).
+                if attempt < self._max_retry - 1:
+                    solved = solve_for(host_for, url)
+                    if solved:
+                        log.info("%s: reset TLS resuelto, reintentando…", host_for)
+                        self._s = self._factory(
+                            impersonate_for(solved.get("ua", "")) or None
+                        )
+                        apply_clearance(self._s, host_for)
+                        continue
+                log.info("%s: error de red (%s: %s)", host_for, type(e).__name__, e)
+                break
+            code = getattr(last, "status_code", None)
+            snippet = (_body_snippet(last) or "")[:4096]
+            is_jsd = jsd_needed(snippet)
+            is_cf = detect_challenge(snippet) or is_jsd
+            if code in (403, 404, 429) and is_cf:
+                if attempt < self._max_retry - 1:
+                    solved = solve_for(
+                        host_for, url, kind="jsd" if is_jsd else "managed"
+                    )
+                    if solved:
+                        log.info(
+                            "%s: challenge resuelto, reintentando…", host_for
+                        )
+                        self._s = self._factory(
+                            impersonate_for(solved.get("ua", "")) or None
+                        )
+                        apply_clearance(self._s, host_for)
+                        continue
+                self._warn()
             break
         return last
 
