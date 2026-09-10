@@ -244,41 +244,53 @@ def _fetch_cat(args: tuple) -> list[dict]:
     return _parse_series_from_html(html, mode) if html else []
 
 
+def _catalog_page_url(mode: Mode, page: int, order: str = "n") -> str:
+    # La paginación real del sitio es /ing?t1=&t2=&t3=&o=<n|f>&pg=N
+    # (o /cm para Manhwa). Las categorías antiguas (?o=n&type1=...) ya no
+    # filtran: todas devolvían los mismos 36 toons y el catálogo cortaba en 72.
+    return f"{BASE_URL}{mode.main_path}?t1=&t2=&t3=&o={order}&pg={page}"
+
+
 def fetch_series_list(
     sess: requests.Session, mode: Mode, workers: int = 10
 ) -> list[dict]:
-    cats = _WEBTOON_CATS if mode.kind == Mode.WEBTOON else _MANHWA_CATS
-    main = mode.main_path
-    all_urls = [f"{BASE_URL}{main}"] + [f"{BASE_URL}{main}{c}" for c in cats]
-    series: list[dict] = []
     seen: set = set()
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for items in pool.map(_fetch_cat, [(sess, u, mode) for u in all_urls]):
-            for it in items:
-                if it["toon_id"] not in seen:
-                    seen.add(it["toon_id"])
-                    series.append(it)
+    series: list[dict] = []
+    stale = 0
+    for page in range(1, 1000):
+        url = _catalog_page_url(mode, page)
+        items = _fetch_cat((sess, url, mode))
+        if not items:
+            stale += 1
+            if stale >= 3:
+                break
+            continue
+        stale = 0
+        new = 0
+        for it in items:
+            if it["toon_id"] not in seen:
+                seen.add(it["toon_id"])
+                series.append(it)
+                new += 1
+        if new == 0:
+            break
     return series
 
 
 def fetch_full_catalog(sess: requests.Session, workers: int = 10) -> list[dict]:
     mode_wt = Mode(Mode.WEBTOON)
     mode_mh = Mode(Mode.MANHWA)
-    cats_wt = [f"{BASE_URL}{mode_wt.main_path}"] + [
-        f"{BASE_URL}{mode_wt.main_path}{c}" for c in _WEBTOON_CATS
-    ]
-    cats_mh = [f"{BASE_URL}{mode_mh.main_path}"] + [
-        f"{BASE_URL}{mode_mh.main_path}{c}" for c in _MANHWA_CATS
-    ]
-    tasks = [(sess, u, mode_wt) for u in cats_wt] + [
-        (sess, u, mode_mh) for u in cats_mh
-    ]
 
     all_series: list[dict] = []
     seen: set = set()
+
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for items in pool.map(_fetch_cat, tasks):
-            for it in items:
+        futs = {
+            pool.submit(fetch_series_list, sess, m): m.kind
+            for m in (mode_wt, mode_mh)
+        }
+        for fut in as_completed(futs):
+            for it in fut.result():
                 key = f"{it['mode']}_{it['toon_id']}"
                 if key not in seen:
                     seen.add(key)
