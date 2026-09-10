@@ -745,7 +745,7 @@ def _search_site_impl(
                 has_more = start + PAGE_SIZE < len(all_r)
                 total_hint = f"{len(all_r)} resultados"
             else:
-                items, total_pages = dl.get_catalog_page(
+                items, has_more = dl.get_catalog_page(
                     page=page,
                     region=filters.get("region", ""),
                     genre=filters.get("genre", ""),
@@ -753,10 +753,7 @@ def _search_site_impl(
                     status=filters.get("status", ""),
                 )
                 raw_items = list(items)
-                tp = int(total_pages) if total_pages else 0
-                has_more = tp > page
-                if tp > 0:
-                    total_hint = f"~{tp * len(raw_items)} series  ({tp} páginas)"
+                total_hint = f"{len(raw_items)} series en esta página"
 
         # ─────────────────────────────────────────────────────────────────────
         # PICACOMIC — search/get_catalog_page → (items, total_pages:int)
@@ -842,6 +839,25 @@ def _search_site_impl(
             raw_items = all_r[start : start + PAGE_SIZE]
             has_more = start + PAGE_SIZE < len(all_r)
             total_hint = f"{len(all_r)} series en total"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # PIGMH / YUMANHUA — get_catalog_page heredado de base: cachea el
+        # catálogo completo (get_catalog) y trocea por página.
+        # ─────────────────────────────────────────────────────────────────────
+        elif t in ("pigmh", "yumanhua"):
+            if query:
+                cache_key = f"{t}_search_{query}"
+                if cache_key not in _catalog_cache:
+                    _catalog_cache[cache_key] = dl.search(query)
+                all_r = _catalog_cache[cache_key]
+                start = (page - 1) * PAGE_SIZE
+                raw_items = all_r[start : start + PAGE_SIZE]
+                has_more = start + PAGE_SIZE < len(all_r)
+                total_hint = f"{len(all_r)} resultados"
+            else:
+                items, has_more = dl.get_catalog_page(page=page, page_size=PAGE_SIZE)
+                raw_items = list(items)
+                total_hint = f"{len(raw_items)} series en esta página"
 
     except Exception as exc:
         import traceback as _tb

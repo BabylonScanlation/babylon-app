@@ -375,31 +375,29 @@ def _parse_series_html(html: str) -> list[dict]:
 def _sortmore(sess: requests.Session, type_id: int, page: int) -> list[dict]:
     try:
         r = sess.post(
-            f"{BASE_URL}/sortmore",
-            data={"type": type_id, "page": page},
+            f"{BASE_URL}/data/sort",
+            data={"s": type_id, "p": page},
             headers={**HEADERS, "X-Requested-With": "XMLHttpRequest"},
             timeout=10,
         )
         if r.status_code != 200 or len(r.content) < 50:
             return []
-        ct = r.headers.get("Content-Type", "")
-        if "json" in ct:
-            try:
-                data = r.json()
-                if str(data.get("code", "")) == "200" and isinstance(
-                    data.get("data"), list
-                ):
-                    return [
-                        {
-                            "id": str(row.get("id", "")),
-                            "slug": str(row.get("id", "")),
-                            "title": str(row.get("name", "")),
-                        }
-                        for row in data["data"]
-                        if row.get("id")
-                    ]
-            except Exception:
-                pass
+        try:
+            payload = r.json()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and str(payload.get("code", "")) == "200":
+            rows = payload.get("data")
+            if isinstance(rows, list):
+                return [
+                    {
+                        "id": str(row.get("id", "")),
+                        "slug": str(row.get("id", "")),
+                        "title": str(row.get("bookName") or row.get("name") or ""),
+                    }
+                    for row in rows
+                    if row.get("id")
+                ]
         return _parse_series_html(r.text)
     except Exception:
         return []
