@@ -170,7 +170,7 @@ SITE_FILTER_CONFIG: Dict[str, List[Dict]] = {
                 ("Español", "spanish"),
                 ("Francés", "french"),
                 ("Alemán", "german"),
-                ("Italiano", "italiano"),
+                ("Italiano", "italian"),
                 ("Ruso", "russian"),
                 ("Tailandés", "thai"),
                 ("Indonesio", "indonesian"),
@@ -644,10 +644,13 @@ def _search_site_impl(
             }
 
             if query:
-                # dl.search() maneja ID numérico o tags via search_ids()
-                cache_key = f"hitomi_search_{query}"
+                # dl.search() maneja ID numérico o tags via search_ids();
+                # los filtros Idioma/Tipo/Orden se aplican dentro del downloader
+                cache_key = f"hitomi_search_{query}_{language}_{type_val}_{order}"
                 if cache_key not in _catalog_cache:
-                    _catalog_cache[cache_key] = dl.search(query)
+                    _catalog_cache[cache_key] = dl.search(
+                        query, language=language, type_val=type_val, order=order
+                    )
                 all_r = _catalog_cache[cache_key]
                 start = (page - 1) * PAGE_SIZE
                 raw_items = all_r[start : start + PAGE_SIZE]
@@ -678,10 +681,14 @@ def _search_site_impl(
                             dl._sess, f"{CDN}/index-{language}.nozomi"
                         )
 
-                    # Filtrar por tipo si está seleccionado
-                    # _apply_sort llama _term_url("type:X") → /n/type/X-all.nozomi
+                    # Filtrar por tipo si está seleccionado: intersección real con el
+                    # índice del tipo (conserva el orden del endpoint elegido)
                     if type_val and ids:
-                        ids = mod._apply_sort(dl._sess, ids, [f"type:{type_val}"])
+                        t_ids = set(
+                            mod._nozomi_ids(dl._sess, mod._term_url(f"type:{type_val}"))
+                        )
+                        if t_ids:
+                            ids = [g for g in ids if g in t_ids]
 
                     # Aleatorio: shuffle sobre los IDs ya filtrados/ordenados
                     if order == "random":

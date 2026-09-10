@@ -116,6 +116,71 @@ def _term_url(term: str) -> str:
     return f"{base}/n/tag/{term}-all.nozomi"
 
 
+_NOZOMI_BASE = "https://ltn.gold-usergeneratedcontent.net"
+
+
+def _order_nozomi(order: str, language: str) -> str:
+    """URL nozomi para cada opción de orden del catálogo/búsqueda."""
+    if order == "random":
+        return f"{_NOZOMI_BASE}/index-{language}.nozomi"
+    _MAP = {
+        "default": f"index-{language}.nozomi",
+        "date_published": f"date-published-index-{language}.nozomi",
+        "pop_today": f"popular/today-index-{language}.nozomi",
+        "pop_week": f"popular/week-index-{language}.nozomi",
+        "pop_month": f"popular/month-index-{language}.nozomi",
+        "pop_year": f"popular/year-index-{language}.nozomi",
+    }
+    return f"{_NOZOMI_BASE}/{_MAP.get(order, _MAP['default'])}"
+
+
+def _apply_filters(
+    sess: requests.Session,
+    ids: list[int],
+    language: str = "all",
+    type_val: str = "",
+    order: str = "default",
+) -> list[int]:
+    """Aplica los filtros del GUI (Idioma, Tipo, Orden) a una lista de IDs.
+
+    - language: intersección con el índice del idioma.
+    - type_val: intersección con el índice del tipo (FILTRA de verdad).
+    - order:    reordena según el endpoint correspondiente (random = shuffle).
+    """
+    result = ids
+    if language and language != "all":
+        lang_ids = set(_nozomi_ids(sess, _order_nozomi("default", language)))
+        if lang_ids:
+            result = [g for g in result if g in lang_ids]
+    if type_val:
+        type_ids = set(_nozomi_ids(sess, _term_url(f"type:{type_val}")))
+        if type_ids:
+            result = [g for g in result if g in type_ids]
+    if not result:
+        return result
+    if order == "random":
+        import random
+
+        r = list(result)
+        random.shuffle(r)
+        return r
+    if order != "default":
+        ordered = _nozomi_ids(sess, _order_nozomi(order, language))
+        if ordered:
+            base_set = set(result)
+            seen: set = set()
+            out: list[int] = []
+            for gid in ordered:
+                if gid in base_set and gid not in seen:
+                    out.append(gid)
+                    seen.add(gid)
+            for gid in result:
+                if gid not in seen:
+                    out.append(gid)
+            return out
+    return sorted(result, reverse=True)
+
+
 # ── Tag-index (trie sha256) ───────────────────────────────────────────────────
 # hitomi migró la búsqueda a un B-tree en tagindex.hitomi.la: el término se
 # hashea con sha256 (primeros 4 bytes) y se recorre el .index por rangos de
@@ -448,7 +513,13 @@ class DownloaderHitomi(BaseDownloader):
         print("ok")
 
     # items = [{"id": str(gid), "title": ...}]
-    def search(self, query: str) -> list[dict]:
+    def search(
+        self,
+        query: str,
+        language: str = "all",
+        type_val: str = "",
+        order: str = "default",
+    ) -> list[dict]:
         query = query.strip()
         # Si es un ID numérico puro, descarga directa
         if query.isdigit():
@@ -456,6 +527,7 @@ class DownloaderHitomi(BaseDownloader):
             load_meta(self._sess, gid)
             return [{"id": str(gid), "title": gallery_title(gid)}]
         ids = search_ids(self._sess, query)
+        ids = _apply_filters(self._sess, ids, language, type_val, order)
         load_meta_batch(self._sess, ids[:50])
         return [{"id": str(g), "title": gallery_title(g)} for g in ids]
 
