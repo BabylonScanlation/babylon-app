@@ -220,6 +220,20 @@ def _fetch_global_page(
     return page, [_parse_comic_stub(d) for d in docs], total
 
 
+def _fetch_category_page(
+    sess, token: str, category: str, page: int, sort: str
+) -> tuple[int, list[dict], int]:
+    resp = _api_get(
+        sess, "/comics", token, params={"page": page, "s": sort, "c": category}
+    )
+    if not resp or resp.get("code") != 200:
+        return page, [], 0
+    outer = (resp.get("data") or {}).get("comics") or {}
+    docs = outer.get("docs", [])
+    total = outer.get("pages", 1)
+    return page, [_parse_comic_stub(d) for d in docs], total
+
+
 def fetch_full_catalog(
     sess,
     token: str,
@@ -420,6 +434,20 @@ class DownloaderPicacomic(BaseDownloader):
         chunk = self._cat_buf[start:end]
         has_more = (not self._cat_exhausted) or (end < len(self._cat_buf))
         return chunk, has_more
+
+    def get_comics_by_category(
+        self, category: str, page: int = 1, sort: str = "dd"
+    ) -> tuple[list[dict], int]:
+        """Comics de una categoría.
+
+        Retorna (items, total_pages). El endpoint /comics?c= devuelve
+        successes sin `data` para categorías feed (p. ej. 大家都在看) —
+        en ese caso se retorna ([]) sin error.
+        """
+        _, comics, total = _fetch_category_page(
+            self._sess, self._token, category, page, sort
+        )
+        return comics, total
 
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
         cid = item.get("id", "")

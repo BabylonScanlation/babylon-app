@@ -378,7 +378,9 @@ def _parse_manga_cards(soup):
 
 def _get_catalog_page(sess, page=1, genre_slug="", sort="latest"):
     if genre_slug:
+        # El nav del sitio usa /SLUG/ directamente (no /manga-genre/SLUG/)
         candidates = [
+            f"{BASE_URL}/{genre_slug}/page/{page}/",
             f"{BASE_URL}/{GENRE_URL_TYPE}/{genre_slug}/page/{page}/",
         ]
     else:
@@ -414,6 +416,45 @@ class DownloaderBakamh(BaseDownloader):
     def __init__(self):
         self._sess = CFChallengedSession("bakamh", _make_session, warn=_warn_cf)
         self.cf_hint = hint("bakamh", BASE_URL + "/")
+
+    def get_genres(self) -> list[dict]:
+        """Devuelve las categorías del nav del sitio (son las 'genres')."""
+        try:
+            r = self._sess.get(BASE_URL + "/", timeout=20,
+                               headers={"Referer": BASE_URL + "/"})
+            if r.status_code != 200:
+                return []
+            soup = _soup(r.text)
+            # Categorías reales: links internos directos /SLUG/
+            genres = []
+            seen = set()
+            for a in soup.select("nav a[href]"):
+                href = a.get("href", "").rstrip("/")
+                text = a.get_text(strip=True)
+                if not text or not href:
+                    continue
+                if href.startswith("http") and not href.startswith(BASE_URL):
+                    continue  # links externos (Telegram, bakamh.app)
+                # Normalizar: relativo (/SLUG/) o absoluto interno
+                path = href.split("://", 1)[-1]
+                path_segs = [s for s in path.split("/") if s]
+                # Quitar host si es interno (bakamh.com/SLUG/)
+                if path_segs and path_segs[0] in ("bakamh.com", "www.bakamh.com"):
+                    path_segs = path_segs[1:]
+                segments = path_segs
+                # Solo /SLUG/ → 1 segmento; excluir páginas no-categoría
+                if len(segments) != 1:
+                    continue
+                slug = segments[0]
+                if slug.lower() in ("on-going", "end", "newmanga"):
+                    continue
+                if slug in seen or not slug:
+                    continue
+                seen.add(slug)
+                genres.append({"name": text, "slug": slug})
+            return genres
+        except Exception:
+            return []
 
     def _ajax_search(self, query: str) -> list[dict]:
         # El tema Madara responde "search-no-results" a ?s= cuando la búsqueda

@@ -632,14 +632,16 @@ def _search_site_impl(
             type_val = filters.get("type", "")
             order = filters.get("order", "default")
 
-            # Mapa de orden → URL nozomi del CDN de hitomi
+            # Mapa de orden → URL nozomi del CDN de hitomi. Los índices de
+            # popular/fecha son globales (sin idioma); el idioma se aplica por
+            # intersección más abajo.
             _ORDER_URL = {
                 "default": f"{CDN}/index-{language}.nozomi",
-                "date_published": f"{CDN}/date-published-index-{language}.nozomi",
-                "pop_today": f"{CDN}/popular/today-index-{language}.nozomi",
-                "pop_week": f"{CDN}/popular/week-index-{language}.nozomi",
-                "pop_month": f"{CDN}/popular/month-index-{language}.nozomi",
-                "pop_year": f"{CDN}/popular/year-index-{language}.nozomi",
+                "date_published": f"{CDN}/date/published-all.nozomi",
+                "pop_today": f"{CDN}/popular/today-all.nozomi",
+                "pop_week": f"{CDN}/popular/week-all.nozomi",
+                "pop_month": f"{CDN}/popular/month-all.nozomi",
+                "pop_year": f"{CDN}/popular/year-all.nozomi",
                 "random": f"{CDN}/index-{language}.nozomi",
             }
 
@@ -680,6 +682,15 @@ def _search_site_impl(
                         ids = mod._nozomi_ids(
                             dl._sess, f"{CDN}/index-{language}.nozomi"
                         )
+
+                    # Intersectar con el índice del idioma cuando el endpoint
+                    # del orden es global (popular/fecha sin idioma)
+                    if language and language != "all" and ids:
+                        lang_ids = set(
+                            mod._nozomi_ids(dl._sess, f"{CDN}/index-{language}.nozomi")
+                        )
+                        if lang_ids:
+                            ids = [g for g in ids if g in lang_ids]
 
                     # Filtrar por tipo si está seleccionado: intersección real con el
                     # índice del tipo (conserva el orden del endpoint elegido)

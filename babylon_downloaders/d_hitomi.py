@@ -125,11 +125,11 @@ def _order_nozomi(order: str, language: str) -> str:
         return f"{_NOZOMI_BASE}/index-{language}.nozomi"
     _MAP = {
         "default": f"index-{language}.nozomi",
-        "date_published": f"date-published-index-{language}.nozomi",
-        "pop_today": f"popular/today-index-{language}.nozomi",
-        "pop_week": f"popular/week-index-{language}.nozomi",
-        "pop_month": f"popular/month-index-{language}.nozomi",
-        "pop_year": f"popular/year-index-{language}.nozomi",
+        "date_published": "date/published-all.nozomi",
+        "pop_today": "popular/today-all.nozomi",
+        "pop_week": "popular/week-all.nozomi",
+        "pop_month": "popular/month-all.nozomi",
+        "pop_year": "popular/year-all.nozomi",
     }
     return f"{_NOZOMI_BASE}/{_MAP.get(order, _MAP['default'])}"
 
@@ -408,29 +408,67 @@ def _apply_sort(
     return result
 
 
+def _parse_hitomi_query(query: str) -> list[tuple[str, str]]:
+    """Parsea una consulta hitomi en tokens [(tipo, valor)].
+
+    Tipos: '+' (positivo), '-' (negativo).
+    Maneja tags con namespace que contienen espacios, p.ej.
+    ``female:mind control`` → un solo token.
+    """
+    raw = query.strip().lower().split()
+    tokens: list[tuple[str, str]] = []
+    i = 0
+    while i < len(raw):
+        w = raw[i]
+        if w.startswith("-"):
+            tokens.append(("-", w[1:]))
+            i += 1
+        elif ":" in w:
+            # Namespace tag: consumir palabras siguientes hasta encontrar
+            # otro token con prefijo '-', o 'sort:', 'order:', o fin.
+            ns, val = w.split(":", 1)
+            val_parts = [val]
+            i += 1
+            while i < len(raw):
+                nxt = raw[i]
+                if nxt.startswith("-") or nxt.lower().startswith("sort:") or nxt.lower().startswith("order:"):
+                    break
+                val_parts.append(nxt)
+                i += 1
+            tokens.append(("+", f"{ns}:{' '.join(val_parts)}"))
+        elif w.lower().startswith("sort:") or w.lower().startswith("order:"):
+            # Sort/order tokens are skipped by search_ids but kept for compat
+            tokens.append(("o", w))
+            i += 1
+        else:
+            tokens.append(("+", w))
+            i += 1
+    return tokens
+
+
 def search_ids(
     sess: requests.Session, query: str, sort_terms: Optional[list[str]] = None
 ) -> list[int]:
-    q = query.strip().lower()
-    parts = [p for p in q.split() if p]
-    if not parts:
+    tokens = _parse_hitomi_query(query)
+    if not tokens:
         return []
     ids: set[int] = set()
-    # Primer término inicializa el set (solo términos positivos)
-    for p in parts:
-        if p.startswith("-") or p.startswith("sort") or p.startswith("order"):
-            continue
-        ids = set(_term_ids(sess, p.replace("_", " ")))
-        break
+    # Primer token positivo inicializa el set
+    for tipo, val in tokens:
+        if tipo == "+":
+            ids = set(_term_ids(sess, val.replace("_", " ")))
+            break
     if not ids:
         return []
-    # Términos adicionales positivos: intersección
-    for p in parts:
-        if p == parts[0]:
+    # Tokens positivos adicionales: intersección
+    seen_first = False
+    for tipo, val in tokens:
+        if tipo != "+":
             continue
-        if p.startswith("-") or p.startswith("sort") or p.startswith("order"):
+        if not seen_first:
+            seen_first = True
             continue
-        t = set(_term_ids(sess, p.replace("_", " ")))
+        t = set(_term_ids(sess, val.replace("_", " ")))
         if t:
             ids.intersection_update(t)
     if not ids:
