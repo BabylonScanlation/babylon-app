@@ -415,7 +415,49 @@ class DownloaderBakamh(BaseDownloader):
         self._sess = CFChallengedSession("bakamh", _make_session, warn=_warn_cf)
         self.cf_hint = hint("bakamh", BASE_URL + "/")
 
+    def _ajax_search(self, query: str) -> list[dict]:
+        # El tema Madara responde "search-no-results" a ?s= cuando la búsqueda
+        # es AJAX; endpoint real es admin-ajax.php con action=wp-manga-search-manga
+        try:
+            r = self._sess.post(
+                AJAX_URL,
+                data={"action": "wp-manga-search-manga", "title": query},
+                timeout=15,
+                headers={
+                    "Referer": BASE_URL + "/",
+                    "Origin": BASE_URL,
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+            if r.status_code != 200:
+                return []
+            payload = r.json()
+            if not payload.get("success"):
+                return []
+            entries = payload.get("data") or []
+            if isinstance(entries, dict):
+                entries = [entries]
+            if not isinstance(entries, list):
+                return []
+            results, seen = [], set()
+            for e in entries:
+                if not isinstance(e, dict) or e.get("type", "manga") != "manga":
+                    continue
+                url = (e.get("url") or "").rstrip("/")
+                slug = unquote(url.rsplit("/", 1)[-1]) if url else ""
+                if not slug or slug in seen:
+                    continue
+                seen.add(slug)
+                results.append({"id": slug, "slug": slug, "title": e.get("title")})
+            return results
+        except Exception:
+            return []
+
     def search(self, query: str) -> list[dict]:
+        items = self._ajax_search(query)
+        if items:
+            return items
+
         import requests as _req
 
         time.sleep(REQUEST_DELAY)
@@ -433,7 +475,7 @@ class DownloaderBakamh(BaseDownloader):
                 _warn_cf()
         except Exception:
             pass
-        return []
+        return items
 
     def get_catalog(
         self, genre_slug: str = "", sort: str = "latest", max_pages: int = 50
