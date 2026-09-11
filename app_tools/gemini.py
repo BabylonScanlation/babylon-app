@@ -30,26 +30,18 @@ class APIKeyPool:
         self.lock = threading.Lock()
         self.keys_state = {}
         today = time.strftime("%Y-%m-%d")
-        
-        saved_usage = Config.user_settings.get("KEY_USAGE_TRACKING", {})
+
         saved_date = Config.user_settings.get("LAST_REQUEST_DATE", "")
-        
+
         if saved_date != today:
-            saved_usage = {}
-            Config.save_user_settings({"LAST_REQUEST_DATE": today, "KEY_USAGE_TRACKING": {}})
+            Config.save_user_settings({"LAST_REQUEST_DATE": today})
 
         for k in Config.GEMINI_API_KEYS:
-            usage = saved_usage.get(k, 0)
             self.keys_state[k] = {
                 'last_time': 0.0,
-                'daily_count': usage,
                 'exhausted': False,
                 'tpm_cooldown_until': 0.0
             }
-
-    def _save_state(self):
-        usage = {k: v['daily_count'] for k, v in self.keys_state.items()}
-        Config.save_user_settings({"KEY_USAGE_TRACKING": usage})
 
     def mark_exhausted(self, key: str):
         with self.lock:
@@ -63,41 +55,101 @@ class APIKeyPool:
 
     def acquire_key_and_reserve(self, limits: dict) -> Tuple[str, float]:
         rpm = limits.get("RPM", 5)
-        rpd = limits.get("RPD", 20)
         min_interval = 60.0 / rpm
-        
+
         with self.lock:
             best_key = None
             min_wait = float('inf')
-            
+
             for k, state in self.keys_state.items():
                 if state['exhausted']: continue
-                if state['daily_count'] >= rpd: continue
-                
+
                 now = time.time()
                 if now < state['tpm_cooldown_until']:
                     wait = state['tpm_cooldown_until'] - now
                 else:
                     elapsed = now - state['last_time']
                     wait = max(0.0, min_interval - elapsed)
-                
+
                 if wait < min_wait:
                     min_wait = wait
                     best_key = k
-            
+
             if best_key is None:
-                return "", -1.0 # Todas agotadas o límite diario
-                
+                return "", -1.0
+
             if min_wait <= 0.0:
                 self.keys_state[best_key]['last_time'] = time.time()
-                self.keys_state[best_key]['daily_count'] += 1
-                self._save_state()
                 return best_key, 0.0
-                
+
             return best_key, min_wait
 
 class GeminiAPIError(AIAPIError):
     pass
+
+
+def _classify_api_error(e: BaseException) -> str:
+    """Clasifica un error de la API de Gemini.
+
+    Retorna una categoría de un conjunto fijo para decidir si una key se
+    agota, se hace cooldown, o simplemente se reporta sin quemar keys:
+      - "key": la key en sí es inválida/revocada/sin autorización.
+      - "quota_daily": cuota diaria agotada (RPD) → agotar key por hoy.
+      - "quota_tpm": rate limit de corto plazo (TPM/RPM).
+      - "server": 503/overloaded/unavailable → reintentar.
+      - "request": error de petición determinístico (400 invalid argument,
+        404 modelo no encontrado, 403 permission del modelo, etc.).
+      - "other": desconocido.
+
+    El error típico del SDK google.genai es ClientError con atributos
+    `code` (int) y `status` (str). Para cualquier otra excepción se
+    analiza el texto. CRÍTICO: NO usar subcadenas genéricas como
+    "invalid" o "permission": "400 INVALID_ARGUMENT" aparece en errores
+    de request con key válida y agotaría keys sanas en cadena.
+    """
+    e_str = str(e)
+    el = e_str.lower()
+    code = getattr(e, "code", None)
+    status = str(getattr(e, "status", "") or "").upper()
+
+    # ── Errores de cuota ──────────────────────────────────────────────
+    is_429 = code == 429 or status == "RESOURCE_EXHAUSTED" or "rate limit" in el or "resource_exhausted" in el
+    if is_429 or "429" in el:
+        if "daily" in el or "quota" in el or "rpd" in el:
+            return "quota_daily"
+        return "quota_tpm"
+
+    # ── Errores de servidor (transitorios) ────────────────────────────
+    if code in (500, 502, 503, 504) or any(t in el for t in ("unavailable", "overloaded", "disconnected", "backend")):
+        return "server"
+
+    # ── Errores de key REALES (mensajes explícitos o 401/403 con auth) ─
+    # El mensaje típico de key inválida es
+    #   "API key not valid. Please pass a valid API key." (400 INVALID_ARGUMENT)
+    # y "UNAUTHENTICATED" en .status para 401.
+    # Aclaración CRÍTICA: un 403 PERMISSION_DENIED por ACCESO AL MODELO
+    # (p. ej. "model not allowed") NO es key inválida: rotar no lo arregla
+    # y quemaría todas las keys en cadena. Solo es error de key si el
+    # mensaje menciona explícitamente credenciales/apikey.
+    has_key_msg = any(t in el for t in ("api key not valid", "invalid api key", "api key invalid", "bad api key", "api key is invalid"))
+    has_auth_msg = any(t in el for t in ("unauthenticated", "authentication failed", "invalid credentials", "api key rejected", "invalid_api_key", "api key" and "unauthor"))
+    is_unauthenticated = status == "UNAUTHENTICATED" or code == 401
+    is_denied_auth = status == "PERMISSION_DENIED" and (
+        "permission denied" in el
+        and any(t in el for t in ("api key", "credential", "project number", "permissions for your project"))
+    )
+    if has_key_msg or has_auth_msg or is_unauthenticated or is_denied_auth:
+        return "key"
+
+    # ── Errores de request determinísticos (NO quemar keys) ───────────
+    # 400/404/409/422 con key válida = problema de la petición o del modelo
+    # (p. ej. modelo inexistente, campo no soportado), NO de la key.
+    if isinstance(code, int) and 400 <= code < 500:
+        return "request"
+    if any(t in el for t in ("invalid_argument", "not found", "not_found", "permission_denied", "modelerror", "does not exist", "is not found", "model not allowed")):
+        return "request"
+
+    return "other"
 
 class GeminiProcessor(BaseAIProcessor):
     def __init__(self):
@@ -338,28 +390,35 @@ class GeminiProcessor(BaseAIProcessor):
 
             except Exception as e:
                 error_str = str(e).lower()
-                is_server_error = "503" in error_str or "disconnected" in error_str or "unavailable" in error_str or "overloaded" in error_str
+                err_kind = _classify_api_error(e)
+                is_server_error = err_kind == "server"
 
-                # KEY INVÁLIDA/REVOCADA: marcar como agotada y rotar, no reintentar con la misma.
-                is_key_error = any(t in error_str for t in ("401", "403", "api key", "permission", "invalid"))
-                if is_key_error:
+                # KEY INVÁLIDA/REVOCADA (real): marcar como agotada y rotar.
+                if err_kind == "key":
                     if current_key:
                         APIKeyPool().mark_exhausted(current_key)
                     self._exhausted_keys.add(current_key)
                     self._report_status(f"API Key rechazada. Marcando como inválida y rotando. {str(e)[:60]}")
                     continue
 
-                is_tpm_error = "429" in error_str or "exhausted" in error_str
-                if is_tpm_error:
-                    # "quota"/"daily" = límite diario (RPD): agotar por el día, no solo 60s.
-                    if "quota" in error_str or "daily" in error_str:
-                        if current_key:
-                            APIKeyPool().mark_exhausted(current_key)
-                        self._report_status(f"Cuota diaria alcanzada en la llave actual. Agotando para hoy y rotando...")
-                    else:
-                        APIKeyPool().mark_tpm_limit(current_key, 60.0)
-                        self._report_status(f"Límite TPM alcanzado en la llave actual. Cambiando...")
-                    continue # Try again with a different key immediately
+                # Errores de request determinístico (400/404/403-modelo):
+                # la key es válida, el problema es de la petición o del
+                # modelo. NO quemar la key ni contar la reserva: reportar y abortar.
+                if err_kind == "request":
+                    msg = f"Error de petición: {str(e)[:80]}... (la petición/modelo es inválida, no la API key)"
+                    self._report_status(msg)
+                    raise GeminiAPIError(msg)
+
+                if err_kind == "quota_daily":
+                    if current_key:
+                        APIKeyPool().mark_exhausted(current_key)
+                    self._report_status(f"Cuota diaria alcanzada en la llave actual. Agotando para hoy y rotando...")
+                    continue  # Try again with a different key immediately
+
+                if err_kind == "quota_tpm":
+                    APIKeyPool().mark_tpm_limit(current_key, 60.0)
+                    self._report_status(f"Límite TPM alcanzado en la llave actual. Cambiando...")
+                    continue  # Try again with a different key immediately
 
                 if is_server_error and attempt < max_retries:
                     wait_time = base_delay * (2 ** attempt)
@@ -367,7 +426,7 @@ class GeminiProcessor(BaseAIProcessor):
                         self._report_status(f"Servidor ocupado. Reintento {attempt+1}/{max_retries} en {i}s...")
                         time.sleep(1)
                     continue
-                
+
                 self._report_status(f"Error API: {str(e)[:50]}...")
                 raise GeminiAPIError(str(e))
         return ""
@@ -672,26 +731,39 @@ class GeminiProcessor(BaseAIProcessor):
 
             except Exception as e:
                 error_str = str(e).lower()
+                err_kind = _classify_api_error(e)
 
-                # KEY INVÁLIDA/REVOCADA: marcar como agotada y rotar.
-                is_key_error = any(t in error_str for t in ("401", "403", "api key", "permission", "invalid"))
-                if is_key_error:
+                # KEY INVÁLIDA/REVOCADA (real): marcar como agotada y rotar.
+                if err_kind == "key":
                     if current_key:
                         APIKeyPool().mark_exhausted(current_key)
                     self._report_status(f"API Key rechazada. Marcando como inválida y rotando. {str(e)[:60]}")
                     continue
 
-                is_quota = "429" in error_str or "exhausted" in error_str
-                if is_quota:
-                    # "quota"/"daily" = límite diario (RPD): agotar por el día, no solo 60s.
-                    if "quota" in error_str or "daily" in error_str:
-                        if current_key:
-                            APIKeyPool().mark_exhausted(current_key)
-                        self._report_status(f"Cuota diaria alcanzada en la llave actual. Agotando para hoy y rotando...")
-                    else:
-                        APIKeyPool().mark_tpm_limit(current_key, 60.0)
-                        self._report_status(f"Límite TPM (429) en llave actual. Rotando...")
+                # Error de request/modelo determinístico con key válida:
+                # NO quemar la key, NO rotar, NO contar la reserva.
+                if err_kind == "request":
+                    self._report_status(f"Error de petición: {str(e)[:80]}... (la petición/modelo es inválida, no la API key)")
+                    return [f"[ERROR API: {e}]"] * len(images)
+
+                if err_kind == "quota_daily":
+                    if current_key:
+                        APIKeyPool().mark_exhausted(current_key)
+                    self._report_status(f"Cuota diaria alcanzada en la llave actual. Agotando para hoy y rotando...")
                     continue
+
+                if err_kind == "quota_tpm":
+                    APIKeyPool().mark_tpm_limit(current_key, 60.0)
+                    self._report_status(f"Límite TPM (429) en llave actual. Rotando...")
+                    continue
+
+                if err_kind == "server":
+                    if self._try_switch_model():
+                        self._report_status(f"Servidor ocupado. Cambiando modelo a {Config.GEMINI_MODEL}...")
+                        continue
+                    self._report_status(f"Servidor ocupado y sin modelos alternativos. Error: {str(e)[:60]}...")
+                    return [f"[ERROR API: {e}]"] * len(images)
+
                 self._report_status(f"Error final: {str(e)[:50]}...")
                 return [f"[ERROR API: {e}]"] * len(images)
             finally:
