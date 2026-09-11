@@ -16,6 +16,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from typing import Callable, Optional
 
+# Consola Windows: stdout cp1252 rompe al imprimir CJK (mismo patrón que d_pigmh)
+try:
+    if sys.stdout and getattr(sys.stdout, "buffer", None):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 try:
     from PIL import Image
 
