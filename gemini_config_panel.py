@@ -32,7 +32,6 @@ class GeminiConfigPanel(QWidget):
         thinking_idx = self.gemini_thinking_level_combo.findData(Config.GEMINI_THINKING_LEVEL)
         self.gemini_thinking_level_combo.setCurrentIndex(thinking_idx if thinking_idx >= 0 else 0)
         self.gemini_thinking_level_combo.setEnabled(Config.GEMINI_ENABLE_THINKING)
-        self.gemini_thinking_level_info.setVisible(Config.GEMINI_ENABLE_THINKING)
         self._update_thinking_level_info()
         self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
         
@@ -287,16 +286,19 @@ class GeminiConfigPanel(QWidget):
                 background-color: #1a1a1a;
                 color: white;
                 selection-background-color: #572364;
+                width: 180px;
+                max-width: 220px;
+                min-width: 120px;
             }
             """
         )
         self.gemini_thinking_level_combo.setFont(self.roboto_black_font)
         thinking_level_items = [
-            ("auto", "Auto (Por defecto del modelo)"),
-            ("minimal", "Minimal — Mínima reflexión (más rápido/barato)"),
-            ("low", "Baja (Low) — Reflexión ligera"),
-            ("medium", "Media (Medium) — Equilibrio recomendado"),
-            ("high", "Alta (High) — Pensamiento extendido"),
+            ("auto", "Auto"),
+            ("minimal", "Minimal"),
+            ("low", "Low"),
+            ("medium", "Medium"),
+            ("high", "High"),
         ]
         thinking_level_tooltips = {
             "auto": "NO sobreescribe el nivel nativo de cada modelo:\n"
@@ -327,12 +329,6 @@ class GeminiConfigPanel(QWidget):
         self.gemini_thinking_level_combo.setEnabled(Config.GEMINI_ENABLE_THINKING)
         self.gemini_thinking_level_combo.currentIndexChanged.connect(self._update_thinking_level_info)
         self.gemini_thinking_cb.stateChanged.connect(self._on_thinking_toggled)
-
-        self.gemini_thinking_level_info = QLabel()
-        self.gemini_thinking_level_info.setWordWrap(True)
-        self.gemini_thinking_level_info.setStyleSheet("color: #ffd08a; font-size: 11px; border: none; padding: 2px;")
-        self.gemini_thinking_level_info.setFont(self.roboto_black_font)
-        self.gemini_thinking_level_info.setVisible(Config.GEMINI_ENABLE_THINKING)
 
         self.ultra_high_quality_cb = QCheckBox("Activar Ultra Alta Calidad (Experimental)")
         self.ultra_high_quality_cb.setToolTip(
@@ -368,7 +364,6 @@ class GeminiConfigPanel(QWidget):
         thinking_group = QVBoxLayout()
         thinking_group.setSpacing(2)
         thinking_group.addWidget(self.gemini_thinking_level_combo)
-        thinking_group.addWidget(self.gemini_thinking_level_info)
         options_layout.addWidget(self.gemini_thinking_cb)
         options_layout.addLayout(thinking_group)
         options_layout.addWidget(self.ultra_high_quality_cb)
@@ -443,22 +438,33 @@ class GeminiConfigPanel(QWidget):
         is_checked = (state == Qt.CheckState.Checked) if isinstance(state, Qt.CheckState) else bool(state)
         if self.gemini_thinking_level_combo:
             self.gemini_thinking_level_combo.setEnabled(is_checked)
-        if self.gemini_thinking_level_info:
-            self.gemini_thinking_level_info.setVisible(is_checked)
 
     def _update_thinking_level_info(self):
-        """Muestra el resumen de consumo del nivel de pensamiento seleccionado."""
-        if not self.gemini_thinking_level_combo or not self.gemini_thinking_level_info:
+        """Actualiza el tooltip del selector con el resumen de consumo del nivel
+        de pensamiento seleccionado (aparece al pasar el mouse, no siempre)."""
+        if not self.gemini_thinking_level_combo:
             return
         level = cast(Any, self.gemini_thinking_level_combo.currentData()) or "auto"
         summaries = {
-            "auto": "Consumo: nivel nativo del modelo. 2.5 Flash dinámico (~8K tokens/página), 3 Flash 'high' (máximo), 3.1 Flash-Lite 'minimal' (casi 0). Sin coste extra inesperado.",
-            "minimal": "Consumo: ~0-700 tokens de pensamiento por página. Máxima velocidad y mínimo coste.",
-            "low": "Consumo: ~2.000-5.000 tokens de pensamiento por página. Latencia y coste bajos.",
-            "medium": "Consumo: ~8.000 tokens de pensamiento por página (≈+30-50% vs minimal). Equilibrio recomendado.",
-            "high": "Consumo: ~16.000-25.000 tokens de pensamiento por página (2-4× más coste, hasta 2× más lento).",
+            "auto": "NO sobreescribe el nivel nativo de cada modelo:\n"
+                    "• gemini-2.5-flash: pensamiento dinámico (hasta ~8.000 tokens/página)\n"
+                    "• gemini-3-flash-preview: nivel 'high' (máximo)\n"
+                    "• gemini-3.1-flash-lite: nivel 'minimal' (casi 0)\n\n"
+                    "Mejor relación calidad/coste. Sin coste inesperado.",
+            "minimal": "Consumo: ~0-700 tokens de pensamiento por página.\n"
+                       "Máxima velocidad y MÍNIMO consumo/coste.\n"
+                       "En modelos 3.x el pensamiento no se apaga del todo: es el estado más cercano a apagado.",
+            "low": "Consumo: ~2.000-5.000 tokens de pensamiento por página.\n"
+                   "Poca latencia extra. Pensamiento suficiente para texto sencillo.\n"
+                   "Úsalo si en 'minimal' hubo errores de calidad por tokens.",
+            "medium": "Consumo: ~8.000 tokens de pensamiento por página (≈+30-50% vs minimal).\n"
+                      "Equilibrio recomendado para traducción.",
+            "high": "PENSAMIENTO EXTENDIDO: ≈ 16.000-25.000 tokens de pensamiento por página.\n"
+                    "De 2 a 4 veces más tokens/coste y hasta 2× más lento.\n"
+                    "Solo para páginas con texto muy complejo o dañado.\n"
+                    "⚠ Con lotes de 3 imágenes puede rozar el límite de salida (65.536 tokens).",
         }
-        self.gemini_thinking_level_info.setText(summaries.get(level, ""))
+        self.gemini_thinking_level_combo.setToolTip(summaries.get(level, ""))
 
     def _validate_gemini_api_ui(self):
         """Valida la API key visualmente de forma asíncrona."""
@@ -534,7 +540,6 @@ class GeminiConfigPanel(QWidget):
         thinking_idx = self.gemini_thinking_level_combo.findData(Config.GEMINI_THINKING_LEVEL)
         self.gemini_thinking_level_combo.setCurrentIndex(thinking_idx if thinking_idx >= 0 else 0)
         self.gemini_thinking_level_combo.setEnabled(Config.GEMINI_ENABLE_THINKING)
-        self.gemini_thinking_level_info.setVisible(Config.GEMINI_ENABLE_THINKING)
         self._update_thinking_level_info()
         self.stitching_only_cb.setChecked(Config.GEMINI_STITCHING_ONLY)
         self.auto_switch_checkbox.setChecked(Config.ENABLE_AUTO_MODEL_SWITCH)
