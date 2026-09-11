@@ -163,7 +163,7 @@ class GeminiProcessor(BaseAIProcessor):
     def _get_current_limits(self) -> Dict[str, int]:
         model = Config.GEMINI_MODEL.lower()
         for m_name, limits in Config.MODEL_LIMITS.items():
-            if m_name in model:
+            if m_name == model:
                 return limits
         return {"RPM": 5, "TPM": 250000, "RPD": 20}
 
@@ -210,28 +210,35 @@ class GeminiProcessor(BaseAIProcessor):
             client = self.get_client()
             models_iter = client.models.list()
             available_models: List[str] = []
-            
-            # El usuario solicitó explícitamente esta lista de modelos que funcionaron bien
-            EXACT_ALLOWED_MODELS = [
-                "gemini-3.8-flash",
-                "gemini-3.7-flash",
-                "gemini-3.6-flash",
-                "gemini-3.5-flash-lite",
-                "gemini-3.1-flash-lite",
-                "gemini-3-flash-preview",
-                "gemini-2.5-flash-lite",
-                "gemini-flash-latest"
-            ]
+
+            def is_translation_flash(name: str) -> bool:
+                # Solo modelos 'flash' coherentes con la traducción de manga:
+                # generación de texto/imagen multimodal, sin variantes especializadas
+                # (tts/audio/live/omni/embedding/robotics/veo/lyria/deep-research).
+                if "-tts" in name or "audio" in name or "-live-" in name or name.endswith("-live"):
+                    return False
+                if "omni" in name or "image" in name or "transcribe" in name:
+                    return False
+                if "embedding" in name or "robotics" in name or "computer-use" in name:
+                    return False
+                if "veo" in name or "lyria" in name or "aqa" in name or "deep-research" in name or "antigravity" in name or "nano-banana" in name:
+                    return False
+                # Excluir aliases genéricos "-latest" y la serie 2.5 (modelos viejos):
+                # solo interesan los flash 3.x actuales.
+                if "-latest" in name or name.startswith("gemini-2.5-"):
+                    return False
+                # Nombre base gemini[-versión]-flash, con sufijos lite/preview/latest.
+                return bool(re.fullmatch(r'gemini(?:-[\d.]+)?-flash(?:-(?:lite|preview|latest))*', name))
 
             for model in models_iter:
                 model_name = getattr(model, 'name', '')
                 if not model_name:
                     continue
                 name: str = str(model_name).lower().replace("models/", "")
-                
-                if name in EXACT_ALLOWED_MODELS:
+
+                if is_translation_flash(name) and name not in available_models:
                     available_models.append(name)
-            
+
             def sort_priority(m_name: str) -> Tuple:
                 # Extraer versión principal y sub-versión
                 version_match = re.search(r'gemini-(\d+(\.\d+)?)', m_name)
@@ -261,11 +268,11 @@ class GeminiProcessor(BaseAIProcessor):
 
             available_models.sort(key=sort_priority, reverse=True)
             if not available_models:
-                return ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash"]
+                return ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash"]
             return available_models
         except Exception as e:
             logging.error(f"Error obteniendo modelos: {e}")
-            return ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash"]
+            return ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash"]
 
     def _try_switch_model(self) -> bool:
         """Intenta cambiar a otro modelo disponible si el actual falla."""
@@ -277,11 +284,11 @@ class GeminiProcessor(BaseAIProcessor):
         self._failed_models.add(current)
         
         # Definir una jerarquía de fallback lógica basada en tus modelos disponibles
-        # Orden: 3.1-lite -> 3-preview -> 2.5-flash
+        # Orden: 3.1-lite -> 3-preview -> 3.5-flash
         hierarchy = [
             "gemini-3.1-flash-lite",
             "gemini-3-flash-preview",
-            "gemini-2.5-flash"
+            "gemini-3.5-flash"
         ]
         
         # Buscar el siguiente modelo en la jerarquía que no haya fallado

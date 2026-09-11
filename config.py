@@ -43,11 +43,17 @@ def global_exception_handler(
 
 
 # --- Carga de Entorno ---
+import io
+
 def _load_env_file():
     """Carga un .env priorizando el que esté junto al ejecutable (exe) o en la raíz del repo (dev).
 
     Así el binario no necesita llevar las claves incrustadas: tu equipo puede colocar
     un .env junto al .exe sin recompilar, y los que compilen desde GitHub usan su propio .env.
+
+    Lee con encoding 'utf-8-sig' para descartar el BOM UTF-8: si el .env lo tiene,
+    python-dotenv deja el '\\ufeff' pegado al nombre de la primera variable y la key
+    (habitualmente GEMINI_API_KEY) no se carga.
     """
     candidates = []
     if getattr(sys, "frozen", False):
@@ -61,7 +67,13 @@ def _load_env_file():
         candidates.append(os.path.abspath(".env"))
     for candidate in candidates:
         if os.path.exists(candidate):
-            load_dotenv(candidate, override=False)
+            try:
+                with open(candidate, "r", encoding="utf-8-sig") as f:
+                    content = f.read()
+                load_dotenv(stream=io.StringIO(content), override=False)
+            except Exception as e:
+                logging.warning(f"No se pudo cargar .env ({candidate}): {e}")
+                load_dotenv(candidate, override=False)
             return True
     return False
 
@@ -166,9 +178,13 @@ class Config:
     # --- MODEL LIMITS DEFINITION (2026 Free Tier Constraints) ---
     # Structure: {ModelName: (RPM, TPM, RPD)}
     MODEL_LIMITS: Dict[str, Dict[str, int]] = {
-        "gemini-2.5-flash": {"RPM": 5, "TPM": 250000, "RPD": 20},
-        "gemini-3-flash-preview": {"RPM": 5, "TPM": 250000, "RPD": 20},
+        "gemini-3.8-flash": {"RPM": 15, "TPM": 250000, "RPD": 500},
+        "gemini-3.7-flash": {"RPM": 15, "TPM": 250000, "RPD": 500},
+        "gemini-3.6-flash": {"RPM": 15, "TPM": 250000, "RPD": 500},
+        "gemini-3.5-flash": {"RPM": 15, "TPM": 250000, "RPD": 500},
+        "gemini-3.5-flash-lite": {"RPM": 15, "TPM": 250000, "RPD": 500},
         "gemini-3.1-flash-lite": {"RPM": 15, "TPM": 250000, "RPD": 500},
+        "gemini-3-flash-preview": {"RPM": 5, "TPM": 250000, "RPD": 20},
     }
 
     # --- NIVELES DE PENSAMIENTO (Thinking) ---
