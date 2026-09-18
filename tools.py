@@ -917,7 +917,7 @@ class ToolsManager(QObject):
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #55d4ff, stop:1 #2b8cff);
-                border: 1px solid white; box-shadow: 0 0 10px #00c6ff;
+                border: 1px solid white;
             }
             QPushButton:pressed { background-color: #005bb5; margin-top: 2px; }
             QPushButton:disabled {

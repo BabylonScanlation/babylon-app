@@ -20,7 +20,7 @@ from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
-from common import CFG, BaseDownloader
+from common import CFG, BaseDownloader, extract_series_extras
 
 _BASE_CANDIDATES = [f"https://wfwf{n}.com/" for n in range(448, 510)] + [
     "https://wfwf1.com/",
@@ -498,6 +498,7 @@ class DownloaderWfwf(BaseDownloader):
             "encoded_title": enc_title,
             "mode": mode.kind,
         }
+        meta.update(extract_series_extras(html, BASE_URL))
         return meta, chapters
 
     def get_chapter_images(self, chapter: dict, series: dict) -> list[str]:

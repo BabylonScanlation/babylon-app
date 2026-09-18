@@ -15,7 +15,7 @@ class ProjectManager:
 
     def __init__(self, base_dir: str):
         self.base_dir = base_dir
-        self.supported_formats = (".jpg", ".png", ".jpeg", ".gif")
+        self.supported_formats = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif")
         self.project_folders: List[Tuple[str, str]] = []
         self.delete_mode = False
         os.makedirs(self.base_dir, exist_ok=True)

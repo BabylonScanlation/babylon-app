@@ -318,7 +318,7 @@ class Config:
         {"id": "-rzaKLRx1LE", "title": "Cómo redibujar Comics"},
         {"id": "KkFaq4-WHbU", "title": "Cómo organizar tus tipografías"},
     ]
-    SUPPORTED_FORMATS = (".jpg", ".png", ".jpeg", ".gif", ".webp")
+    SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif")
     FONT_DIR = resource_path(os.path.join("BBSL", "fuentes"))
     FONT_PATHS = [
         resource_path(os.path.join(FONT_DIR, "SuperCartoon.ttf")),

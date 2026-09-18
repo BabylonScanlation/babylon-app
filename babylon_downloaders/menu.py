@@ -242,12 +242,35 @@ def _chapter_selector(chapters: list[dict], series_title: str) -> list[dict]:
                 return [chapters[i] for i in idxs]
 
 
-def _confirm_download(selected: list[dict]) -> bool:
+def _estimate_total_images(dl, series: dict, selected: list[dict]) -> Optional[int]:
+    """Estimación del número total de imágenes de los capítulos seleccionados
+    (rasca la página/cantidad de cada capítulo sin descargar imágenes)."""
+    total = 0
+    unknown = 0
+    for c in selected:
+        try:
+            n = dl.get_image_count(c, series)
+            if n is not None:
+                total += n
+            else:
+                unknown += 1
+        except Exception:
+            unknown += 1
+    return total if unknown == 0 else None
+
+
+def _confirm_download(selected: list[dict], dl=None, series: Optional[dict] = None) -> bool:
     print(f"\n  {C.BOLD}Capítulos seleccionados ({len(selected)}):{C.END}")
     for i, c in enumerate(selected[:10], 1):
         print(f"    {i}. {c.get('title', '')[:60]}")
     if len(selected) > 10:
         print(f"    … y {len(selected) - 10} más")
+    if dl is not None and series:
+        est = _estimate_total_images(dl, series, selected)
+        if est is not None:
+            print(f"  {C.CYAN}Total estimado: {C.BOLD}{est}{C.END}{C.CYAN} imágenes en {len(selected)} capítulos{C.END}")
+        else:
+            print(f"  {C.YELLOW}No se pudo estimar el número total de imágenes.{C.END}")
     ans = _prompt("¿Confirmar descarga? [Enter=sí / n=cancelar] ")
     return ans.lower() != "n"
 
@@ -286,7 +309,7 @@ def _flow_series_and_download(dl, item: dict) -> None:
     selected = _chapter_selector(chapters, series.get("title", ""))
     if not selected:
         return
-    if not _confirm_download(selected):
+    if not _confirm_download(selected, dl, series):
         return
 
     run_download(

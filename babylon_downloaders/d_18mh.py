@@ -1,5 +1,12 @@
 """
 d_18mh.py — 18mh.org downloader (sin menú)
+
+Limitación conocida (2026-09): el lector de capítulos es una app Astro que
+solo entrega un spinner en <div id="chapterContent">; las imágenes se cargan
+por JS tras superar un Turnstile de Cloudflare, así que no se pueden obtener
+por HTTP. El CDN de portadas (host-cover.mangabuddy.in) además devuelve 522
+persistente. Por eso 18mh solo aporta metadata de serie + lista de capítulos:
+get_chapter_images() devuelve [] y no se expone "cover" en la ficha.
 """
 
 from __future__ import annotations
@@ -13,7 +20,7 @@ from urllib.parse import quote, urljoin
 
 from bs4 import BeautifulSoup
 from cf_harvest import CFChallengedSession, detect_challenge, hint
-from common import CFG, BaseDownloader
+from common import CFG, BaseDownloader, extract_series_extras
 import requests
 
 SITE_URL = "https://18mh.org"
@@ -23,7 +30,10 @@ RETRY_DELAY = 2.0
 
 try:
     from curl_cffi.requests import Session as CurlSession
-    from curl_cffi.requests import RequestException as CurlReqError
+    try:
+        from curl_cffi.requests.exceptions import RequestException as CurlReqError
+    except ImportError:
+        from curl_cffi.requests.exceptions import RequestsError as CurlReqError
 
     _USE_CURL = True
 except ImportError:
@@ -157,9 +167,28 @@ def _parse_series_meta(session: requests.Session, slug: str) -> Optional[dict]:
     if not html:
         return None
     soup = _soup(html)
-    tag = soup.find("h1")
-    title = tag.get_text(strip=True) if tag else slug
-    title = re.sub(r"\s*(完結|連載中|连载中|完结)\s*$", "", title).strip()
+    # El primer <h1> suele ser el banner "警告！"; el título real va en un
+    # <h1 class="text-xl"> o, en su defecto, en og:title.
+    title = ""
+    for h in soup.find_all("h1"):
+        cls = " ".join(h.get("class") or [])
+        if ("text-xl" in cls or "text-2xl" in cls) and "警告" not in h.get_text():
+            title = h.get_text(strip=True)
+            break
+    if not title:
+        cands = [
+            h.get_text(strip=True)
+            for h in soup.find_all("h1")
+            if "警告" not in h.get_text()
+        ]
+        if cands:
+            title = max(cands, key=len)
+    if not title:
+        ogt = soup.find("meta", property="og:title")
+        if ogt and ogt.get("content"):
+            title = ogt["content"]
+    title = re.sub(r"\s*[-–]\s*18\s*漫畫\s*$", "", title or "")
+    title = re.sub(r"\s*(完結|連載中|连载中|完结)\s*$", "", title).strip() or slug
     mid = None
     m = re.search(r'data-mid="(\d+)"', html)
     if m:
@@ -171,7 +200,7 @@ def _parse_series_meta(session: requests.Session, slug: str) -> Optional[dict]:
         if len(t) > 20 and not re.search(r"(Copyright|18歲|警告)", t):
             summary = t
             break
-    return {
+    info = {
         "slug": slug,
         "id": slug,
         "title": title,
@@ -179,6 +208,12 @@ def _parse_series_meta(session: requests.Session, slug: str) -> Optional[dict]:
         "status": status,
         "summary": summary,
     }
+    extras = extract_series_extras(soup, SITE_URL)
+    # La única portada vive en host-cover.mangabuddy.in, que responde 522
+    # (origen caído); no la exponemos para no lanzar una descarga que falla.
+    extras.pop("cover", None)
+    info.update(extras)
+    return info
 
 
 def _get_chapter_list(session: requests.Session, mid: str) -> list[dict]:
@@ -201,12 +236,19 @@ def _get_chapter_list(session: requests.Session, mid: str) -> list[dict]:
 
 
 def _extract_chapter_images(session: requests.Session, chap_url: str) -> list[str]:
+    """Solo mira dentro de #chapterContent.
+
+    El lector está renderizado por JS (spinner), así que hoy devuelve []. Es
+    importante NO escanear todo el HTML: la página incluye portadas de la
+    sección "其他資源" que no son las páginas del capítulo."""
     html = _fetch_html(session, chap_url)
     if not html:
         return []
-    soup = _soup(html)
+    content = _soup(html).find(id="chapterContent")
+    if content is None:
+        return []
     candidates = []
-    for img in soup.find_all("img"):
+    for img in content.find_all("img"):
         for attr in ("data-src", "data-original", "data-lazy-src", "src"):
             u = img.get(attr, "")
             if u and not u.startswith("data:") and _valid_img(u):
@@ -214,12 +256,6 @@ def _extract_chapter_images(session: requests.Session, chap_url: str) -> list[st
                     u = urljoin(SITE_URL, u)
                 candidates.append(u)
                 break
-    if not candidates:
-        for u in re.findall(
-            r'(https?://[^\s"\'<>]+\.(?:jpe?g|png|webp)(?:\?[^\s"\'<>]*)?)', html, re.I
-        ):
-            if _valid_img(u):
-                candidates.append(u)
     seen: set = set()
     return [u for u in candidates if not (u in seen or seen.add(u))]
 

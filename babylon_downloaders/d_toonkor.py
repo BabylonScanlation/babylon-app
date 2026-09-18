@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, cast
 
 import requests
-from common import CFG, BaseDownloader
+from common import CFG, BaseDownloader, extract_series_extras
 
 BASE_URL = "https://tkor098.com/"
 TIMEOUT = (10, 15)
@@ -395,6 +395,7 @@ def _parse_series_page(
                     chap_urls[num] = mm.group(0).strip("\"'")
 
     meta = {"id": slug, "slug": slug, "title": title}
+    meta.update(extract_series_extras(soup, base))
     chapters_out = [
         {"id": str(n), "num": n, "title": f"Capítulo {n}", "href": h}
         for n, h in sorted(chap_urls.items(), reverse=True)

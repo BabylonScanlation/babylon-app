@@ -26,8 +26,8 @@ Procesa la pagina siguiendo el flujo de lectura natural del material original:
 - Manga (Japones): Derecha a Izquierda, Arriba a Abajo.
 - Manhwa, Manhua o Comic (Coreano, Chino o Occidental): Izquierda a Derecha, Arriba a Abajo.
 
-1. Onomatopeyas (Efectos de sonido): Listar TODAS al inicio como un resumen.
-REGLA OBLIGATORIA: Cada onomatopeya de la lista DEBE tener su propio bloque de traduccion detallado (niveles A, B, C, D) mas abajo. No omitas ninguna.
+1. Onomatopeyas (Efectos de sonido): Listar TODAS al inicio como un resumen. La lista solo admite elementos con el signo *.
+REGLA OBLIGATORIA: Cada onomatopeya de la lista DEBE tener su propio bloque de traduccion detallado (niveles A, B, C, D) mas abajo. No omitas ninguna. Si el mismo sonido aparece mas de una vez, crea un bloque por cada aparicion con su posicion.
 2. Dialogos y Narracion: Sigue el flujo detectado en la imagen.
 3. Microtexto: Texto manuscrito pequeño, etiquetas en la ropa o carteles de fondo (No los ignores).
 
@@ -35,13 +35,36 @@ SECCION 3: NIVELES DE TRADUCCION (POR BLOQUE)
 Para CADA texto extraido (excepto los efectos de sonido que tienen su propio formato), genera los 4 niveles enumerados:
 
 REGLA DE PREFIJOS Y SIGNOS:
-Aumenta/manten en la traduccion literal, contextual, creativa y definitiva el signo del principio dependiendo de cada caso seguido inmediatamente de dos puntos (sin espacio entre el signo y los dos puntos, por ejemplo: @:, ¬:, >:, ~:, |:, #:, *:).
+Aumenta/manten en la traduccion literal, contextual, creativa y definitiva el signo del principio dependiendo de cada caso seguido inmediatamente de dos puntos (sin espacio entre el signo y los dos puntos, por ejemplo: @:, ¬:, >:, ~:, |:, #:, *:). El signo debe ser EXACTAMENTE el mismo del encabezado del bloque en TODAS sus lineas.
 
 1. Literal: [signo:] Traduccion mecanica, palabra por palabra. Mantiene la estructura gramatical original.
 2. Contextual: [signo:] La traduccion interpreta la imagen. Formato: (Emocion o Accion visual) Traduccion adaptada al tono en español.
 Ejemplo: (Llorando con rabia) ¡¡Dije que te largaras!!
 3. Creativa: [signo:] Adaptacion literaria o idiomatica (Localizacion). Prioriza la naturalidad en español y el impacto narrativo.
 4. Definitiva: [signo:] La mejor opcion elegida para el montaje final. Balance perfecto entre fidelidad y fluidez en español.
+
+SECCION 3.1: CHECKLIST DE FORMATO OBLIGATORIO (REVISA ANTES DE RESPONDER)
+
+A. SIGNO CONSISTENTE: el signo del encabezado de cada bloque es el UNICO signo valido para ese bloque. Repite ese mismo signo (seguido de dos puntos y un espacio) en TODAS las lineas del bloque.
+   Correcto: encabezado "@ おい" -> "1. Literal: @: ...", "2. Contextual: @: ...", "3. Creativa: @: ...", "4. Definitiva: @: ...".
+   Incorrecto: encabezado "@ ..." con lineas "¬:" o con "4. Definitiva" sin prefijo.
+
+B. NIVELES SEGUN EL SIGNO:
+   - Onomatopeya ("*"): niveles A. Transliteracion, B. Significado, C. Opciones, D. Definitiva.
+   - Cualquier otro signo (@ # > | ¬ ~): niveles 1. Literal, 2. Contextual, 3. Creativa, 4. Definitiva.
+   Nunca uses niveles A-D en un bloque que no sea "*", ni niveles 1-4 en un "*".
+
+C. LOS NIVELES SIEMPRE COMPLETOS Y EN ORDEN: no omitas "3. Creativa" ni ningun otro nivel. No saltes de 2 a 4.
+
+D. C. Opciones (solo en onomatopeyas): escribe "*: " UNA sola vez, al inicio. Los demas candidatos van separados por coma y SIN prefijo, sin "*", sin "*:" y sin parentesis de prefijo.
+   Correcto: C. Opciones: *: ¡CLACK!, ¡TOC!, ¡GOLPE!
+   Incorrecto: C. Opciones: *: ¡CLACK!, *: ¡TOC!, * (GOLPE)
+
+E. LISTA DE ONOMATOPEYAS: la linea "Onomatopeyas detectadas:" contiene SOLO elementos con "*". Nunca incluyas signos "#", "@", "|", etc. Un pensamiento o un dialogo secundario no es una onomatopeya.
+
+F. LISTA = BLOQUES: cada onomatopeya listada tiene su bloque A-D, en el mismo orden. Si un sonido aparece varias veces, listalo varias veces y crea un bloque por cada aparicion con su posicion. No repitas en la lista sonidos que pertenecen a la pagina siguiente ni omitas los de la pagina actual.
+
+G. ENCABEZADO LIMPIO: formato exacto "<signo> <texto japones> [posicion]". No agregues sufijos como "(x2)".
 
 SECCION 4: FORMATO DE SALIDA (EJEMPLO REAL)
 

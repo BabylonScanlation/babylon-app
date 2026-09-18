@@ -6,14 +6,15 @@ import time
 # Parámetros configurables
 # ---------------------------------------------------------------
 UMBRAL_BLANCO      = 200   # gris >= esto se considera "papel/blanco"
-CIERRE_TINTA_PX    = 5     # tamaño del kernel para sellar microfugas en el contorno del globo
+CIERRE_TINTA_PX    = 9     # tamaño del kernel para sellar microfugas en el contorno del globo
 BORDE_PADDING      = 6     # marco blanco agregado para garantizar que el fondo sea UNA sola región
 MIN_AREA           = 1500  # área mínima de un globo (px^2) - ajustar según resolución
 MAX_AREA_FACTOR    = 0.5   # un globo no puede ocupar más de esto de la página
 MIN_EXTENT         = 0.45  # area_contorno / area_bbox (globos redondos ~0.6-0.85)
 MIN_SOLIDITY       = 0.75  # area_contorno / area_convex_hull
 MAX_ASPECT_RATIO   = 3.0   # descarta tiras muy alargadas (brillos de pelo, líneas de cara)
-MIN_TEXT_DENSITY   = 0.012 # (NUEVO) proporción mínima de "tinta" dentro de la región blanca
+MIN_TEXT_DENSITY   = 0.015 # (NUEVO) proporción mínima de "tinta" dentro de la región blanca
+UMBRAL_TINTA       = 120   # gris <= esto se considera tinta real
 RELLENO_COLOR      = (255, 255, 255)  # color final de relleno (BGR)
 
 class BabylonCleaner:
@@ -32,7 +33,8 @@ class BabylonCleaner:
                  min_extent=MIN_EXTENT,
                  min_solidity=MIN_SOLIDITY,
                  max_aspect_ratio=MAX_ASPECT_RATIO,
-                 min_text_density=MIN_TEXT_DENSITY):
+                 min_text_density=MIN_TEXT_DENSITY,
+                 umbral_tinta=UMBRAL_TINTA):
         self.umbral_blanco = umbral_blanco
         self.cierre_tinta_px = cierre_tinta_px
         self.min_area = min_area
@@ -41,6 +43,7 @@ class BabylonCleaner:
         self.min_solidity = min_solidity
         self.max_aspect_ratio = max_aspect_ratio
         self.min_text_density = min_text_density
+        self.umbral_tinta = umbral_tinta
 
     # -----------------------------------------------------------
     # Paso 1: binarizar (blanco=255 / tinta-o-lo-que-sea=0)
@@ -95,7 +98,7 @@ class BabylonCleaner:
         validos = []
         
         # Generar máscara de píxeles oscuros (tinta/texto) para comprobar densidad
-        mask_oscuros = cv2.inRange(gray, 0, 180)
+        mask_oscuros = cv2.inRange(gray, 0, self.umbral_tinta)
 
         for cnt in contornos:
             area = cv2.contourArea(cnt)

@@ -13,7 +13,7 @@ from typing import Optional
 from urllib.parse import quote, unquote, urljoin
 
 from cf_harvest import CFChallengedSession, detect_challenge, hint
-from common import CFG, BaseDownloader
+from common import CFG, BaseDownloader, extract_series_extras
 
 BASE_URL = "https://bakamh.com"
 AJAX_URL = f"{BASE_URL}/wp-admin/admin-ajax.php"
@@ -288,6 +288,7 @@ def _get_manga_info(sess, slug):
                 break
 
     meta = {"id": slug, "slug": slug, "title": title, "status": status}
+    meta.update(extract_series_extras(soup, BASE_URL))
     chapters = _chapters_from_html(soup, slug)
     if not chapters:
         mid = _manga_id(soup, html)

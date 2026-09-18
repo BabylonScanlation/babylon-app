@@ -913,11 +913,13 @@ class _SearchSignals(QObject):
 
 class _SeriesSignals(QObject):
     finished = Signal(dict, list)  # (series_meta, chapters)
+    cover_ready = Signal(bytes)  # portada (PNG) lista para mostrar
     error = Signal(str)
 
 
 class _DownloadSignals(QObject):
     chapter_start = Signal(int, int, str)  # (ch_idx, total, title)
+    counts_ready = Signal(list)  # ([n_imgs o None, ...]) cantidad de imágenes por capítulo
     image_progress = Signal(int, int, int)  # (ch_idx, done, total_imgs)
     chapter_done = Signal(int, int, str)  # (chapters_done, total, zip_path)
     chapter_error = Signal(int, str)  # (ch_idx, error_msg)
@@ -985,13 +987,37 @@ class BabylonSeriesWorker(QRunnable):
                 # NO convertir aquí — get_series lo hace internamente.
 
             series, chapters = dl.get_series(raw_item)
+            series = series or {}
+            chapters = chapters or []
 
             if self.site_type == "wfwf":
                 logging.info(
                     f"[Babylon/wfwf] get_series OK — {len(chapters or [])} capítulos"
                 )
 
-            self.signals.finished.emit(series or {}, chapters or [])
+            cover = series.get("cover")
+            if cover:
+                try:
+                    ref = ""
+                    if chapters:
+                        rf = getattr(dl, "get_referer", None)
+                        if rf:
+                            ref = rf(chapters[0], series) or ""
+                    data = dl.dl_image(cover, ref)
+                    if data:
+                        from PIL import Image
+
+                        im = Image.open(BytesIO(data)).convert("RGB")
+                        buf = BytesIO()
+                        im.save(buf, format="PNG")
+                        self.signals.cover_ready.emit(buf.getvalue())
+                        logging.info(
+                            f"[Babylon] portada OK ({len(buf.getvalue())} B)"
+                        )
+                except Exception as cover_err:
+                    logging.warning(f"[Babylon] portada: {cover_err}")
+
+            self.signals.finished.emit(series, chapters)
         except Exception as e:
             logging.error(
                 f"[Babylon] SeriesWorker ({self.site_type}): {e}", exc_info=True
@@ -1037,6 +1063,23 @@ class BabylonDownloadWorker(QRunnable):
         success = 0
         total = len(self.chapters)
 
+        # ── FASE DE RECONOCIMIENTO (sin descargar imágenes) ──
+        # Obtiene la cantidad de imágenes de cada capítulo desde el inicio: las URLs se
+        # precargan y se REUTILIZAN durante la descarga (un solo scrape por capítulo).
+        preloaded: Dict[int, List[str]] = {}
+        counts: List[Optional[int]] = [None] * total
+        for i, chapter in enumerate(self.chapters):
+            if self.cancel_event.is_set():
+                self.signals.cancelled.emit()
+                return
+            try:
+                urls = dl.get_chapter_images(chapter, self.series)
+                preloaded[i] = urls or []
+                counts[i] = len(preloaded[i])
+            except Exception as recon_err:
+                logging.warning(f"[Babylon] No se pudo contar capítulo {i + 1}: {recon_err}")
+        self.signals.counts_ready.emit(counts)
+
         for i, chapter in enumerate(self.chapters):
             if self.cancel_event.is_set():
                 self.signals.cancelled.emit()
@@ -1047,7 +1090,7 @@ class BabylonDownloadWorker(QRunnable):
             self.signals.chapter_start.emit(i, total, title)
 
             try:
-                images = dl.get_chapter_images(chapter, self.series)
+                images = preloaded.get(i) or dl.get_chapter_images(chapter, self.series)
                 if not images:
                     self.signals.chapter_error.emit(i, "Sin imágenes")
                     continue
@@ -1064,7 +1107,10 @@ class BabylonDownloadWorker(QRunnable):
                         raw_bytes = dl.dl_image(url, referer)
                         if raw_bytes:
                             ext = url.split("?")[0].rsplit(".", 1)[-1].lower()
-                            if ext not in ("jpg", "jpeg", "png", "webp", "gif", "avif"):
+                            if ext == "avif":
+                                # Gemini no soporta AVIF: se convierte a PNG lossless al guardar
+                                ext = "png"
+                            elif ext not in ("jpg", "jpeg", "png", "webp", "gif", "bmp"):
                                 ext = "jpg"
                             _save_image(
                                 raw_bytes, os.path.join(tmp_dir, f"{j + 1:04d}.{ext}")
@@ -1142,11 +1188,22 @@ def _save_image(raw: bytes, path: str) -> None:
         from PIL import Image
 
         img = Image.open(BytesIO(raw))
-        if img.mode in ("RGBA", "P", "LA"):
-            bg = Image.new("RGB", img.size, (255, 255, 255))
-            bg.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
-            img = bg
-        img.save(path, quality=92)
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".webp":
+            # WebP lossless: la extensión de la URL se mantiene SIN pérdida de calidad
+            img.save(path, format="WEBP", lossless=True, method=6)
+        elif ext == ".png":
+            img.save(path, format="PNG")
+        elif ext in (".bmp", ".gif"):
+            img.save(path)
+        elif ext in (".jpg", ".jpeg"):
+            if img.mode in ("RGBA", "P", "LA"):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                bg.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+                img = bg
+            img.save(path, format="JPEG", quality=92)
+        else:
+            img.save(path)
     except Exception:
         with open(path, "wb") as f:
             f.write(raw)
@@ -1317,6 +1374,7 @@ class BabylonDownloadPanel(QWidget):
         self._cancel = threading.Event()
         self._pool = QThreadPool.globalInstance()
         self._ch_rows: List[Tuple[QLabel, QProgressBar]] = []
+        self._counts: List[Optional[int]] = []
         self._build_ui()
         self._start()
 
@@ -1418,6 +1476,7 @@ class BabylonDownloadPanel(QWidget):
             self.site_type, self.series, self.chapters, self.output_dir, self._cancel
         )
         w.signals.chapter_start.connect(self._on_start)
+        w.signals.counts_ready.connect(self._on_counts)
         w.signals.image_progress.connect(self._on_img)
         w.signals.chapter_done.connect(self._on_done)
         w.signals.chapter_error.connect(self._on_err)
@@ -1428,10 +1487,28 @@ class BabylonDownloadPanel(QWidget):
     def _on_start(self, idx: int, _t: int, title: str) -> None:
         if idx < len(self._ch_rows):
             lbl, _ = self._ch_rows[idx]
-            lbl.setText(f">> {title}")
+            extra = ""
+            if idx < len(self._counts) and self._counts[idx]:
+                extra = f"  · {self._counts[idx]} págs"
+            lbl.setText(f">> {title}{extra}")
             lbl.setStyleSheet(
                 "color:#00ccff;font-size:12px;background:transparent;border:none;"
             )
+
+    def _on_counts(self, counts: List[Optional[int]]) -> None:
+        self._counts = list(counts) if counts else []
+        known = [c for c in self._counts if c]
+        if known:
+            self._lbl_status.setText(
+                f"{len(self._counts)} capítulos · {sum(known)} imágenes estimadas"
+            )
+            self._lbl_status.setStyleSheet(
+                "color:#00ccff;font-size:12px;background:transparent;border:none;"
+            )
+        for idx, (lbl, _) in enumerate(self._ch_rows):
+            if idx < len(self._counts) and self._counts[idx]:
+                base = self.chapters[idx].get("title", "?") if idx < len(self.chapters) else "?"
+                lbl.setText(f"{base}  · {self._counts[idx]} págs")
 
     def _on_img(self, ch_idx: int, done: int, total: int) -> None:
         if ch_idx < len(self._ch_rows):
@@ -1519,7 +1596,7 @@ class BabylonSeriesPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"#BabylonSeriesPanel{{{_PANEL_BG}}}")
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 14, 18, 14)
+        root.setContentsMargins(16, 12, 16, 12)
         root.setSpacing(10)
 
         hdr = QHBoxLayout()
@@ -1559,9 +1636,54 @@ class BabylonSeriesPanel(QWidget):
         hdr.addWidget(self._lbl_title)
         root.addLayout(hdr)
 
+        cover_row = QHBoxLayout()
+        cover_row.setContentsMargins(0, 0, 0, 0)
+        cover_row.setSpacing(14)
+
+        self._lbl_cover = QLabel("portada")
+        self._lbl_cover.setFixedSize(120, 170)
+        self._lbl_cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._lbl_cover.setStyleSheet(
+            "color:#555;font-size:10px;background:#12101a;"
+            "border:1px solid rgba(157,70,255,0.45);border-radius:8px;"
+        )
+        cover_row.addWidget(self._lbl_cover, 0, Qt.AlignmentFlag.AlignTop)
+
+        side = QVBoxLayout()
+        side.setSpacing(8)
+        self._lbl_meta = QLabel("")
+        self._lbl_meta.setWordWrap(True)
+        self._lbl_meta.setStyleSheet(
+            "color:#9290a8;font-size:11px;background:transparent;border:none;padding-right:8px;"
+        )
+        self._lbl_meta.hide()
+        side.addWidget(self._lbl_meta)
+        self._lbl_tags_caption = QLabel("ETIQUETAS")
+        self._lbl_tags_caption.setStyleSheet(
+            "color:#9d46ff;font-size:10px;font-weight:bold;"
+            "background:transparent;border:none;padding-top:4px;"
+        )
+        self._lbl_tags_caption.hide()
+        side.addWidget(self._lbl_tags_caption)
+        self._lbl_tags = QLabel("")
+        self._lbl_tags.setWordWrap(True)
+        self._lbl_tags.setStyleSheet(
+            "color:#a0a0b8;font-size:11px;background:transparent;border:none;"
+            "padding-right:8px;"
+        )
+        self._lbl_tags.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self._lbl_tags.hide()
+        side.addWidget(self._lbl_tags)
+        side.addStretch()
+        cover_row.addLayout(side, 1)
+
+        root.addLayout(cover_row)
+
         self._lbl_info = QLabel("Cargando ficha…")
         self._lbl_info.setStyleSheet(
-            "color:#777;font-size:11px;background:transparent;border:none;"
+            "color:#9a97ad;font-size:11px;background:transparent;border:none;"
         )
         if self.body_font:
             self._lbl_info.setFont(self.body_font)
@@ -1569,6 +1691,7 @@ class BabylonSeriesPanel(QWidget):
 
         content = QHBoxLayout()
         content.setSpacing(14)
+        content.setContentsMargins(0, 0, 2, 0)
 
         self._ch_list = _DragSelectList()
         self._ch_list.setStyleSheet(_LIST_STYLE)
@@ -1577,92 +1700,139 @@ class BabylonSeriesPanel(QWidget):
         self._ch_list.itemSelectionChanged.connect(self._update_btn)
         content.addWidget(self._ch_list, 1)
 
-        rp = QVBoxLayout()
+        btn_col = QWidget()
+        btn_col.setFixedWidth(190)
+        rp = QVBoxLayout(btn_col)
         rp.setSpacing(8)
         rp.setContentsMargins(0, 0, 0, 0)
-        for lbl_txt, slot in [
-            ("Seleccionar todo", self._ch_list.selectAll),
-            ("Quitar selección", self._ch_list.clearSelection),
-            ("Invertir selección", self._invert),
-            ("Invertir orden", self._invert_order),
-            ("ABRIR WEB", self._open_web),
+        sel_row = QHBoxLayout()
+        sel_row.setSpacing(6)
+        for lbl_txt, slot, tip in [
+            ("Todo", self._ch_list.selectAll, "Seleccionar todo"),
+            ("Nada", self._ch_list.clearSelection, "Quitar selección"),
+            ("Inv.", self._invert, "Invertir selección"),
         ]:
             b = QPushButton(lbl_txt)
-            b.setStyleSheet(_BTN_BASE)
+            b.setFixedHeight(30)
+            b.setStyleSheet(_BTN_BASE + "QPushButton{padding:8px 4px;}")
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             if self.body_font:
                 b.setFont(self.body_font)
+            b.setToolTip(tip)
             b.clicked.connect(slot)
-            rp.addWidget(b)
+            sel_row.addWidget(b)
+        rp.addLayout(sel_row)
 
-        rp.addStretch()
-        self._lbl_count = QLabel("0 seleccionados")
-        self._lbl_count.setStyleSheet(
-            "color:#666;font-size:11px;background:transparent;border:none;"
-        )
-        rp.addWidget(self._lbl_count)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("background:rgba(157,70,255,0.2);")
-        rp.addWidget(sep)
-
-        lbl_out = QLabel("Carpeta de destino:")
-        lbl_out.setStyleSheet(
-            "color:#aaa;font-size:11px;background:transparent;border:none;"
-        )
-        rp.addWidget(lbl_out)
-        self._lbl_dest = QLabel(
-            _last_dest_dir if len(_last_dest_dir) <= 42 else "…" + _last_dest_dir[-39:]
-        )
-        self._lbl_dest.setWordWrap(True)
-        self._lbl_dest.setStyleSheet(
-            "color:#555;font-size:10px;background:transparent;border:none;"
-        )
-        rp.addWidget(self._lbl_dest)
+        btn_web = QPushButton("ABRIR WEB")
+        btn_web.setFixedHeight(30)
+        btn_web.setStyleSheet(_BTN_BASE + "QPushButton{padding:8px 10px;}")
+        btn_web.setCursor(Qt.CursorShape.PointingHandCursor)
+        if self.body_font:
+            btn_web.setFont(self.body_font)
+        btn_web.clicked.connect(self._open_web)
+        rp.addWidget(btn_web)
 
         btn_dest = QPushButton("Elegir carpeta")
-        btn_dest.setStyleSheet(_BTN_BASE)
+        btn_dest.setFixedHeight(30)
+        btn_dest.setStyleSheet(_BTN_BASE + "QPushButton{padding:8px 10px;}")
         btn_dest.setCursor(Qt.CursorShape.PointingHandCursor)
         if self.body_font:
             btn_dest.setFont(self.body_font)
         btn_dest.clicked.connect(self._choose_dest)
         rp.addWidget(btn_dest)
 
+        self._lbl_count = QLabel("0 seleccionados")
+        self._lbl_count.setStyleSheet(
+            "color:#666;font-size:11px;background:transparent;border:none;"
+        )
+        rp.addWidget(self._lbl_count)
+
+        self._lbl_dest = QLabel(
+            _last_dest_dir if len(_last_dest_dir) <= 34 else "…" + _last_dest_dir[-31:]
+        )
+        self._lbl_dest.setToolTip(_last_dest_dir)
+        self._lbl_dest.setStyleSheet(
+            "color:#555;font-size:10px;background:transparent;border:none;"
+        )
+        rp.addWidget(self._lbl_dest)
+
+        rp.addStretch()
+
         self._btn_dl = QPushButton("DESCARGAR")
         self._btn_dl.setEnabled(False)
-        self._btn_dl.setStyleSheet(_BTN_PRIMARY)
+        self._btn_dl.setFixedHeight(38)
+        self._btn_dl.setStyleSheet(_BTN_PRIMARY + "QPushButton{padding:10px 20px;}")
         self._btn_dl.setCursor(Qt.CursorShape.PointingHandCursor)
         if self.body_font:
             self._btn_dl.setFont(self.body_font)
         self._btn_dl.clicked.connect(self._request_dl)
         rp.addWidget(self._btn_dl)
 
-        content.addLayout(rp)
+        content.addWidget(btn_col)
         root.addLayout(content, 1)
 
     def _load(self) -> None:
         w = BabylonSeriesWorker(self.site["type"], self.item)
         w.signals.finished.connect(self._on_loaded)
+        w.signals.cover_ready.connect(self._on_cover)
         w.signals.error.connect(lambda e: self._lbl_info.setText(f"Error: {e[:80]}"))
         self._pool.start(w)
+
+    def _on_cover(self, data: bytes) -> None:
+        try:
+            pm = QPixmap()
+            if pm.loadFromData(data):
+                pm = pm.scaled(
+                    self._lbl_cover.width(),
+                    self._lbl_cover.height(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self._lbl_cover.setPixmap(pm)
+        except Exception:
+            pass
 
     def _on_loaded(self, series: Dict, chapters: List[Dict]) -> None:
         self._series = series
         self._chapters = chapters
         self._lbl_title.setText(series.get("title", self.item.get("title", "?"))[:60])
+
+        tags = series.get("tags")
+        if tags:
+            txt = ", ".join(str(t) for t in tags) if isinstance(tags, (list, tuple)) else str(tags)
+            self._lbl_tags.setToolTip(txt)
+            self._lbl_tags.setText(txt)
+            self._lbl_tags.show()
+            self._lbl_tags_caption.show()
+
+        meta_info = series.get("meta")
+        if meta_info and isinstance(meta_info, dict):
+            lines = [f"• {k}: {v}" for k, v in meta_info.items() if v]
+            if lines:
+                full = "\n".join(lines)
+                self._lbl_meta.setToolTip(full)
+                self._lbl_meta.setText(full)
+                self._lbl_meta.show()
+
         extras = [
             str(series.get(k, ""))[:30]
             for k in ("author", "autor", "status", "estado")
             if series.get(k)
         ]
-        info = f"{len(chapters)} capítulos"
+        total = sum(int(ch.get("count", 0) or 0) for ch in chapters)
+        has_counts = bool(chapters) and all(ch.get("count") for ch in chapters)
+        n_pag = f" · {total} páginas" if has_counts else ""
+        info = f"{len(chapters)} capítulo{'s' if len(chapters) != 1 else ''}{n_pag}"
         if extras:
             info += "  —  " + "  ·  ".join(extras)
         self._lbl_info.setText(info)
         self._ch_list.clear()
         for ch in chapters:
-            it = QListWidgetItem(ch.get("title", "?"))
+            cnt = ch.get("count") or ch.get("pages")
+            txt = ch.get("title", "?")
+            if cnt:
+                txt += f"  —  {int(cnt)} págs"
+            it = QListWidgetItem(txt)
             it.setData(Qt.ItemDataRole.UserRole, ch)
             self._ch_list.addItem(it)
 

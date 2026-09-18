@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from common import CFG, BaseDownloader
+from common import CFG, BaseDownloader, extract_series_extras
 
 SITE_ORG = "https://baozimh.org"
 APIKK_HOST = "https://v2.apikk.top"
@@ -415,7 +415,9 @@ def _parse_series_meta_org(sess_org: requests.Session, slug: str) -> Optional[di
             title = t
             break
     title = re.sub(r"\s*(完結|連載中|连载中|完结)\s*$", "", title).strip()
-    return {"id": slug, "slug": slug, "title": title}
+    meta = {"id": slug, "slug": slug, "title": title}
+    meta.update(extract_series_extras(soup, SITE_ORG))
+    return meta
 
 
 # ── Chapters ──────────────────────────────────────────────────────────────────

@@ -516,6 +516,57 @@ def gallery_files(gid: int) -> list[dict]:
     return [f for f in m.get("files", []) if isinstance(f, dict)] if m else []
 
 
+def gallery_tags(gid: int) -> list[str]:
+    """Tags legibles de una galería. El grupo (male/female) se deduce de la flag."""
+    m = _META_CACHE.get(str(gid), {})
+    out: list[str] = []
+    for t in m.get("tags", []):
+        if not isinstance(t, dict):
+            continue
+        name = str(t.get("tag", "")).strip()
+        if not name:
+            continue
+        if t.get("male"):
+            out.append(f"{name} (male)")
+        elif t.get("female"):
+            out.append(f"{name} (female)")
+        else:
+            out.append(name)
+    seen: set[str] = set()
+    res: list[str] = []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            res.append(x)
+    return res
+
+
+def gallery_cover(gg: HitomiGG, gid: int) -> Optional[str]:
+    """URL de la portada: primera página de la galería (suele ser la cubierta)."""
+    files = gallery_files(gid)
+    if not files:
+        return None
+    h = str(files[0].get("hash", ""))
+    if not h:
+        return None
+    return gg.get_url(h, "webp")
+
+
+def gallery_names(meta: dict, outer: str, inner: str) -> list[str]:
+    """Extrae nombres de listas tipo [{'artista': ...}, ...] del galleryinfo."""
+    out: list[str] = []
+    for x in meta.get(outer, []) or []:
+        if isinstance(x, dict):
+            v = x.get(inner)
+        elif isinstance(x, str):
+            v = x
+        else:
+            continue
+        if v:
+            out.append(str(v))
+    return out
+
+
 # ── Image URLs ────────────────────────────────────────────────────────────────
 
 
@@ -598,10 +649,44 @@ class DownloaderHitomi(BaseDownloader):
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
         gid = int(item["id"])
         load_meta(self._sess, gid)
+        meta = _META_CACHE.get(str(gid), {})
         title = gallery_title(gid)
-        series = {"id": str(gid), "slug": str(gid), "title": title}
-        # Una sola "entrada" = la galería completa
-        chapter = {"id": str(gid), "title": title}
+        series: dict = {
+            "id": str(gid),
+            "slug": str(gid),
+            "title": title,
+            "cover": gallery_cover(self._gg, gid),
+            "tags": gallery_tags(gid),
+        }
+        for k in ("language", "type", "date"):
+            v = meta.get(k)
+            if v:
+                series[k] = v
+        meta_fields: dict[str, str] = {}
+        if meta.get("type"):
+            meta_fields["Tipo"] = str(meta["type"])
+        if meta.get("language"):
+            meta_fields["Idioma"] = str(meta["language"])
+        art = gallery_names(meta, "artists", "artist")
+        if art:
+            meta_fields["Artistas"] = ", ".join(art)
+        par = gallery_names(meta, "parodys", "parody")
+        if par:
+            meta_fields["Parodias"] = ", ".join(par)
+        chars = gallery_names(meta, "characters", "character")
+        if chars:
+            meta_fields["Personajes"] = ", ".join(chars)
+        grp = gallery_names(meta, "groups", "group")
+        if grp:
+            meta_fields["Círculo"] = ", ".join(grp)
+        if meta.get("datepublished"):
+            meta_fields["Publicado"] = str(meta["datepublished"])
+        series["meta"] = meta_fields
+        chapter = {
+            "id": str(gid),
+            "title": title,
+            "count": len(gallery_files(gid)),
+        }
         return series, [chapter]
 
     def get_chapter_images(self, chapter: dict, series: dict) -> list[str]:

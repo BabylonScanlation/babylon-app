@@ -3,8 +3,9 @@ import os
 import re
 import time
 import threading
+import shutil
 from typing import List, Optional, Any, Tuple, Dict, cast, Set
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # pylint: disable=no-name-in-module, import-error
 import google.genai as genai
@@ -14,6 +15,65 @@ from PIL import Image
 
 from app_tools.ai_service import BaseAIProcessor, AIAPIError
 from config import Config
+
+# ── Formatos de imagen soportados oficialmente por la API de Gemini (2026) ──
+# Fuente: docs oficiales "Image understanding / file input methods" (2026):
+# image/jpeg, image/png, image/gif, image/webp, image/bmp, image/heic, image/heif.
+# NOTA: image/avif NO está soportado por la API.
+IMG_MIME_BY_EXT = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+}
+
+_IMG_MIME_BY_PILFMT = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+    "heic": "image/heic",
+    "heif": "image/heif",
+}
+
+# Límite inline de la API ~20MB por request. Con BATCH_SIZE=3 y este tope por trozo
+# (~6.5MB), el request nunca excede el límite sin tener que degradar calidad.
+MAX_INLINE_SLICE_BYTES = 6_500_000
+
+
+def mime_for_image(path: str) -> str:
+    """Devuelve el MIME type correcto según la extensión; como respaldo usa el
+    formato real detectado por Pillow. Así webp/gif/bmp/heic son enviados con su
+    MIME real (nunca se disfrazan de image/jpeg)."""
+    mime = IMG_MIME_BY_EXT.get(os.path.splitext(path.lower())[1])
+    if mime:
+        return mime
+    try:
+        with Image.open(path) as im:
+            return _IMG_MIME_BY_PILFMT.get((im.format or "").lower(), "image/jpeg")
+    except Exception:
+        return "image/jpeg"
+
+
+def _slice_format_for(src_path: str) -> Tuple[str, str, Dict[str, Any]]:
+    """Formato de salida de los trozos de una imagen larga: PRESERVA el formato del
+    original y es SIEMPRE lossless (nunca se degrada calidad al cortar).
+    - PNG  -> PNG
+    - WebP -> WebP lossless (mismas extensión, cero pérdida)
+    - JPEG/GIF/BMP -> PNG (al ser fuentes lossy, se evita acumular pérdidas)
+    - HEIC/HEIF   -> no se pueden cortar sin decodificador: se pasan tal cual
+    Devuelve (pil_format, extension_con_punto, kwargs_de_save)."""
+    ext = os.path.splitext(src_path.lower())[1]
+    if ext == ".png":
+        return ("PNG", ".png", {})
+    if ext == ".webp":
+        return ("WEBP", ".webp", {"lossless": True, "method": 6})
+    return ("PNG", ".png", {})
 
 class APIKeyPool:
     _instance = None
@@ -151,6 +211,19 @@ def _classify_api_error(e: BaseException) -> str:
 
     return "other"
 
+# Escalera de modelos de MAYOR a MENOR potencia. Si un modelo está saturado
+# (503), el fallback baja de a un escalón consecutivo: 3.8-flash → 3.7-flash →
+# 3.6-flash → 3.5-flash → 3.5-flash-lite → … Solo se consideran modelos reales.
+_GEMINI_LADDER = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+]
+
 class GeminiProcessor(BaseAIProcessor):
     def __init__(self):
         super().__init__(model_name="Gemini")
@@ -282,22 +355,22 @@ class GeminiProcessor(BaseAIProcessor):
     def _switch_model_locked(self) -> bool:
         current = Config.GEMINI_MODEL.lower()
         self._failed_models.add(current)
-        
-        # Definir una jerarquía de fallback lógica basada en tus modelos disponibles
-        # Orden: 3.1-lite -> 3-preview -> 3.5-flash
-        hierarchy = [
-            "gemini-3.1-flash-lite",
-            "gemini-3-flash-preview",
-            "gemini-3.5-flash"
-        ]
-        
-        # Buscar el siguiente modelo en la jerarquía que no haya fallado
-        for model in hierarchy:
+
+        # Escalera descendente desde el modelo actual: primero los escalones
+        # inferiores (3.8-flash → 3.7-flash → 3.6-flash → …). Si todos los
+        # inferiores ya fallaron, queda la escalera completa como última red.
+        ladder = [m for m in _GEMINI_LADDER if m in Config.MODEL_LIMITS]
+        candidates = ladder
+        if current in ladder:
+            pos = ladder.index(current)
+            candidates = ladder[pos + 1:] + ladder[:pos]
+
+        for model in candidates:
             if model in Config.MODEL_LIMITS and model not in self._failed_models:
                 self._report_status(f"Fallo en {Config.GEMINI_MODEL}. Cambiando a {model}...")
                 Config.GEMINI_MODEL = model
                 return True
-                
+
         return False
 
     def _rotate_key(self) -> bool:
@@ -334,6 +407,34 @@ class GeminiProcessor(BaseAIProcessor):
             return True
             
         return False
+
+    def _try_next_key_busy(self) -> bool:
+        """Cambia a otra API Key por saturación (503), SIN quemar la key actual.
+        Un 503 es del servidor/modelo, no de la key: no la marcamos agotada.
+        Solo se usa cuando TODOS los modelos disponibles están ocupados."""
+        with self._cfg_lock:
+            total = len(Config.GEMINI_API_KEYS)
+            if total < 2:
+                return False
+            current = Config.GEMINI_API_KEY
+            nxt = Config.get_next_gemini_key(current)
+            attempts = 0
+            while attempts < total:
+                if nxt != current and nxt not in self._exhausted_keys:
+                    break
+                nxt = Config.get_next_gemini_key(nxt)
+                attempts += 1
+            if nxt == current or nxt in self._exhausted_keys:
+                return False
+            self._report_status("Todos los modelos ocupados en esta key. Probando con otra API Key...")
+            Config.GEMINI_API_KEY = nxt
+            # La nueva key reinicia la escalera de modelos desde arriba.
+            self._failed_models.clear()
+            top = next((m for m in _GEMINI_LADDER if m in Config.MODEL_LIMITS), None)
+            if top:
+                Config.GEMINI_MODEL = top
+                self._report_status(f"Nueva key: reiniciando modelos desde {top}...")
+            return True
 
     def _reset_model_to_default(self):
         """Resetea el modelo al preferido al cambiar de API Key."""
@@ -440,7 +541,11 @@ class GeminiProcessor(BaseAIProcessor):
 
     def _slice_long_image(self, img_path: str, max_height: int = 3072, overlap: int = 200) -> List[str]:
         """Corta imágenes verticales largas en trozos alineados al tiling de Gemini (768px).
-        Si el último trozo queda muy pequeño (<40% de max_height), se fusiona con el penúltimo."""
+        Si el último trozo queda muy pequeño (<40% de max_height), se fusiona con el penúltimo.
+
+        Los trozos PRESERVAN el formato original (PNG->PNG, WebP->WEBP, etc.) y SIEMPRE se
+        guardan SIN pérdida de calidad: jamás se redimensiona la imagen. Si un trozo supera el
+        límite inline de la API (~6.5MB), se subdivide por la mitad en lugar de degradar."""
         try:
             with Image.open(img_path) as img:
                 width, height = img.size
@@ -476,29 +581,42 @@ class GeminiProcessor(BaseAIProcessor):
                         prev_top, _, prev_part = slices_info[-1]
                         slices_info[-1] = (prev_top, height, prev_part)
 
+                pil_fmt, ext, save_kwargs = _slice_format_for(img_path)
+
                 self._report_status(f"Procesando {len(slices_info)} trozos en paralelo para: {base_name}")
-                
+
+                def save_region(t: int, b: int, part_idx: int) -> List[str]:
+                    """Corta la región [t, b), la guarda lossless y, si supera el límite
+                    inline de la API, la subdivide por la mitad (sin redimensionar)."""
+                    region_h = b - t
+                    with Image.open(img_path) as thread_img:
+                        cropped = thread_img.crop((0, t, width, b))
+                    if cropped.mode in ("P", "LA"):
+                        cropped = cropped.convert("RGBA")
+                    s_path = os.path.join(temp_dir, f"temp_slice_{base_name}_{part_idx}_{t}{ext}")
+                    cropped.save(s_path, format=pil_fmt, **save_kwargs)
+                    if os.path.getsize(s_path) <= MAX_INLINE_SLICE_BYTES or region_h <= 1024:
+                        return [s_path]
+                    # Trozo demasiado grande: NO degradar, subdividir en 2 trozos lossless
+                    # (corte alineado a 256px para no desperdiciar tiles de 768px).
+                    os.remove(s_path)
+                    mid = t + region_h // 2
+                    mid -= mid % 256
+                    mid = min(max(mid, t + 512), b - 512)
+                    return save_region(t, mid, part_idx) + save_region(mid, b, part_idx)
+
                 def process_single_slice(info: Tuple[int, int, int]):
                     # Liberar GIL brevemente para evitar que la UI se congele (thread pool)
                     time.sleep(0.005)
                     
                     t, b, p = info
-                    with Image.open(img_path) as thread_img:
-                        cropped = thread_img.crop((0, t, width, b))
-                        if cropped.mode in ("RGBA", "P"):
-                            cropped = cropped.convert("RGB")
-                        s_path = os.path.join(temp_dir, f"temp_slice_{base_name}_{p}.jpg")
-                        cropped.save(s_path, format="JPEG", quality=80, optimize=False)
-                        if os.path.getsize(s_path) > 6.8 * 1024 * 1024:
-                            low_res = cropped.resize((int(cropped.width * 0.7), int(cropped.height * 0.7)), Image.Resampling.BILINEAR)
-                            low_res.save(s_path, format="JPEG", quality=75, optimize=True)
-                        return p, s_path
+                    return p, save_region(t, b, p)
 
                 with ThreadPoolExecutor() as executor:
                     results = list(executor.map(process_single_slice, slices_info))
                 
                 results.sort(key=lambda x: x[0])
-                return [r[1] for r in results]
+                return [path for _, paths in results for path in paths]
         except Exception as e:
             logging.error(f"Error en troceado paralelo: {e}")
             return [img_path]
@@ -549,7 +667,7 @@ class GeminiProcessor(BaseAIProcessor):
         return consolidated
 
     def _stitch_and_save(self, paths: List[str], temp_dir: str) -> Tuple[str, int]:
-        """Une imágenes verticalmente y las guarda."""
+        """Une imágenes verticalmente y las guarda en PNG (lossless, sin pérdida de calidad)."""
         if len(paths) == 1:
             with Image.open(paths[0]) as img:
                 return paths[0], img.size[1]
@@ -557,27 +675,29 @@ class GeminiProcessor(BaseAIProcessor):
         images = [Image.open(p) for p in paths]
         max_w = max(img.size[0] for img in images)
         total_h = sum(img.size[1] for img in images)
-        
-        canvas = Image.new("RGB", (max_w, total_h), (255, 255, 255))
+
+        any_alpha = any(im.mode in ("RGBA", "LA", "P") for im in images)
+        canvas_mode = "RGBA" if any_alpha else "RGB"
+        bg_color = (255, 255, 255, 255) if canvas_mode == "RGBA" else (255, 255, 255)
+        canvas = Image.new(canvas_mode, (max_w, total_h), bg_color)
         y = 0
         for img in images:
             # Liberar GIL brevemente durante el procesado intensivo
             time.sleep(0.005)
-            
-            if img.mode in ("RGBA", "P"):
-                # Si tiene transparencia, la pegamos usando la misma imagen como máscara
-                if img.mode == "RGBA":
-                    canvas.paste(img, ((max_w - img.size[0]) // 2, y), img)
-                else:
-                    img = img.convert("RGBA")
-                    canvas.paste(img, ((max_w - img.size[0]) // 2, y), img)
+
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            if canvas_mode == "RGBA" and img.mode == "RGB":
+                img = img.convert("RGBA")
+            if canvas_mode == "RGBA":
+                canvas.paste(img, ((max_w - img.size[0]) // 2, y), img)
             else:
                 canvas.paste(img, ((max_w - img.size[0]) // 2, y))
             y += img.size[1]
             img.close()
 
-        c_path = os.path.join(temp_dir, f"temp_stitch_{int(time.time()*1000)}.jpg")
-        canvas.save(c_path, format="JPEG", quality=85)
+        c_path = os.path.join(temp_dir, f"temp_stitch_{int(time.time()*1000)}.png")
+        canvas.save(c_path, format="PNG")
         return c_path, total_h
 
     def call_api_batch(self, prompt: str, images: List[str], cancel_event: Optional[threading.Event] = None, current_batch: int = 1, total_batches: int = 1) -> List[str]:
@@ -665,7 +785,6 @@ class GeminiProcessor(BaseAIProcessor):
                 final_api_images = all_slices
                 total_sections = len(all_slices)
 
-                client = self.get_client(current_key)
                 self._report_status(f"Enviando {total_sections} secciones a {Config.GEMINI_MODEL}...")
 
                 # BATCH_SIZE restaurado a 3 para evitar límites de tokens de salida
@@ -674,12 +793,23 @@ class GeminiProcessor(BaseAIProcessor):
                 
                 for batch_idx in range(0, len(final_api_images), BATCH_SIZE):
                     batch_paths = final_api_images[batch_idx : batch_idx + BATCH_SIZE]
+                    # Cada sub-lote elige la API Key MENOS OCUPADA en ese momento:
+                    # con varios sub-lotes/hilos concurrentes el APIKeyPool reparte los
+                    # sub-lotes entre TODAS las keys ("a todo trapo"), manteniendo RPM.
+                    try:
+                        current_key = self._wait_and_get_key()
+                    except GeminiAPIError as e:
+                        if cancel_event:
+                            cancel_event.set()
+                        return [f"[ERROR API: {e}]"] * len(images)
+                    client = self.get_client(current_key)
+
                     current_contents = [f"Procesa estas {len(batch_paths)} imágenes. Separa CADA una con {img_sep}"]
                     
                     for img_path in batch_paths:
                         with open(img_path, "rb") as f:
                             data = f.read()
-                        mime = "image/png" if img_path.lower().endswith(".png") else "image/jpeg"
+                        mime = mime_for_image(img_path)
                         part_args = {"data": data, "mime_type": mime}
                         if use_ultra_high:
                             part_args["media_resolution"] = resolution_enum
@@ -706,21 +836,26 @@ class GeminiProcessor(BaseAIProcessor):
                             is_server_busy = "503" in err_msg or "overloaded" in err_msg or "unavailable" in err_msg
                             
                             if is_server_busy:
-                                if api_attempt < api_retries:
-                                    wait = retry_delay * (2 ** api_attempt)
+                                # 1 reintento breve con el mismo modelo (esperanza: pico puntual)
+                                if api_attempt < 1:
+                                    wait = retry_delay
                                     for i in range(int(wait), 0, -1):
                                         if cancel_event and cancel_event.is_set():
                                             return ["CANCELLED"] * len(images)
-                                        self._report_status(f"Servidor ocupado (503). Reintento {api_attempt+1}/{api_retries} en {i}s...")
+                                        self._report_status(f"Servidor ocupado (503). Reintento 1/{api_retries} en {i}s...")
                                         time.sleep(1)
                                     api_attempt += 1
                                     continue
-                                else:
-                                    if self._try_switch_model():
-                                        self._report_status(f"Cambiando modelo a {Config.GEMINI_MODEL}...")
-                                        client = self.get_client(current_key)
-                                        api_attempt = 0 # Reiniciar intentos con el nuevo modelo
-                                        continue
+
+                                # 503 repetido: el modelo está saturado → cambiar de modelo YA.
+                                if self._try_switch_model():
+                                    self._report_status(f"Servidor ocupado (503). Cambiando modelo a {Config.GEMINI_MODEL}...")
+                                    client = self.get_client(current_key)
+                                    api_attempt = 0
+                                    continue
+
+                                self._report_status(f"Servidor ocupado (503) y sin modelos alternativos. Error: {str(api_err)[:60]}...")
+                                raise api_err
                             
                             self._report_status(f"Error en lote: {str(api_err)[:100]}")
                             raise api_err
@@ -768,6 +903,9 @@ class GeminiProcessor(BaseAIProcessor):
                     if self._try_switch_model():
                         self._report_status(f"Servidor ocupado. Cambiando modelo a {Config.GEMINI_MODEL}...")
                         continue
+                    # Todos los modelos ocupados: probar con otra API Key (sin quemarla)
+                    if self._try_next_key_busy():
+                        continue
                     self._report_status(f"Servidor ocupado y sin modelos alternativos. Error: {str(e)[:60]}...")
                     return [f"[ERROR API: {e}]"] * len(images)
 
@@ -780,6 +918,77 @@ class GeminiProcessor(BaseAIProcessor):
                     except Exception: pass
         
         return ["[ERROR: Keys agotadas]"] * len(images)
+
+    def _process_chunks_parallel(self, chunks: List[Tuple[int, List[str]]], cancel_event: Any, total_batches: Optional[int] = None) -> Tuple[str, List[str], Optional[str]]:
+        """Procesa los lotes de imágenes repartidos entre TODAS las API Keys, en paralelo.
+
+        chunk = (ordinal_1based, rutas). Con N keys se mandan hasta N lotes a la vez
+        ("a todo trapo"): cada lote entra a call_api_batch, que por cada sub-lote pide
+        la key MENOS OCUPADA al APIKeyPool, así los lotes corren en keys distintas.
+
+        Preserva el ORDEN final de salida (se reconstruye por ordinal del lote).
+
+        Retorna (estado, textos_en_orden, mensaje_error):
+          estado ∈ {"success", "cancelled", "error"}."""
+        total = total_batches or len(chunks)
+        if not chunks:
+            return "error", [], "No hay imágenes para procesar."
+        if cancel_event and cancel_event.is_set():
+            return "cancelled", [], None
+
+        def run_one(chunk: Tuple[int, List[str]]) -> Tuple[int, List[str]]:
+            n, paths = chunk
+            res = self.call_api_batch("", paths, cancel_event=cancel_event,
+                                      current_batch=n, total_batches=total)
+            return n, res
+
+        if len(chunks) == 1:
+            _, res = run_one(chunks[0])
+            if res and res[0] == "CANCELLED":
+                return "cancelled", [], None
+            if res and res[0].startswith("[ERROR"):
+                return "error", [], res[0]
+            return "success", res, None
+
+        num_keys = len(Config.GEMINI_API_KEYS)
+        workers = max(1, min(num_keys, len(chunks)))
+        self._report_status(
+            f"Modo todo-trapo activado: {len(chunks)} lotes repartidos en "
+            f"{num_keys} API Keys ({workers} hilos en paralelo)..."
+        )
+
+        results: Dict[int, List[str]] = {}
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_n = {executor.submit(run_one, c): c[0] for c in chunks}
+            for future in as_completed(future_to_n):
+                n = future_to_n[future]
+                try:
+                    _, res = future.result()
+                except Exception as e:
+                    if cancel_event:
+                        cancel_event.set()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    return "error", [], str(e)
+
+                results[n] = res
+                if res and res[0] == "CANCELLED":
+                    if cancel_event:
+                        cancel_event.set()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    self._report_status("Proceso cancelado por el usuario.")
+                    return "cancelled", [], None
+                if res and res[0].startswith("[ERROR"):
+                    # No seguir saturando las keys: abortamos los lotes que faltan.
+                    if cancel_event:
+                        cancel_event.set()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    self._report_status(f"Error en lote {n}: {res[0][:80]}... Cancelando los lotes restantes.")
+                    return "error", [], res[0]
+
+        ordered: List[str] = []
+        for n in sorted(results):
+            ordered.extend(results[n])
+        return "success", ordered, None
 
     def process_chapter(self, chapter_path: str, output_dir: str, cancel_event: Any, input_base: str) -> str:
         image_files: List[str] = []
@@ -828,7 +1037,7 @@ class GeminiProcessor(BaseAIProcessor):
                 if h >= canvas_height_limit or (current_h + h > canvas_height_limit and current_canvas_paths):
                     if current_canvas_paths:
                         c_path, _ = self._stitch_and_save(current_canvas_paths, full_output_dir)
-                        final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
+                        final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.png")
                         if os.path.exists(final_p): os.remove(final_p)
                         os.rename(c_path, final_p)
                         saved_canvases.append((final_p, list(current_canvas_paths), current_h))
@@ -837,15 +1046,18 @@ class GeminiProcessor(BaseAIProcessor):
                         current_h = 0
                     
                     if h >= canvas_height_limit:
-                        # Si es una sola imagen muy grande, solo la copiamos
-                        final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
-                        with Image.open(img_p) as img:
-                            if img.mode in ("RGBA", "P"):
-                                bg = Image.new("RGB", img.size, (255, 255, 255))
-                                bg.paste(img, (0, 0), img if img.mode == "RGBA" else img.convert("RGBA"))
-                                bg.save(final_p, format="JPEG", quality=90)
-                            else:
-                                img.save(final_p, format="JPEG", quality=90)
+                        # Si es una sola imagen muy grande: se preserva sin re-codificar
+                        # (sin pérdida). Solo los JPEG se convierten a PNG lossless.
+                        img_ext = os.path.splitext(img_p)[1].lower()
+                        if img_ext in (".png", ".webp", ".gif", ".bmp", ".heic", ".heif"):
+                            final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}{img_ext}")
+                            shutil.copy2(img_p, final_p)
+                        else:
+                            final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.png")
+                            with Image.open(img_p) as img:
+                                if img.mode == "P":
+                                    img = img.convert("RGBA")
+                                img.save(final_p, format="PNG")
                         saved_canvases.append((final_p, [img_p], h))
                         stitch_count += 1
                     else:
@@ -868,13 +1080,13 @@ class GeminiProcessor(BaseAIProcessor):
                     except Exception: pass
                     merged_sources = prev_sources + current_canvas_paths
                     c_path, _ = self._stitch_and_save(merged_sources, full_output_dir)
-                    final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
+                    final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.png")
                     if os.path.exists(final_p): os.remove(final_p)
                     os.rename(c_path, final_p)
                     self._report_status(f"Último lienzo fusionado con el anterior ({current_h}px < {min_useful_canvas}px mínimo).")
                 else:
                     c_path, _ = self._stitch_and_save(current_canvas_paths, full_output_dir)
-                    final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.jpg")
+                    final_p = os.path.join(full_output_dir, f"stitched_{stitch_count:03d}.png")
                     if os.path.exists(final_p): os.remove(final_p)
                     os.rename(c_path, final_p)
 
@@ -883,37 +1095,15 @@ class GeminiProcessor(BaseAIProcessor):
 
         # --- MODO IA ESTÁNDAR (SIN UNIÓN) ---
         chunk_size = 5 # Restaurado al valor original
-        total_batches = (len(image_files) + chunk_size - 1) // chunk_size
-        logging.info(f"Procesando capítulo con {Config.GEMINI_MODEL} | Lote: {chunk_size} | Total Lotes: {total_batches}")
+        chunks = [(n, image_files[i:i + chunk_size])
+                  for n, i in enumerate(range(0, len(image_files), chunk_size), 1)]
+        logging.info(f"Procesando capítulo con {Config.GEMINI_MODEL} | Lote: {chunk_size} | Total Lotes: {len(chunks)}")
 
-        all_texts: List[str] = []
-        for i in range(0, len(image_files), chunk_size):
-            if cancel_event and cancel_event.is_set():
-                return "cancelled"
-            
-            current_batch_num = (i // chunk_size) + 1
-            chunk = image_files[i : i + chunk_size]
-            results = self.call_api_batch(
-                "", chunk, cancel_event=cancel_event, current_batch=current_batch_num, total_batches=total_batches
-            )
-            
-            if results and results[0] == "CANCELLED":
-                return "cancelled"
-            if results and results[0].startswith("[ERROR"):
-                return f"Error: {results[0]}"
-            
-            all_texts.extend(results)
-            
-            # Guardado incremental ligero
-            try:
-                progreso_txt = os.path.join(full_output_dir, f"{chapter_name}_progreso.txt")
-                with open(progreso_txt, "w", encoding="utf-8") as f:
-                    f.write(f"PROGRESO ACTUAL DEL CAPÍTULO: {chapter_name}\n")
-                    f.write(f"Traducidas {len(all_texts)} páginas hasta el momento...\n\n")
-                    for idx, texto in enumerate(all_texts, 1):
-                        f.write(f"PAGINA {idx}\n{'-'*50}\n{texto}\n\n")
-            except Exception as e:
-                logging.error(f"Error en guardado incremental: {e}")
+        state, all_texts, err_msg = self._process_chunks_parallel(chunks, cancel_event)
+        if state == "cancelled":
+            return "cancelled"
+        if state == "error":
+            return f"Error: {err_msg}"
 
         if all_texts:
             # 1. Intentar el guardado oficial (con análisis)
@@ -953,33 +1143,20 @@ class GeminiProcessor(BaseAIProcessor):
         file_paths.sort(key=lambda f: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', f)])
 
         chunk_size = 20
-        total_batches = (len(file_paths) + chunk_size - 1) // chunk_size
-        logging.info(f"Procesando {len(file_paths)} archivos con {Config.GEMINI_MODEL} | Lote: {chunk_size} | Total Lotes: {total_batches}")
-        
-        all_texts: List[str] = []
+        chunks = [(n, file_paths[i:i + chunk_size])
+                  for n, i in enumerate(range(0, len(file_paths), chunk_size), 1)]
+        logging.info(f"Procesando {len(file_paths)} archivos con {Config.GEMINI_MODEL} | Lote: {chunk_size} | Total Lotes: {len(chunks)}")
+
         success_status = "success"
 
-        for i in range(0, len(file_paths), chunk_size):
-            if cancel_event and cancel_event.is_set():
-                success_status = "cancelled"
-                break
-            
-            current_batch_num = (i // chunk_size) + 1
-            chunk = file_paths[i : i + chunk_size]
-            results = self.call_api_batch(
-                "", chunk, cancel_event=cancel_event, current_batch=current_batch_num, total_batches=total_batches
-            )
-            
-            if results and results[0] == "CANCELLED":
-                success_status = "cancelled"
-                break
-            if results and results[0].startswith("[ERROR"):
-                success_status = "error"
-                if callback:
-                    callback("error_gemini_api", results[0])
-                return 
-
-            all_texts.extend(results)
+        state, all_texts, err_msg = self._process_chunks_parallel(chunks, cancel_event)
+        if state == "cancelled":
+            success_status = "cancelled"
+        elif state == "error":
+            success_status = "error"
+            if callback:
+                callback("error_gemini_api", err_msg or "Error de API")
+            return
 
         if success_status == "success" and all_texts:
             first_dir = os.path.dirname(file_paths[0])

@@ -272,7 +272,7 @@ def get_comic_info(sess, token: str, comic_id: str) -> dict:
     c = (resp.get("data") or {}).get("comic") or {}
     if not c:
         return {}
-    return {
+    info = {
         "id": c.get("_id", comic_id),
         "slug": c.get("_id", comic_id),
         "title": c.get("title", ""),
@@ -281,6 +281,27 @@ def get_comic_info(sess, token: str, comic_id: str) -> dict:
         "eps": c.get("epsCount", 1),
         "categories": c.get("categories", []),
     }
+
+    thumb = c.get("thumb") or {}
+    if isinstance(thumb, dict) and thumb.get("path"):
+        cover = _img_url(thumb)
+        if cover:
+            info["cover"] = cover
+
+    cats = [str(x) for x in (c.get("categories") or []) if x]
+    if cats:
+        info["tags"] = cats
+
+    meta_fields: dict[str, str] = {}
+    if info["author"]:
+        meta_fields["Autor"] = info["author"]
+    if c.get("finished") is not None:
+        meta_fields["Estado"] = "Finalizado" if c.get("finished") else "En curso"
+    if info["desc"]:
+        meta_fields["Sinopsis"] = info["desc"]
+    if meta_fields:
+        info["meta"] = meta_fields
+    return info
 
 
 def get_episodes(sess, token: str, comic_id: str) -> list[dict]:

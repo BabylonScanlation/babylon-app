@@ -101,7 +101,13 @@ def save_image(raw: bytes, path: str, user_format: Optional[str] = None) -> None
             mask = img.split()[-1] if img.mode in ("RGBA", "LA") else None
             bg.paste(img, mask=mask)
             img = bg
-        img.save(path, quality=92)
+        if fmt == "webp":
+            # WebP lossless: el formato elegido se mantiene SIN pérdida de calidad
+            img.save(path, format="WEBP", lossless=True, method=6)
+        elif fmt in ("jpg", "jpeg"):
+            img.save(path, format="JPEG", quality=92)
+        else:
+            img.save(path)
     except Exception:
         with open(path, "wb") as f:
             f.write(raw)
@@ -112,7 +118,163 @@ def ext_for(url: str, user_format: Optional[str] = None) -> str:
     if HAS_PILLOW and fmt != "original":
         return fmt
     raw_ext = os.path.splitext(url.split("?")[0])[-1].lower().lstrip(".")
-    return raw_ext if raw_ext in ("jpg", "jpeg", "png", "webp") else "jpg"
+    return raw_ext if raw_ext in ("jpg", "jpeg", "png", "webp", "gif", "avif", "bmp") else "jpg"
+
+
+# ══════════════════════════════════════════════════════════════
+#  METADATOS DE SERIE  (portada / etiquetas / ficha)
+#
+#  Helper genérico que cada downloader puede fusionar en su `series`:
+#      series.update(extract_series_extras(html_o_soup, BASE_URL))
+#  Deja disponibles las claves que el panel consume:
+#      series["cover"] -> URL de la portada
+#      series["tags"]  -> list[str] de etiquetas/géneros
+#      series["meta"]  -> dict {etiqueta: valor} (Autor, Estado, Sinopsis…)
+# ══════════════════════════════════════════════════════════════
+_GENRE_HREF_HINTS = (
+    "genre", "genero", "género", "tag", "category", "categoria",
+    "classify", "sort", "manga-genre",
+)
+
+
+def extract_series_extras(html_or_soup, base_url: str = "") -> dict:
+    """Extrae portada, etiquetas y metadatos de la ficha HTML de una serie.
+
+    Acepta un `BeautifulSoup` ya construido o HTML crudo. Nunca lanza:
+    devuelve sólo las claves que pudo determinar (`cover`, `tags`, `meta`)."""
+    out: dict = {}
+    try:
+        soup = html_or_soup
+        if isinstance(soup, str) or not hasattr(soup, "select_one"):
+            if not html_or_soup:
+                return out
+            try:
+                from bs4 import BeautifulSoup
+            except ImportError:
+                return out
+            try:
+                soup = BeautifulSoup(str(html_or_soup), "lxml")
+            except Exception:
+                soup = BeautifulSoup(str(html_or_soup), "html.parser")
+
+        def _meta_content(*keys: str) -> str:
+            for key in keys:
+                for attr in ("property", "name", "itemprop"):
+                    tag = soup.find("meta", attrs={attr: key})
+                    if tag and tag.get("content"):
+                        v = str(tag["content"]).strip()
+                        if v:
+                            return v
+            return ""
+
+        # ── Portada ──────────────────────────────────────────
+        cover = _meta_content("og:image", "og:image:secure_url", "twitter:image")
+        if not cover:
+            for sel in (
+                "img.cover", "img.cover-img", "img.book-cover",
+                ".cover img", ".cover-img img", ".comic-cover img",
+                ".book-cover img", ".summary_image img", ".poster img",
+                ".detail-info-cover-img", ".manga-cover img", ".thumb img",
+                ".comic-cover", ".book-cover",
+            ):
+                img = soup.select_one(sel)
+                if img and hasattr(img, "get"):
+                    cover = (
+                        img.get("data-src") or img.get("data-original")
+                        or img.get("data-lazy-src") or img.get("src") or ""
+                    ).strip()
+                    if cover:
+                        break
+        if cover:
+            if cover.startswith("//"):
+                cover = "https:" + cover
+            elif cover.startswith("/") and base_url:
+                cover = base_url.rstrip("/") + cover
+            out["cover"] = cover
+
+        # ── Sinopsis / descripción ───────────────────────────
+        desc = _meta_content("og:description", "description")
+        if not desc:
+            for sel in (
+                ".fullcontent", ".summary__content p", ".summary__content",
+                ".summary-content", ".comic-intro", ".book-intro",
+                "p.introduction", ".detail-info-right-content",
+                ".manga-excerpt", ".description", ".intro", ".book-detail",
+            ):
+                node = soup.select_one(sel)
+                if node:
+                    t = node.get_text(" ", strip=True)
+                    if t and len(t) > 10:
+                        desc = t
+                        break
+
+        # ── Etiquetas / géneros ──────────────────────────────
+        tags: list[str] = []
+        seen: set[str] = set()
+        for sel in (
+            ".genres-content a", ".detail-info-right-tag-list a",
+            ".book-label a", ".book-tags a", ".tag-list a", ".tags a",
+            ".manga-genres a", ".categories a", ".genres a",
+            ".post-content_item .genres-content a", ".manga-tags a",
+        ):
+            for a in soup.select(sel):
+                t = a.get_text(strip=True)
+                if t and 1 < len(t) <= 40 and t.lower() not in seen:
+                    seen.add(t.lower())
+                    tags.append(t)
+            if tags:
+                break
+        if not tags:
+            for a in soup.find_all("a", href=True):
+                href = str(a["href"]).lower()
+                if any(h in href for h in _GENRE_HREF_HINTS):
+                    t = a.get_text(strip=True)
+                    if t and 1 < len(t) <= 40 and t.lower() not in seen:
+                        seen.add(t.lower())
+                        tags.append(t)
+        if not tags:
+            kw = _meta_content("keywords")
+            if kw:
+                tags = [t.strip() for t in kw.split(",") if t.strip()][:20]
+        if tags:
+            out["tags"] = tags[:30]
+
+        # ── Autor / estado ───────────────────────────────────
+        author = ""
+        for sel in (
+            ".author-content a", ".detail-info-right-say a",
+            ".book-author a", ".author a", ".manga-authors a",
+            "a[href*='author']", ".artist-content a", ".book-author",
+        ):
+            node = soup.select_one(sel)
+            if node and node.get_text(strip=True):
+                author = node.get_text(strip=True)
+                break
+        status = ""
+        for sel in (
+            ".post-status .summary-content", ".detail-info-right-title-tip",
+            ".book-status", ".manga-status .summary-content",
+            ".status", ".comic-status", ".detail-info-right-title-tip",
+        ):
+            node = soup.select_one(sel)
+            if node:
+                t = node.get_text(strip=True)
+                if t and len(t) < 30:
+                    status = t
+                    break
+
+        meta_fields: dict[str, str] = {}
+        if author:
+            meta_fields["Autor"] = author
+        if status:
+            meta_fields["Estado"] = status
+        if desc:
+            meta_fields["Sinopsis"] = desc[:400]
+        if meta_fields:
+            out["meta"] = meta_fields
+    except Exception:
+        return out
+    return out
 
 
 # ══════════════════════════════════════════════════════════════
@@ -287,3 +449,15 @@ class BaseDownloader:
 
     def get_referer(self, chapter: dict, series: dict) -> str:
         return ""
+
+    def get_image_count(self, chapter: dict, series: dict) -> Optional[int]:
+        """Devuelve el número de imágenes de un capítulo SIN descargar ninguna imagen.
+
+        Implementación por defecto: rasca la página/API del capítulo, extrae las URLs
+        y las cuenta (un único GET/parseo). Los descargadores con API/JSON ligero
+        pueden sobrescribirlo con una consulta aún más barata.
+        Devuelve None si no se puede determinar."""
+        try:
+            return len(self.get_chapter_images(chapter, series))
+        except Exception:
+            return None

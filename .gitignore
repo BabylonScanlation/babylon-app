@@ -17,3 +17,5 @@ gemini.md
 .infisical.json
 cf_clearance.json
 app_tools/python_ocr/
+projects/
+BBSL/secrets.bin

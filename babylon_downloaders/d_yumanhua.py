@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from typing import TYPE_CHECKING, Protocol, TypedDict, cast, runtime_checkable, Optional
 
-from common import BaseDownloader
+from common import BaseDownloader, extract_series_extras
 
 if TYPE_CHECKING:
 
@@ -710,6 +710,7 @@ def load_full_catalog(workers: int = 8) -> list[CatalogItem]:
 
 class YumanhuaLogic:
     def parse_series_page(self, slug: str) -> tuple[str, str, str, list[ChapterDict]]:
+        self.last_extras: dict = {}
         url = f"{BASE_URL}/{slug}/"
         r = SESSION.get(url, timeout=15)
         if r.status_code != 200:
@@ -790,6 +791,7 @@ class YumanhuaLogic:
 
         # NO SORT: El orden resultante es [Capítulos del HTML] + [Capítulos del AJAX]
         print(f"\r  {UI.GREEN}[OK] {len(caps)} capítulos encontrados.{' ' * 20}{UI.END}")
+        self.last_extras = extract_series_extras(r.text, BASE_URL)
         return title, autor, sinopsis, caps
 
     def extract_images(self, cap: ChapterDict) -> list[str]:
@@ -900,6 +902,7 @@ class DownloaderYumanhua(BaseDownloader):
             "author": autor,
             "summary": sinopsis
         }
+        meta.update(getattr(self.logic, "last_extras", {}) or {})
         # Adaptar capítulos
         formatted_chapters = []
         for c in chapters:

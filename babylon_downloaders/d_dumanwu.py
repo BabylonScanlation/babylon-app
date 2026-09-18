@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, TypedDict
 
 import requests
-from common import CFG, BaseDownloader
+from common import CFG, BaseDownloader, extract_series_extras
 
 # Consola Windows: stdout cp1252 rompe al imprimir CJK (mismo patrón que d_pigmh)
 try:
@@ -310,6 +310,7 @@ def _parse_series_page(
 
     # caps.sort(key=_cap_sort_key) # v5.5: usar orden natural
     meta = {"id": slug, "slug": slug, "title": title}
+    meta.update(extract_series_extras(html, BASE_URL))
     return meta, caps
 
 

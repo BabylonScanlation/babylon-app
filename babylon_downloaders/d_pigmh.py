@@ -22,7 +22,7 @@ from bs4 import BeautifulSoup
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 
-from common import BaseDownloader
+from common import BaseDownloader, extract_series_extras
 
 if not (isinstance(sys.stdout, io.TextIOWrapper) and getattr(sys.stdout, "encoding", "").lower() in ("utf-8", "utf8")):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -121,11 +121,11 @@ def get_chapter_images(slug: str) -> tuple[str, list[str]]:
     return slug, []
 
 # ─── INFO DE SERIE ───────────────────────────────────────────
-def get_series_info(slug: str) -> tuple[str, list[dict]]:
+def get_series_info(slug: str) -> tuple[str, list[dict], dict]:
     url = f"{BASE_URL}/comic/{slug}"
     r   = SESSION.get(url, timeout=15, headers=HEADERS)
     if r.status_code != 200:
-        return slug, []
+        return slug, [], {}
 
     soup  = BeautifulSoup(r.text, "html.parser")
     h1    = soup.find("h1")
@@ -144,7 +144,7 @@ def get_series_info(slug: str) -> tuple[str, list[dict]]:
         return float(m.group(1)) if m else 0.0
 
     chapters.sort(key=sort_key)
-    return title, chapters
+    return title, chapters, extract_series_extras(soup, BASE_URL)
 
 # ─── BUSQUEDA ────────────────────────────────────────────────
 def search(query: str) -> list[dict]:
@@ -273,8 +273,9 @@ class DownloaderPigmh(BaseDownloader):
 
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
         slug = item.get("slug") or item.get("id", "")
-        title, chapters = get_series_info(slug)
+        title, chapters, extras = get_series_info(slug)
         meta = {"id": slug, "slug": slug, "title": title}
+        meta.update(extras or {})
         # Adaptar capítulos al formato BaseDownloader
         formatted_chapters = []
         for c in chapters:
@@ -351,7 +352,7 @@ def flujo_descargar(entrada: str = "") -> None:
         return
 
     print(inf("Cargando info de la serie..."))
-    series_title, chapters = get_series_info(slug)
+    series_title, chapters, _ = get_series_info(slug)
     if not chapters:
         print(err("No se encontraron capitulos.")); return
 

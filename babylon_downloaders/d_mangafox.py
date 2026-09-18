@@ -16,7 +16,7 @@ from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
-from common import CFG, BaseDownloader
+from common import CFG, BaseDownloader, extract_series_extras
 
 BASE_URL = "https://fanfox.net"
 MOBILE_URL = "https://m.fanfox.net"
@@ -205,7 +205,9 @@ def _parse_series(sess: requests.Session, slug: str) -> Optional[dict]:
             return 0.0
 
     chapters.sort(key=_key, reverse=True)
-    return {"id": slug, "slug": slug, "title": title, "chapters": chapters}
+    data = {"id": slug, "slug": slug, "title": title, "chapters": chapters}
+    data.update(extract_series_extras(soup, BASE_URL))
+    return data
 
 
 # ─────────────────────────────────────────────

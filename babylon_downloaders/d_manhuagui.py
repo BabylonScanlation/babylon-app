@@ -15,7 +15,7 @@ from urllib.parse import quote
 
 import requests
 from bs4 import BeautifulSoup
-from common import CFG, BaseDownloader
+from common import CFG, BaseDownloader, extract_series_extras
 
 BASE = "https://www.manhuagui.com"
 _BASE_ALTS = [
@@ -416,12 +416,14 @@ def _get_comic(sess: requests.Session, comic_id: str) -> dict:
     if not chapters:
         chapters = _parse_chapters(soup, comic_id)
 
-    return {
+    data = {
         "id": comic_id,
         "slug": comic_id,
         "title": title or f"Comic {comic_id}",
         "chapters": chapters,
     }
+    data.update(extract_series_extras(soup, BASE))
+    return data
 
 
 def _parse_chapters(soup: BeautifulSoup, comic_id: str) -> list[dict]:

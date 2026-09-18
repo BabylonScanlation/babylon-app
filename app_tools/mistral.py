@@ -12,6 +12,22 @@ except ImportError:  # SDK 2.x: la clase se movió a mistralai.client
 from app_tools.ai_service import BaseAIProcessor, AIAPIError
 from config import Config
 
+# MIME types por extensión para el data URI de Mistral Vision.
+_MISTRAL_MIME_BY_EXT = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+}
+
+
+def _mime_for_mistral(path: str) -> str:
+    """Devuelve el MIME type real del archivo (nunca disfraza webp/png/gif de image/jpeg)."""
+    mime = _MISTRAL_MIME_BY_EXT.get(os.path.splitext(path.lower())[1])
+    return mime if mime else "image/jpeg"
+
 class MistralAPIError(AIAPIError):
     """Excepción específica para errores de la API de Mistral."""
     pass
@@ -36,9 +52,10 @@ class MistralProcessor(BaseAIProcessor):
         if image_path:
             base64_image = self.encode_image(image_path)
             if base64_image:
+                mime = _mime_for_mistral(image_path)
                 content_list.append({
                     "type": "image_url",
-                    "image_url": f"data:image/jpeg;base64,{base64_image}",
+                    "image_url": f"data:{mime};base64,{base64_image}",
                 })
         
         if content:
