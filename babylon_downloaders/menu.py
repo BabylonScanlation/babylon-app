@@ -30,8 +30,7 @@ DEBUG = "--debug" in sys.argv
 #  REGISTRO DE DOWNLOADERS
 # ══════════════════════════════════════════════════════════════
 DOWNLOADERS: list[tuple[str, str]] = [
-    ("bookwalker", "BOOKWALKER    (bookwalker.jp)     — trial CloudFront"),
-    ("bookwalkerhar", "BOOKWALKER-HAR (member)      — /c + auto-tokens (config)"),
+    ("bookwalker", "BOOKWALKER    (bookwalker.jp)     — trial + member/HAR"),
     ("18mh", "18MH          (18mh.org)          — requests + BS4"),
     ("bakamh", "BAKAMH        (bakamh.com)        — curl_cffi/WP AJAX"),
     ("baozimh", "BAOZIMH       (baozimh.org/com)   — mirrors + API JSON"),
@@ -49,10 +48,6 @@ DOWNLOADERS: list[tuple[str, str]] = [
 
 def _load_downloader(key: str):
     if key == "bookwalker":
-        from d_bookwalker import DownloaderBookwalker
-
-        return DownloaderBookwalker()
-    if key == "bookwalkerhar":
         from d_bookwalker import DownloaderBookwalkerHar
 
         return DownloaderBookwalkerHar()
@@ -475,7 +470,7 @@ def _flow_picacomic_login(dl) -> bool:
 
 def _flow_bookwalkerhar_import(dl) -> bool:
     """Pega cURL del /c (FLUJO A) o de una imagen 'pages' (FLUJO B), o una ruta .har."""
-    _header("BOOKWALKER-HAR — Importar tomo")
+    _header("BOOKWALKER — Importar tomo")
     print(
         f"  {C.DIM}Las 167 imágenes SOLO se bajan con la sesión del navegador que{C.END}"
     )
@@ -563,7 +558,7 @@ def _flow_bookwalkerhar_clear(dl) -> bool:
 
 def _flow_bookwalkerhar_session(dl) -> bool:
     """Sesión automática: toma la sesión del navegador REAL del usuario."""
-    _header("BOOKWALKER-HAR — Sesión automática")
+    _header("BOOKWALKER — Sesión automática")
     try:
         import bw_session as _s
     except Exception:
@@ -717,15 +712,14 @@ def _site_menu(dl) -> None:
             opts.append(("2", "Catálogo"))
         opts.append(("3", "Volver"))
         if getattr(dl, "HAR_SESSION", False):
+            ops = " (cuenta configurada)" if getattr(dl, "_logged", False) else ""
             opts.append(("4", "Importar tomo (cURL /c, pages o .har)"))
             opts.append(("5", "Ver capturas guardadas"))
             opts.append(("6", "Limpiar capturas HAR"))
             opts.append(("7", "Sesión automática (abrir navegador, loguear 1 vez)"))
-        elif getattr(dl, "NAME", "").startswith("BOOKWALKER"):
-            ops = " (cuenta configurada)" if getattr(dl, "_logged", False) else ""
-            opts.append(("4", "Cookies de cuenta (tomos comprados)" + ops))
-            opts.append(("5", "Captura /c del visor (tomo comprado)"))
-            opts.append(("6", "Limpiar capturas member"))
+            opts.append(("8", "Cookies de cuenta (tomos comprados)" + ops))
+            opts.append(("9", "Captura /c del visor (tomo comprado)"))
+            opts.append(("10", "Limpiar capturas member"))
 
         for code, label in opts:
             print(f"  {C.BOLD}{code}.{C.END}  {label}")
@@ -746,11 +740,11 @@ def _site_menu(dl) -> None:
             _flow_bookwalkerhar_clear(dl)
         elif op == "7" and getattr(dl, "HAR_SESSION", False):
             _flow_bookwalkerhar_session(dl)
-        elif op == "4" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+        elif op == "8" and getattr(dl, "HAR_SESSION", False):
             _flow_bookwalker_cookies(dl)
-        elif op == "5" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+        elif op == "9" and getattr(dl, "HAR_SESSION", False):
             _flow_bookwalker_capture(dl)
-        elif op == "6" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+        elif op == "10" and getattr(dl, "HAR_SESSION", False):
             _flow_bookwalker_clear(dl)
         # Opción no reconocida → re-muestra menú directamente (sin enter extra)
 

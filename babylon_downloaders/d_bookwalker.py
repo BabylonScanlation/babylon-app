@@ -340,7 +340,7 @@ def _pick_capture(
 
 
 def _flow_item(cid: str, title: str) -> dict:
-    return {"id": cid, "cid": cid, "title": title, "slug": cid}
+    return {"kind": "capture", "id": cid, "cid": cid, "title": title, "slug": cid}
 
 
 def _capture_title(cap: dict, cid: str) -> str:
@@ -2065,16 +2065,18 @@ class DownloaderBookwalker(BaseDownloader):
 
 # ═══════════════════════ DownloaderBookwalkerHar (member/HAR) ═══════════════════════
 
-class DownloaderBookwalkerHar(BaseDownloader):
-    NAME = "BOOKWALKER-HAR (member/HAR)"
+class DownloaderBookwalkerHar(DownloaderBookwalker):
+    NAME = "BOOKWALKER (bookwalker.jp)"
     HAS_SEARCH = True
     HAS_CATALOG = True
     NEEDS_LOGIN = False
     HAR_SESSION = True
 
     def __init__(self) -> None:
-        self._sess = requests.Session()
+        super().__init__()
         self._active: Optional[dict] = None
+        self._last_chapter: Optional[dict] = None
+        self._last_series: Optional[dict] = None
 
     # ── sesión automática (navegador gestionado) ─────────────────────────────
 
@@ -2356,20 +2358,50 @@ class DownloaderBookwalkerHar(BaseDownloader):
         if q.lstrip().startswith("{"):
             return self._import_har_text(q)
 
-        # Si no lo es, filtrar capturas guardadas por título/cid
+        # Búsqueda web en la tienda + capturas guardadas que coincidan
+        web = super().search(q)
         caps = load_har_captures()
-        out = []
+        out = list(web)
         for cid, cap in caps.items():
             title = _capture_title(cap, cid)
             if q.lower() in title.lower() or cid.lower().startswith(q.lower()):
                 out.append(_flow_item(cid, title))
         return out
 
+    def get_catalog_page(
+        self, page: int = 1, page_size: int = 20, **kwargs
+    ) -> tuple[list[dict], bool]:
+        """Catálogo: ranking de la tienda (páginas) + capturas guardadas al final."""
+        items, has_more = super().get_catalog_page(page=page, page_size=page_size, **kwargs)
+        caps = load_har_captures()
+        if caps:
+            mine = [
+                _flow_item(cid, _capture_title(cap, cid))
+                for cid, cap in sorted(
+                    caps.items(), key=lambda kv: str(kv[1].get("created_at") or ""), reverse=True
+                )
+            ]
+            all_items = [i for i in items if i.get("kind") != "capture"] + mine
+            start = (page - 1) * page_size
+            chunk = all_items[start : start + page_size]
+            has_more = (has_more and len(items) >= page_size) or start + page_size < len(all_items)
+            return chunk, has_more
+        return items, has_more
+
     def get_catalog(self, **kwargs) -> list:
         caps = load_har_captures()
         return [_flow_item(cid, _capture_title(cap, cid)) for cid, cap in caps.items()]
 
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
+        if item.get("kind") == "capture":
+            return self._capture_series(item)
+        if item.get("kind") in ("book", "series") or str(item.get("slug", "")).startswith(
+            ("de", "series/")
+        ):
+            return super().get_series(item)
+        return self._capture_series(item)
+
+    def _capture_series(self, item: dict) -> tuple[dict, list[dict]]:
         cid = str(item.get("cid") or item.get("id") or "").lower()
         caps = load_har_captures()
         cap = caps.get(cid)
@@ -2409,19 +2441,15 @@ class DownloaderBookwalkerHar(BaseDownloader):
             or series.get("id")
             or (str(series.get("slug", "")).removeprefix("de"))
         ).lower()
-        caps = load_har_captures()
-        cap = caps.get(cid)
-        if not cap:
-            # Sin captura: se ofrece la captura automática por navegador.
-            if self.capture_via_browser(cid):
-                caps = load_har_captures()
-                cap = caps.get(cid)
-            if not cap:
-                raise RuntimeError(
-                    "Sin captura para este tomo. Se abrió Chromium pero el /c no "
-                    "dio imagen: iniciá sesión en la cuenta que compró el tomo y "
-                    "reintentá."
-                )
+        cap = load_har_captures().get(cid)
+        if cap and cap.get("session"):
+            return self._har_chapter_images(chapter, series, cap)
+        # Sin captura member: flujo trial/member web del sitio (heredado)
+        return super().get_chapter_images(chapter, series)
+
+    def _har_chapter_images(
+        self, chapter: dict, series: dict, cap: dict
+    ) -> list[str]:
         tokens = cap.get("tokens") or {}
         session = cap.get("session")
         if not session:
@@ -2518,6 +2546,14 @@ class DownloaderBookwalkerHar(BaseDownloader):
 
     def dl_image(self, url: str, referer: str = "") -> Optional[bytes]:
         cap = self._active or {}
+        if cap.get("session"):
+            return self._dl_member_image(url, referer, cap)
+        return super().dl_image(url, referer)
+
+    def _dl_member_image(
+        self, url: str, referer: str, cap: Optional[dict] = None
+    ) -> Optional[bytes]:
+        cap = cap or self._active or {}
         session = cap.get("session") or {}
         headers: Dict[str, str] = {}
         if session.get("flow") == "pages":
@@ -2551,7 +2587,10 @@ class DownloaderBookwalkerHar(BaseDownloader):
         return None
 
     def get_referer(self, chapter: dict, series: dict) -> str:
-        return _DEFAULT_REFERER
+        cap = self._active or {}
+        if cap.get("session"):
+            return _DEFAULT_REFERER
+        return super().get_referer(chapter, series)
 
     def dl_batch(
         self, urls: list[str], referer: str = "", max_workers: int = 8

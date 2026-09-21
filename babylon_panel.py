@@ -292,7 +292,6 @@ SITE_FILTER_CONFIG: Dict[str, List[Dict]] = {
         },
     ],
     "yumanhua": [],
-    "bookwalkerhar": [],
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -304,8 +303,7 @@ if _DL_DIR not in sys.path:
     sys.path.insert(0, _DL_DIR)
 
 _DOWNLOADER_MAP: Dict[str, Tuple[str, str]] = {
-    "bookwalker": ("d_bookwalker.py", "DownloaderBookwalker"),
-    "bookwalkerhar": ("d_bookwalker.py", "DownloaderBookwalkerHar"),
+    "bookwalker": ("d_bookwalker.py", "DownloaderBookwalkerHar"),
     "18mh": ("d_18mh.py", "Downloader18mh"),
     "bakamh": ("d_bakamh.py", "DownloaderBakamh"),
     "baozimh": ("d_baozimh.py", "DownloaderBaozimh"),
@@ -435,8 +433,6 @@ def get_series_url(site_type: str, item: Dict) -> str:
             return f"{base}/{slug}"
         elif site_type == "bookwalker":
             return f"https://bookwalker.jp/{slug}/"
-        elif site_type == "bookwalkerhar":
-            return f"https://bookwalker.jp/de{slug}/"
 
         return f"{base}/{slug}"
     except Exception:
@@ -869,7 +865,7 @@ def _search_site_impl(
         # PIGMH / YUMANHUA — get_catalog_page heredado de base: cachea el
         # catálogo completo (get_catalog) y trocea por página.
         # ─────────────────────────────────────────────────────────────────────
-        elif t in ("pigmh", "yumanhua", "bookwalker", "bookwalkerhar"):
+        elif t in ("pigmh", "yumanhua", "bookwalker"):
             if query:
                 cache_key = f"{t}_search_{query}"
                 if cache_key not in _catalog_cache:
@@ -2065,8 +2061,6 @@ _SITE_CONFIG_FIELDS: Dict[str, List[Dict]] = {
     ],
     "bookwalker": [
         {"key": "SITE_COOKIES", "label": "Cookies de sesión (tomos comprados)", "type": "site_cookies"},
-    ],
-    "bookwalkerhar": [
         {"key": "_STORAGE", "label": "Archivo de capturas HAR", "type": "str_ro"},
     ],
 }
@@ -2642,8 +2636,7 @@ def _common_cfg() -> Dict:
 
 
 _SITE_HINTS: Dict[str, str] = {
-    "bookwalker": "Busca por nombre o pega un enlace /de{uuid}/ de BOOK☆WALKER. Pulsa Listar para el ranking. El contenido gratuito (試し読み) no requiere cuenta.",
-    "bookwalkerhar": "Pega el cURL del /c (descifra configuration_pack.json y deriva los 167 tokens automáticamente), el cURL de una imagen 'pages', o la ruta de un .har del visor member. Pulsa Listar para ver capturas guardadas.",
+    "bookwalker": "Busca por nombre o pega un enlace /de{uuid}/ de BOOK☆WALKER. Pulsa Listar para el ranking. El contenido gratuito (試し読み) no requiere cuenta. Para tomos comprados, pegá el cURL del /c (deriva los 167 tokens automáticamente), el cURL de una imagen 'pages', o la ruta de un .har del visor member, o conectá tu cuenta por el botón de sesión.",
     "18mh": "Pulsa Listar para ver el catálogo, o escribe un nombre para buscar.",
     "bakamh": "Busca por nombre, o elige género/orden y pulsa Listar.",
     "baozimh": "Busca por nombre, o filtra región/estado/género y pulsa Listar.",
@@ -2660,8 +2653,7 @@ _SITE_HINTS: Dict[str, str] = {
 
 
 _SEARCH_PLACEHOLDER: Dict[str, str] = {
-    "bookwalker": "Nombre, enlace de BOOK☆WALKER …",
-    "bookwalkerhar": "cURL del /c, cURL pages, .har o título…",
+    "bookwalker": "Nombre, enlace, cURL del /c, .har o título…",
     "hitomi": "ID (ej: 123456) o tags (ej: female:mind_control language:spanish)",
     "18mh": "Buscar por nombre…",
     "bakamh": "Buscar por nombre…",
@@ -2915,7 +2907,7 @@ class BabylonSiteDetailPanel(QWidget):
 
         if not items:
             st = self.site.get("type", "")
-            if st == "bookwalkerhar":
+            if st == "bookwalker":
                 try:
                     import bw_session as _bws
                 except Exception:
@@ -2925,7 +2917,7 @@ class BabylonSiteDetailPanel(QWidget):
                     if en_uso:
                         QMessageBox.information(
                             self,
-                            "BookWalker-HAR",
+                            "BookWalker",
                             f"No hay capturas para mostrar.\n\nTu navegador "
                             f"({nombre}) está abierto y el perfil no se puede "
                             f"reabrir. Cerrá {nombre} y volvé a intentar.",
@@ -2933,7 +2925,7 @@ class BabylonSiteDetailPanel(QWidget):
                     else:
                         r = QMessageBox.question(
                             self,
-                            "BookWalker-HAR",
+                            "BookWalker",
                             f"No hay capturas para mostrar.\n\nLos tomos se "
                             f"capturan desde tu cuenta ya logueada en tu "
                             f"navegador ({nombre}). Se abrirá una ventana con "
@@ -2945,7 +2937,7 @@ class BabylonSiteDetailPanel(QWidget):
                             self._busy = True
                             self._lbl_status.setText(f"Abriendo {nombre}…")
                             try:
-                                dl = get_dl("bookwalkerhar")
+                                dl = get_dl("bookwalker")
                             except Exception:
                                 dl = None
                             if dl is not None:

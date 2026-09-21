@@ -759,24 +759,11 @@ class Config:
                     "BBSL", "herramientas", "ch_downloaders", "babylon", "bookwalker.png"
                 )
             ),
-            "description": "E-books japoneses (manga/lanove) — muestras gratuitas",
+            "description": "BOOKWALKER: muestras gratuitas + tomos comprados (member) — sesión de tu navegador",
             "url": "https://bookwalker.jp",
             "status": "Activo",
             "type": "bookwalker",
             "file": "bookwalker_downloader.py",
-        },
-        {
-            "name": "BOOKWALKER-HAR",
-            "image_path": resource_path(
-                os.path.join(
-                    "BBSL", "herramientas", "ch_downloaders", "babylon", "bookwalker.png"
-                )
-            ),
-            "description": "BOOKWALKER member — tomos comprados vía HAR/ tokens",
-            "url": "https://bookwalker.jp",
-            "status": "Activo",
-            "type": "bookwalkerhar",
-            "file": "bookwalker_har_downloader.py",
         },
     ]
 
