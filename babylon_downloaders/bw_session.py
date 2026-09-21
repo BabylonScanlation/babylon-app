@@ -13,14 +13,16 @@ Por qué hace falta un navegador (solo una vez, no es "config"):
     cosechan la SESSION y las cookies del navegador del dueño de la cuenta.
 
 Flujo:
-  1. La primera vez (o cuando la SESSION venció) se abre Chromium visible
-     con un perfil persistente de la app; el usuario se loguea una vez.
+  1. Se abre el navegador REAL de Chrome/Edge del usuario (donde su cuenta ya
+     está logueada). Es la forma preferida: cero login extra. Único requisito:
+     que ese navegador esté CERRADO durante la captura (los perfiles no se
+     abren dos veces). Si no hay perfil real, se usa un Chromium propio.
   2. bw_session captura las cookies del visor (SESSION incluida) y las
      guarda en <datos>/bookwalker_session.json (portable: va junto al .exe
      en la app compilada).
   3. d_bookwalker reusa esa sesión con requests: `/c`, config y tokens se
-     re-derivan solos. Cuando la SESSION falla, se reabre el navegador
-     brevemente (perfil persistente → sigue logueado).
+     re-derivan solos. Cuando la SESSION falla, se reabre el navegador del
+     usuario brevemente (su perfil → sigue logueado).
 
 Captura /c por tomo (one-shot): se abre directamente el visor del cid
 (`viewer.bookwalker.jp/03/30/viewer.html?cid=…&cty=1`). Al cargar, el visor
@@ -28,7 +30,8 @@ dispara `browserWebApi/c`; interceptamos esa petición (request + headers) y
 su respuesta (auth_info/base). El módulo guarda la captura igual que el
 cURL pegado a mano, pero SIN re-consumir el /c.
 
-Req:  pip install playwright && python -m playwright install chromium
+Req:  pip install playwright  (el Chromium de Playwright es opcional: con el
+perfil real se usa el Edge/Chrome del sistema, `channel=msedge/chrome`).
 """
 
 from __future__ import annotations
@@ -62,6 +65,47 @@ def _profile_dir() -> str:
     except OSError:
         pass
     return d
+
+
+# ── perfil real del usuario (modo preferido) ──────────────────────────────────
+
+_REAL_PROFILES = (
+    ("Edge",   os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge",   "User Data"), "msedge"),
+    ("Chrome", os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google",   "Chrome", "User Data"), "chrome"),
+)
+
+
+def _profile_locked(user_data: str) -> bool:
+    """True si el navegador está abierto (el perfil no se puede reabrir)."""
+    try:
+        for flag in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            if os.path.exists(os.path.join(user_data, flag)):
+                return True
+    except OSError:
+        return True
+    return False
+
+
+def _real_profile() -> Optional[dict]:
+    """Primer perfil REAL (Edge luego Chrome) que tenga carpeta Default."""
+    for name, user_data, channel in _REAL_PROFILES:
+        if not user_data or not os.path.isdir(os.path.join(user_data, "Default")):
+            continue
+        return {
+            "name": name,
+            "user_data": user_data,
+            "channel": channel,
+            "running": _profile_locked(user_data),
+        }
+    return None
+
+
+def real_profile_status() -> tuple:
+    """(nombre, en_uso) del navegador real que se abrirá, o ('gestionado', False)."""
+    r = _real_profile()
+    if not r:
+        return ("Chromium/Edge gestionado por la app", False)
+    return (r["name"], r["running"])
 
 
 def _session_path() -> str:
@@ -185,13 +229,14 @@ _pages = []
 
 
 def _launch():
-    """Abre (o reusa) un Chromium visible con el perfil persistente de la app.
+    """Abre el navegador del USUARIO (modo preferido) o, si no hay perfil real,
+    un Chromium/Edge/Chrome propio de la app.
 
-    Intenta primero el Chromium de Playwright (playwright install chromium);
-    si no está (típico en un .exe compilado o en una máquina ajena), cae al
-    Edge/Chrome del sistema (`channel=msedge`/`chrome`), que Windows incluye.
-    En todos los casos el perfil es el propio de la app (bw_profile), nunca el
-    navegador personal del usuario.
+    Preferencia: se usa el perfil real de Chrome/Edge (`LOCALAPPDATA`, carpeta
+    Default). Es el navegador donde la cuenta ya está logueada → no se pide
+    login nunca. Requisito único: ese navegador debe estar CERRADO en el
+    momento de la captura (los perfiles no se abren dos veces); al terminar,
+    el usuario puede volver a abrirlo.
     """
     global _pw, _context
     if _context is not None:
@@ -199,6 +244,44 @@ def _launch():
     from playwright.sync_api import sync_playwright
 
     _pw = sync_playwright().start()
+    real = _real_profile()
+    if real:
+        if real["running"]:
+            try:
+                _pw.stop()
+            except Exception:
+                pass
+            _pw = None
+            raise RuntimeError(
+                f"Tu navegador ({real['name']}) está abierto y se necesita una "
+                f"vez. Cerrá {real['name']} y reintentá. Esto toma la sesión de "
+                f"tu cuenta y no lo vuelve a pedir."
+            )
+        try:
+            _context = _pw.chromium.launch_persistent_context(
+                real["user_data"],
+                channel=real["channel"],
+                headless=False,
+                viewport=None,
+                args=[
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+            )
+            _context.set_default_timeout(30000)
+            return _context
+        except Exception as e:
+            try:
+                _pw.stop()
+            except Exception:
+                pass
+            _pw = None
+            raise RuntimeError(
+                f"No se pudo abrir tu perfil real de {real['name']}: {e}"
+            )
+
+    # Sin perfil real: navegador propio de la app (dev / máquina sin Chrome/Edge).
     last_err = None
     for opts in (dict(), {"channel": "msedge"}, {"channel": "chrome"}):
         try:

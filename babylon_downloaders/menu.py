@@ -562,7 +562,7 @@ def _flow_bookwalkerhar_clear(dl) -> bool:
 
 
 def _flow_bookwalkerhar_session(dl) -> bool:
-    """Sesión automática: abre un Chromium gestionado y loguea una sola vez."""
+    """Sesión automática: toma la sesión del navegador REAL del usuario."""
     _header("BOOKWALKER-HAR — Sesión automática")
     try:
         import bw_session as _s
@@ -576,23 +576,30 @@ def _flow_bookwalkerhar_session(dl) -> bool:
         )
         _prompt("Enter…")
         return False
-    print(
-        f"  {C.DIM}Se abrirá Chromium con el perfil de la app. Si ya estás{C.END}\n"
-        f"  {C.DIM}logueado en bookwalker.jp o inicias sesión ahora, quedará{C.END}\n"
-        f"  {C.DIM}guardado y no hará falta volver a hacerlo hasta que venza.{C.END}"
-    )
+    nombre, en_uso = _s.real_profile_status()
+    if not en_uso:
+        print(
+            f"  {C.DIM}Se abrirá tu {nombre} (donde ya está tu sesión).{C.END}\n"
+            f"  {C.DIM}Si está abierto, cerrarlo una vez: aparece un falso{C.END}\n"
+            f"  {C.DIM}advertencia y la SESSION queda guardada para siempre.{C.END}"
+        )
+    else:
+        print(
+            f"  {C.RED}Tu {nombre} está abierto y no se puede abrir dos veces.{C.END}\n"
+            f"  {C.DIM}Cerrá {nombre} y volvé a elegir esta opción.{C.END}"
+        )
     try:
         ok = bool(dl.login_via_browser())
     except Exception:
         ok = False
     if ok:
         print(
-            f"  {C.GREEN}✔  Navegador con sesión activa.{C.END} Al capturar un tomo,"
-            f"\n  {C.DIM} si la cuenta dueña no está logueada se abrirá el visor y podés"
-            f"\n  {C.DIM} entrar ahí mismo.{C.END}"
+            f"  {C.GREEN}✔  SESSION tomada de tu {nombre}.{C.END}"
+            f"\n  {C.DIM} Las firmas/tokens se renuevan solos con requests;"
+            f"\n  {C.DIM} los tomos ya se capturan sin login.{C.END}"
         )
     else:
-        print(f"  {C.RED}✗  No apareció la sesión en {C.CYAN}600s{C.END}. ¿Tenés la cuenta abierta?")
+        print(f"  {C.RED}✗  No apareció la sesión en {C.CYAN}600s{C.END}. ¿La cuenta está logueada?")
     _prompt("Enter…")
     return ok
 

@@ -2079,11 +2079,12 @@ class DownloaderBookwalkerHar(BaseDownloader):
     # ── sesión automática (navegador gestionado) ─────────────────────────────
 
     def login_via_browser(self) -> bool:
-        """Abre Chromium visible para loguear en bookwalker.jp una sola vez.
+        """Toma la sesión desde el navegador REAL del usuario (Chrome/Edge).
 
-        La SESSION y las cookies del visor se persisten en el archivo de
-        sesión de la app (`bw_session.bookwalker_session.json`) y se reusan
-        después con `requests`. True si quedó una SESSION activa.
+        Abre el perfil real donde ya está logueada su cuenta una sola vez
+        (si está abierto, pedirá cerrarlo). Persiste la SESSION y las cookies
+        del visor en `bw_session.bookwalker_session.json`; después todo se
+        reusa con `requests`. True si quedó una SESSION activa.
         """
         try:
             import bw_session as _s
@@ -2105,10 +2106,11 @@ class DownloaderBookwalkerHar(BaseDownloader):
     def capture_via_browser(self, cid: str) -> bool:
         """Captura automática de un tomo member SIN pegar cURL.
 
-        Abre el visor del cid en el Chromium gestionado y, cuando dispara el
-        `/c` (one-shot), guarda la captura HAR como si viniera de un cURL
-        pegado: base + auth_info (firma ~1h) + cookies, y re-deriva los
-        tokens desde configuration_pack.json headless.
+        Abre el visor del cid en el navegador REAL del usuario (donde su
+        cuenta ya está logueada) y, cuando dispara el `/c` (one-shot), guarda
+        la captura HAR como si viniera de un cURL pegado: base + auth_info
+        (firma ~1h) + cookies, y re-deriva los tokens desde
+        configuration_pack.json headless.
         """
         if not _UUID_RE.fullmatch(cid):
             return False
@@ -2239,6 +2241,7 @@ class DownloaderBookwalkerHar(BaseDownloader):
             key = cid or "gen_" + hashlib.md5(img_base.encode()).hexdigest()[:10]
         cap = caps.get(key, {"cid": key, "created_at": time.time()})
         cap.setdefault("tokens", {})
+        cap["source"] = curl
         cap["session"] = {
             "flow": "c",
             "img_base": img_base,
@@ -2423,6 +2426,8 @@ class DownloaderBookwalkerHar(BaseDownloader):
         session = cap.get("session")
         if not session:
             return []
+        self._last_chapter = chapter
+        self._last_series = series
 
         self._active = cap
         self._seeds: Optional[dict] = None
@@ -2551,12 +2556,60 @@ class DownloaderBookwalkerHar(BaseDownloader):
     def dl_batch(
         self, urls: list[str], referer: str = "", max_workers: int = 8
     ) -> List[Optional[bytes]]:
-        """Descarga varias imágenes en paralelo. El CDN de BookWalker corta
-        con 403 tras ~50 peticiones secuenciales; en paralelo aguanta las 167."""
+        """Descarga varias imágenes. En flujo "c" (member, firma /c one-shot)
+        baja por tramos y re-importa el /c cada ~25 páginas porque la firma
+        expira a mitad de tomo; en el resto usa paralelismo simple."""
+        if self._active and (self._active.get("session") or {}).get("flow") == "c" and self._active.get("source"):
+            return self._dl_batch_member_tramos(urls, referer, CHUNK=25, MAX_REIMPORT=4)
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             return list(pool.map(lambda u: self.dl_image(u, referer), urls))
+
+    def _dl_batch_member_tramos(
+        self, urls: list[str], referer: str, CHUNK: int = 25, MAX_REIMPORT: int = 4
+    ) -> List[Optional[bytes]]:
+        """Porta el fix del 403: la firma /c (one-shot) del flujo member expira
+        a mitad de la descarga (~39 págs). Se descarga por tramos y cuando un
+        tramo falla, re-importa el /c guardado en la captura para renovar la
+        firma y reintenta las imágenes pendientes."""
+        cap = self._active
+        source = (cap or {}).get("source")
+        ch = getattr(self, "_last_chapter", None) or {}
+        sv = getattr(self, "_last_series", None) or {}
+        out: List[Optional[bytes]] = [None] * len(urls)
+
+        def import_fresh_urls():
+            nonlocal urls
+            if not source or not ch:
+                return False
+            try:
+                if self._import_curl_c(source):
+                    fresh = self.get_chapter_images(ch, sv)
+                    if len(fresh) == len(urls):
+                        urls = fresh
+                        return True
+            except Exception:
+                pass
+            return False
+
+        done = [False] * len(urls)
+        for start in range(0, len(urls), CHUNK):
+            end = min(start + CHUNK, len(urls))
+            pending = [i for i in range(start, end) if not done[i]]
+            attempts = 0
+            while pending and attempts < MAX_REIMPORT:
+                for i in list(pending):
+                    raw = self.dl_image(urls[i], referer)
+                    if raw and raw[:2] == b"\xff\xd8":
+                        out[i] = raw
+                        done[i] = True
+                pending = [i for i in pending if not done[i]]
+                if pending and import_fresh_urls():
+                    attempts += 1
+                else:
+                    break
+        return out
 
 
 __all__ = [

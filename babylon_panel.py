@@ -2921,30 +2921,40 @@ class BabylonSiteDetailPanel(QWidget):
                 except Exception:
                     _bws = None
                 if _bws is not None and _bws.importable():
-                    r = QMessageBox.question(
-                        self,
-                        "BookWalker-HAR",
-                        "No hay capturas para mostrar.\n\n"
-                        "Los tomos member se descargan con la sesión del navegador "
-                        "del dueño de la cuenta (login SNS = OAuth, requiere navegador "
-                        "una sola vez).\n\n"
-                        "¿Abrir Chromium para iniciar sesión?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    )
-                    if r == QMessageBox.StandardButton.Yes:
-                        self._busy = True
-                        self._lbl_status.setText("Abriendo navegador…")
-                        try:
-                            dl = get_dl("bookwalkerhar")
-                        except Exception:
-                            dl = None
-                        if dl is not None:
-                            w = BabylonBookwalkerSessionWorker(dl)
-                            w.signals.finished.connect(self._on_results)
-                            w.signals.error.connect(self._on_error)
-                            self._pool.start(w)
-                        else:
-                            self._busy = False
+                    nombre, en_uso = _bws.real_profile_status()
+                    if en_uso:
+                        QMessageBox.information(
+                            self,
+                            "BookWalker-HAR",
+                            f"No hay capturas para mostrar.\n\nTu navegador "
+                            f"({nombre}) está abierto y el perfil no se puede "
+                            f"reabrir. Cerrá {nombre} y volvé a intentar.",
+                        )
+                    else:
+                        r = QMessageBox.question(
+                            self,
+                            "BookWalker-HAR",
+                            f"No hay capturas para mostrar.\n\nLos tomos se "
+                            f"capturan desde tu cuenta ya logueada en tu "
+                            f"navegador ({nombre}). Se abrirá una ventana con "
+                            f"tu perfil para tomar la sesión una sola vez.\n\n"
+                            f"¿Capturar ahora?",
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        )
+                        if r == QMessageBox.StandardButton.Yes:
+                            self._busy = True
+                            self._lbl_status.setText(f"Abriendo {nombre}…")
+                            try:
+                                dl = get_dl("bookwalkerhar")
+                            except Exception:
+                                dl = None
+                            if dl is not None:
+                                w = BabylonBookwalkerSessionWorker(dl)
+                                w.signals.finished.connect(self._on_results)
+                                w.signals.error.connect(self._on_error)
+                                self._pool.start(w)
+                            else:
+                                self._busy = False
             lbl = QLabel("Sin resultados.")
             lbl.setStyleSheet("color:#555;background:transparent;border:none;")
             if self.body_font:
