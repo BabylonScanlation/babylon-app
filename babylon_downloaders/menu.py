@@ -30,6 +30,8 @@ DEBUG = "--debug" in sys.argv
 #  REGISTRO DE DOWNLOADERS
 # ══════════════════════════════════════════════════════════════
 DOWNLOADERS: list[tuple[str, str]] = [
+    ("bookwalker", "BOOKWALKER    (bookwalker.jp)     — trial CloudFront"),
+    ("bookwalkerhar", "BOOKWALKER-HAR (member)      — /c + auto-tokens (config)"),
     ("18mh", "18MH          (18mh.org)          — requests + BS4"),
     ("bakamh", "BAKAMH        (bakamh.com)        — curl_cffi/WP AJAX"),
     ("baozimh", "BAOZIMH       (baozimh.org/com)   — mirrors + API JSON"),
@@ -46,6 +48,14 @@ DOWNLOADERS: list[tuple[str, str]] = [
 
 
 def _load_downloader(key: str):
+    if key == "bookwalker":
+        from d_bookwalker import DownloaderBookwalker
+
+        return DownloaderBookwalker()
+    if key == "bookwalkerhar":
+        from d_bookwalker import DownloaderBookwalkerHar
+
+        return DownloaderBookwalkerHar()
     if key == "18mh":
         from d_18mh import Downloader18mh
 
@@ -463,6 +473,163 @@ def _flow_picacomic_login(dl) -> bool:
     return False
 
 
+def _flow_bookwalkerhar_import(dl) -> bool:
+    """Pega cURL del /c (FLUJO A) o de una imagen 'pages' (FLUJO B), o una ruta .har."""
+    _header("BOOKWALKER-HAR — Importar tomo")
+    print(
+        f"  {C.DIM}Las 167 imágenes SOLO se bajan con la sesión del navegador que{C.END}"
+    )
+    print(
+        f"  {C.DIM}abre el tomo (cuenta del dueño). Elegí una vía:{C.END}\n"
+    )
+    print(f"  {C.BOLD}1.{C.END}  Pegar el cURL de la petición  browserWebApi/c  (FLUJO A /c)")
+    print(
+        f"      F12 → Network → F5 → clic en 'c?cid=…' → Copy as cURL"
+        f"\n      (descifra el config y calcula los 167 tokens solo)"
+    )
+    print(f"  {C.BOLD}2.{C.END}  Pegar el cURL de CUALQUIER imagen del HAR (FLUJO B pages)")
+    print(f"      Ej: …/OEBPS/text/p-001.xhtml/{C.DIM}{C.CYAN}(token){C.END}.jpeg")
+    print(f"  {C.BOLD}3.{C.END}  Ruta a un archivo .har para extraer los 167 tokens\n")
+    op = _prompt()
+    try:
+        import d_bookwalker as _h
+    except Exception:
+        _h = None
+    if not _h:
+        print(f"  {C.RED}✗  No se pudo cargar d_bookwalker.{C.END}")
+        _prompt("Enter…")
+        return False
+
+    item = None
+    if op == "1":
+        raw = input(f"  {C.CYAN}cURL del /c ➜ {C.END}").strip()
+        if raw:
+            res = _h.DownloaderBookwalkerHar().search(raw)
+            item = res[0] if res else None
+    elif op == "2":
+        raw = input(f"  {C.CYAN}cURL de 'pages' ➜ {C.END}").strip()
+        if raw:
+            res = _h.DownloaderBookwalkerHar().search(raw)
+            item = res[0] if res else None
+    elif op == "3":
+        raw = input(f"  {C.CYAN}Ruta del .har ➜ {C.END}").strip()
+        if raw:
+            res = _h.DownloaderBookwalkerHar().search(raw)
+            item = res[0] if res else None
+
+    if not item:
+        print(f"  {C.RED}✗  No se pudo reconocer la entrada.{C.END}")
+        _prompt("Enter…")
+        return False
+    print(f"  {C.GREEN}✔  Captura guardada: {C.CYAN}{item['title'][:40]}{C.END}")
+    _prompt("Enter…")
+    return True
+
+
+def _flow_bookwalkerhar_list(dl) -> bool:
+    try:
+        import d_bookwalker as _h
+
+        caps = _h.load_har_captures()
+    except Exception:
+        caps = {}
+    if not caps:
+        print(f"  {C.YELLOW}Sin capturas guardadas.{C.END}")
+    else:
+        print(f"  {C.GREEN}{len(caps)} captura(s) guardada(s):{C.END}")
+        for cid, cap in caps.items():
+            tok = len(cap.get("tokens") or {})
+            sess = cap.get("session")
+            state = "listo" if sess else "sin sesión"
+            print(f"    • {cid[:20]}…  {tok} págs  [{state}]")
+    _prompt("Enter…")
+    return True
+
+
+def _flow_bookwalkerhar_clear(dl) -> bool:
+    try:
+        import d_bookwalker as _b
+
+        _b.clear_har_captures()
+        print(f"  {C.GREEN}✔  Capturas HAR eliminadas.{C.END}")
+    except Exception:
+        print(f"  {C.RED}✗  No se pudieron limpiar.{C.END}")
+    _prompt("Enter…")
+    return True
+    """Pega cookies de sesión de bookwalker.jp (tomos comprados)."""
+    _header("BOOKWALKER — Cookies de cuenta")
+    print(
+        f"  {C.DIM}Para descargar tomos COMPRADOS se necesitan las cookies de la{C.END}"
+    )
+    print(
+        f"  {C.DIM}sesión logueada en member.bookwalker.jp (Google-linked no{C.END}"
+    )
+    print(f"  {C.DIM}expone credenciales; la cuenta solo usa sesión).{C.END}\n")
+    print(f"  {C.DIM}Formato:  {C.CYAN}key=value; key2=value2{C.END}")
+    print(
+        f"  {C.DIM}Desde el navegador logueado: DevTools → Application → Cookies{C.END}\n"
+    )
+    raw = input(f"  {C.CYAN}Cookies ➜ {C.END}").strip()
+    if not raw:
+        return False
+    print(f"  {C.DIM}Guardando cookies…{C.END}")
+    ok = dl.login(cookies=raw)
+    print(
+        f"  {C.GREEN}✔  Cookies guardadas.{C.END}"
+        if ok
+        else f"  {C.RED}✗  No se pudieron guardar.{C.END}"
+    )
+    return ok
+
+
+def _flow_bookwalker_capture(dl) -> bool:
+    """Pega el cURL de la petición /c del visor (tomo comprado)."""
+    _header("BOOKWALKER — Tomo comprado (captura del visor)")
+    print(
+        f"  {C.DIM}El visor member ata la sesión al navegador que la abrió y cada{C.END}"
+    )
+    print(
+        f"  {C.DIM}petiticion /c es de un solo uso. Para tomos COMPRADOS pegá el{C.END}"
+    )
+    print(f"  {C.DIM}cURL de esa peticion desde el navegador del dueno de la cuenta:{C.END}\n")
+    print(f"  1. Abrir  view-source:  https://viewer.bookwalker.jp/03/30/viewer.html?cid=…&cty=1")
+    print(f"     (navegador logueado en member.bookwalker.jp)")
+    print(f"  2. F12 → Network → recargar")
+    print(f"  3. Clic en la peticion 'c?cid=…' → Copy → Copy as cURL\n")
+    raw = input(f"  {C.CYAN}cURL ➜ {C.END}").strip()
+    if not raw:
+        return False
+    try:
+        import d_bookwalker as _b
+
+        cid = _b.import_bookwalker_curl(raw)
+    except Exception:
+        cid = None
+    if not cid:
+        print(f"  {C.RED}✗  No se reconocio la peticion /c. Revisa que copies el cURL de browserWebApi/c.{C.END}")
+        _prompt("Enter…")
+        return False
+    caps = _b.load_member_captures()
+    cap = caps.get(cid) or {}
+    print(f"  {C.GREEN}✔  Captura guardada para el tomo {C.CYAN}{cid[:8]}…{C.END}")
+    print(f"  {C.DIM}    u1(SESSION): {str(cap.get('u1'))[:12]}…  BID: {str(cap.get('bid'))[:16]}…")
+    print(f"  {C.DIM}    cookies: {len(str(cap.get('cookies')))} bytes{C.END}")
+    _prompt("Enter…")
+    return True
+
+
+def _flow_bookwalker_clear(dl) -> bool:
+    try:
+        import d_bookwalker as _b
+
+        _b.clear_member_captures()
+        print(f"  {C.GREEN}✔  Capturas member eliminadas.{C.END}")
+    except Exception:
+        print(f"  {C.RED}✗  No se pudieron limpiar.{C.END}")
+    _prompt("Enter…")
+    return True
+
+
 # ══════════════════════════════════════════════════════════════
 #  MENÚ DE SITIO
 # ══════════════════════════════════════════════════════════════
@@ -500,6 +667,15 @@ def _site_menu(dl) -> None:
         if dl.HAS_CATALOG:
             opts.append(("2", "Catálogo"))
         opts.append(("3", "Volver"))
+        if getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+            ops = " (cuenta configurada)" if getattr(dl, "_logged", False) else ""
+            opts.append(("4", "Cookies de cuenta (tomos comprados)" + ops))
+            opts.append(("5", "Captura /c del visor (tomo comprado)"))
+            opts.append(("6", "Limpiar capturas member"))
+        elif getattr(dl, "HAR_SESSION", False):
+            opts.append(("4", "Importar tomo (cURL /c, pages o .har)"))
+            opts.append(("5", "Ver capturas guardadas"))
+            opts.append(("6", "Limpiar capturas HAR"))
 
         for code, label in opts:
             print(f"  {C.BOLD}{code}.{C.END}  {label}")
@@ -512,6 +688,18 @@ def _site_menu(dl) -> None:
             _flow_search(dl)
         elif op == "2" and dl.HAS_CATALOG:
             _flow_catalog(dl)
+        elif op == "4" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+            _flow_bookwalker_cookies(dl)
+        elif op == "5" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+            _flow_bookwalker_capture(dl)
+        elif op == "6" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+            _flow_bookwalker_clear(dl)
+        elif op == "4" and getattr(dl, "HAR_SESSION", False):
+            _flow_bookwalkerhar_import(dl)
+        elif op == "5" and getattr(dl, "HAR_SESSION", False):
+            _flow_bookwalkerhar_list(dl)
+        elif op == "6" and getattr(dl, "HAR_SESSION", False):
+            _flow_bookwalkerhar_clear(dl)
         # Opción no reconocida → re-muestra menú directamente (sin enter extra)
 
 

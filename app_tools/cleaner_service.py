@@ -34,7 +34,8 @@ class BabylonCleaner:
                  min_solidity=MIN_SOLIDITY,
                  max_aspect_ratio=MAX_ASPECT_RATIO,
                  min_text_density=MIN_TEXT_DENSITY,
-                 umbral_tinta=UMBRAL_TINTA):
+                 umbral_tinta=UMBRAL_TINTA,
+                 borde_padding=BORDE_PADDING):
         self.umbral_blanco = umbral_blanco
         self.cierre_tinta_px = cierre_tinta_px
         self.min_area = min_area
@@ -44,6 +45,8 @@ class BabylonCleaner:
         self.max_aspect_ratio = max_aspect_ratio
         self.min_text_density = min_text_density
         self.umbral_tinta = umbral_tinta
+        self.borde_padding = borde_padding
+
 
     # -----------------------------------------------------------
     # Paso 1: binarizar (blanco=255 / tinta-o-lo-que-sea=0)
@@ -73,7 +76,7 @@ class BabylonCleaner:
         # Agregamos un marco blanco para garantizar que TODO el
         # fondo de la página quede como una sola región conectada,
         # y así nos alcanza con un solo seed en (0,0).
-        pad = BORDE_PADDING
+        pad = self.borde_padding
         con_marco = cv2.copyMakeBorder(binaria, pad, pad, pad, pad,
                                         cv2.BORDER_CONSTANT, value=255)
 
@@ -164,4 +167,4 @@ class BabylonCleaner:
         result = img.copy()
         result[mask_final == 255] = RELLENO_COLOR
 
-        return result, len(contornos), time.time() - t0
+        return result, mask_final, len(contornos), time.time() - t0

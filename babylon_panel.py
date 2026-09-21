@@ -292,6 +292,7 @@ SITE_FILTER_CONFIG: Dict[str, List[Dict]] = {
         },
     ],
     "yumanhua": [],
+    "bookwalkerhar": [],
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -303,6 +304,8 @@ if _DL_DIR not in sys.path:
     sys.path.insert(0, _DL_DIR)
 
 _DOWNLOADER_MAP: Dict[str, Tuple[str, str]] = {
+    "bookwalker": ("d_bookwalker.py", "DownloaderBookwalker"),
+    "bookwalkerhar": ("d_bookwalker.py", "DownloaderBookwalkerHar"),
     "18mh": ("d_18mh.py", "Downloader18mh"),
     "bakamh": ("d_bakamh.py", "DownloaderBakamh"),
     "baozimh": ("d_baozimh.py", "DownloaderBaozimh"),
@@ -430,6 +433,10 @@ def get_series_url(site_type: str, item: Dict) -> str:
             return f"{base}/manga/{slug}/"
         elif site_type == "toonkor":
             return f"{base}/{slug}"
+        elif site_type == "bookwalker":
+            return f"https://bookwalker.jp/{slug}/"
+        elif site_type == "bookwalkerhar":
+            return f"https://bookwalker.jp/de{slug}/"
 
         return f"{base}/{slug}"
     except Exception:
@@ -862,7 +869,7 @@ def _search_site_impl(
         # PIGMH / YUMANHUA — get_catalog_page heredado de base: cachea el
         # catálogo completo (get_catalog) y trocea por página.
         # ─────────────────────────────────────────────────────────────────────
-        elif t in ("pigmh", "yumanhua"):
+        elif t in ("pigmh", "yumanhua", "bookwalker", "bookwalkerhar"):
             if query:
                 cache_key = f"{t}_search_{query}"
                 if cache_key not in _catalog_cache:
@@ -1098,26 +1105,49 @@ class BabylonDownloadWorker(QRunnable):
                 os.makedirs(tmp_dir, exist_ok=True)
                 referer = dl.get_referer(chapter, self.series)
 
-                for j, url in enumerate(images):
-                    if self.cancel_event.is_set():
-                        shutil.rmtree(tmp_dir, ignore_errors=True)
-                        self.signals.cancelled.emit()
-                        return
-                    try:
-                        raw_bytes = dl.dl_image(url, referer)
-                        if raw_bytes:
-                            ext = url.split("?")[0].rsplit(".", 1)[-1].lower()
-                            if ext == "avif":
-                                # Gemini no soporta AVIF: se convierte a PNG lossless al guardar
-                                ext = "png"
-                            elif ext not in ("jpg", "jpeg", "png", "webp", "gif", "bmp"):
-                                ext = "jpg"
-                            _save_image(
-                                raw_bytes, os.path.join(tmp_dir, f"{j + 1:04d}.{ext}")
-                            )
-                    except Exception as img_err:
-                        logging.warning(f"[Babylon] img {j + 1}: {img_err}")
-                    self.signals.image_progress.emit(i, j + 1, len(images))
+                dl_batch = getattr(dl, "dl_batch", None)
+                if dl_batch is not None:
+                    batch = dl_batch(images, referer)
+                    for j, raw_bytes in enumerate(batch):
+                        if self.cancel_event.is_set():
+                            shutil.rmtree(tmp_dir, ignore_errors=True)
+                            self.signals.cancelled.emit()
+                            return
+                        try:
+                            if raw_bytes:
+                                ext = images[j].split("?")[0].rsplit(".", 1)[-1].lower()
+                                if ext == "avif":
+                                    ext = "png"
+                                elif ext not in ("jpg", "jpeg", "png", "webp", "gif", "bmp"):
+                                    ext = "jpg"
+                                _save_image(
+                                    raw_bytes, os.path.join(tmp_dir, f"{j + 1:04d}.{ext}")
+                                )
+                        except Exception as img_err:
+                            logging.warning(f"[Babylon] img {j + 1}: {img_err}")
+                        self.signals.image_progress.emit(i, j + 1, len(images))
+                    del batch
+                else:
+                    for j, url in enumerate(images):
+                        if self.cancel_event.is_set():
+                            shutil.rmtree(tmp_dir, ignore_errors=True)
+                            self.signals.cancelled.emit()
+                            return
+                        try:
+                            raw_bytes = dl.dl_image(url, referer)
+                            if raw_bytes:
+                                ext = url.split("?")[0].rsplit(".", 1)[-1].lower()
+                                if ext == "avif":
+                                    # Gemini no soporta AVIF: se convierte a PNG lossless al guardar
+                                    ext = "png"
+                                elif ext not in ("jpg", "jpeg", "png", "webp", "gif", "bmp"):
+                                    ext = "jpg"
+                                _save_image(
+                                    raw_bytes, os.path.join(tmp_dir, f"{j + 1:04d}.{ext}")
+                                )
+                        except Exception as img_err:
+                            logging.warning(f"[Babylon] img {j + 1}: {img_err}")
+                        self.signals.image_progress.emit(i, j + 1, len(images))
 
                 safe = re.sub(r'[\\/:*?"<>|]', "", title).strip()[:60] or f"cap_{i + 1}"
                 zpath = os.path.join(self.output_dir, f"{i + 1:04d} - {safe}.zip")
@@ -2017,6 +2047,12 @@ _SITE_CONFIG_FIELDS: Dict[str, List[Dict]] = {
             "max": 10.0,
         },
     ],
+    "bookwalker": [
+        {"key": "SITE_COOKIES", "label": "Cookies de sesión (tomos comprados)", "type": "site_cookies"},
+    ],
+    "bookwalkerhar": [
+        {"key": "_STORAGE", "label": "Archivo de capturas HAR", "type": "str_ro"},
+    ],
 }
 
 
@@ -2321,6 +2357,26 @@ class BabylonConfigPanel(QWidget):
                     fl.addLayout(row)
                     self._widgets[f"mod_{key}_ua"] = le
 
+                elif ftype == "site_cookies":
+                    # Cookies de sesión del sitio (login persistido por el downloader)
+                    val = mod.load_site_cookies() if mod is not None else ""
+                    row = QHBoxLayout()
+                    row.setSpacing(8)
+                    row.addWidget(self._field_label(label))
+                    le = _ArrowLineEdit(val)
+                    le.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+                    le.setPlaceholderText("k=v; k2=v2")
+                    le.setStyleSheet(
+                        "QLineEdit { background: rgba(5, 5, 8, 217); color: #e0e0e0; "
+                        "border: 1px solid rgba(157, 70, 255, 77); border-radius: 4px; padding: 4px; } "
+                        "QLineEdit:focus { border: 1px solid #9d46ff; }"
+                    )
+                    if self.body_font:
+                        le.setFont(self.body_font)
+                    row.addWidget(le, 1)
+                    fl.addLayout(row)
+                    self._widgets[f"mod_{key}_cookies"] = le
+
         fl.addStretch()
         scroll.setWidget(cw)
         root.addWidget(scroll, 1)
@@ -2494,6 +2550,10 @@ class BabylonConfigPanel(QWidget):
                             current_headers = dict(current_headers)
                             current_headers["User-Agent"] = ua
                             setattr(mod, key, current_headers)
+                elif ftype == "site_cookies":
+                    v = _get(f"mod_{key}_cookies")
+                    if v is not None:
+                        mod.save_site_cookies(v)
         except Exception as e:
             logging.warning(f"[Babylon Config] Error aplicando config a módulo: {e}")
 
@@ -2566,6 +2626,8 @@ def _common_cfg() -> Dict:
 
 
 _SITE_HINTS: Dict[str, str] = {
+    "bookwalker": "Busca por nombre o pega un enlace /de{uuid}/ de BOOK☆WALKER. Pulsa Listar para el ranking. El contenido gratuito (試し読み) no requiere cuenta.",
+    "bookwalkerhar": "Pega el cURL del /c (descifra configuration_pack.json y deriva los 167 tokens automáticamente), el cURL de una imagen 'pages', o la ruta de un .har del visor member. Pulsa Listar para ver capturas guardadas.",
     "18mh": "Pulsa Listar para ver el catálogo, o escribe un nombre para buscar.",
     "bakamh": "Busca por nombre, o elige género/orden y pulsa Listar.",
     "baozimh": "Busca por nombre, o filtra región/estado/género y pulsa Listar.",
@@ -2582,6 +2644,8 @@ _SITE_HINTS: Dict[str, str] = {
 
 
 _SEARCH_PLACEHOLDER: Dict[str, str] = {
+    "bookwalker": "Nombre, enlace de BOOK☆WALKER …",
+    "bookwalkerhar": "cURL del /c, cURL pages, .har o título…",
     "hitomi": "ID (ej: 123456) o tags (ej: female:mind_control language:spanish)",
     "18mh": "Buscar por nombre…",
     "bakamh": "Buscar por nombre…",

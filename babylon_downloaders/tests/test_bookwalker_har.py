@@ -21,10 +21,10 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))  # padre = babylon_downloaders
 
-from d_bookwalker_har import (DownloaderBookwalkerHar, load_har_captures,
-                              _sort_key)
-from d_bookwalker_unscramble import build_seeds_for_book, unscramble
+from d_bookwalker import (DownloaderBookwalkerHar, load_har_captures,
+                          _sort_key, build_seeds_for_book, unscramble)
 
 DOCS = r"C:\Users\Administrator\Documents\babylon-app"
 SRC_ZIP = r"C:\Users\Administrator\Desktop\bookwalker e41656de.zip"

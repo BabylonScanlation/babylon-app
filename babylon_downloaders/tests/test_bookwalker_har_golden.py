@@ -2,7 +2,7 @@
 """Regresión dorada (golden) de la integración BookWalker HAR.
 
 Re-ejecuta el flujo REAL de la integración (`DownloaderBookwalkerHar`
-desde `d_bookwalker_har`, método `_unscramble_bytes`) sobre las 167 páginas
+desde `d_bookwalker`, método `_unscramble_bytes`) sobre las 167 páginas
 de la captura HAR local — SIN red, SIN zip de referencia, usando solo las
 capturas persistidas y las seeds construidas por el propio módulo — y compara
 el SHA-256 de cada página de-scrambleada contra un dorado sembrado.
@@ -20,14 +20,13 @@ import re
 import sys
 import zipfile
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-
-from d_bookwalker_har import (DownloaderBookwalkerHar, load_har_captures,
-                              _sort_key)
-from d_bookwalker_unscramble import build_seeds_for_book, unscramble
-
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))  # padre = babylon_downloaders
+
+from d_bookwalker import (DownloaderBookwalkerHar, load_har_captures,
+                          _sort_key, build_seeds_for_book, unscramble)
+
 GOLDEN = os.path.join(HERE, "bookwalker_har.golden.json")
 
 SRC_ZIP = r"C:\Users\Administrator\Desktop\bookwalker e41656de.zip"
