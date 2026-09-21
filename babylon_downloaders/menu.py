@@ -535,6 +535,9 @@ def _flow_bookwalkerhar_list(dl) -> bool:
         caps = {}
     if not caps:
         print(f"  {C.YELLOW}Sin capturas guardadas.{C.END}")
+        print(
+            f"  {C.DIM}Usá la opción 7 para abrir el navegador, o importá un cURL/HAR.{C.END}"
+        )
     else:
         print(f"  {C.GREEN}{len(caps)} captura(s) guardada(s):{C.END}")
         for cid, cap in caps.items():
@@ -556,6 +559,45 @@ def _flow_bookwalkerhar_clear(dl) -> bool:
         print(f"  {C.RED}✗  No se pudieron limpiar.{C.END}")
     _prompt("Enter…")
     return True
+
+
+def _flow_bookwalkerhar_session(dl) -> bool:
+    """Sesión automática: abre un Chromium gestionado y loguea una sola vez."""
+    _header("BOOKWALKER-HAR — Sesión automática")
+    try:
+        import bw_session as _s
+    except Exception:
+        _s = None
+    if not _s or not _s.importable():
+        print(
+            f"  {C.RED}✗  Falta Playwright. Instalalo con:{C.END}\n"
+            f"     pip install playwright\n"
+            f"     python -m playwright install chromium"
+        )
+        _prompt("Enter…")
+        return False
+    print(
+        f"  {C.DIM}Se abrirá Chromium con el perfil de la app. Si ya estás{C.END}\n"
+        f"  {C.DIM}logueado en bookwalker.jp o inicias sesión ahora, quedará{C.END}\n"
+        f"  {C.DIM}guardado y no hará falta volver a hacerlo hasta que venza.{C.END}"
+    )
+    try:
+        ok = bool(dl.login_via_browser())
+    except Exception:
+        ok = False
+    if ok:
+        print(
+            f"  {C.GREEN}✔  Navegador con sesión activa.{C.END} Al capturar un tomo,"
+            f"\n  {C.DIM} si la cuenta dueña no está logueada se abrirá el visor y podés"
+            f"\n  {C.DIM} entrar ahí mismo.{C.END}"
+        )
+    else:
+        print(f"  {C.RED}✗  No apareció la sesión en {C.CYAN}600s{C.END}. ¿Tenés la cuenta abierta?")
+    _prompt("Enter…")
+    return ok
+
+
+def _flow_bookwalker_cookies(dl) -> bool:
     """Pega cookies de sesión de bookwalker.jp (tomos comprados)."""
     _header("BOOKWALKER — Cookies de cuenta")
     print(
@@ -667,15 +709,16 @@ def _site_menu(dl) -> None:
         if dl.HAS_CATALOG:
             opts.append(("2", "Catálogo"))
         opts.append(("3", "Volver"))
-        if getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+        if getattr(dl, "HAR_SESSION", False):
+            opts.append(("4", "Importar tomo (cURL /c, pages o .har)"))
+            opts.append(("5", "Ver capturas guardadas"))
+            opts.append(("6", "Limpiar capturas HAR"))
+            opts.append(("7", "Sesión automática (abrir navegador, loguear 1 vez)"))
+        elif getattr(dl, "NAME", "").startswith("BOOKWALKER"):
             ops = " (cuenta configurada)" if getattr(dl, "_logged", False) else ""
             opts.append(("4", "Cookies de cuenta (tomos comprados)" + ops))
             opts.append(("5", "Captura /c del visor (tomo comprado)"))
             opts.append(("6", "Limpiar capturas member"))
-        elif getattr(dl, "HAR_SESSION", False):
-            opts.append(("4", "Importar tomo (cURL /c, pages o .har)"))
-            opts.append(("5", "Ver capturas guardadas"))
-            opts.append(("6", "Limpiar capturas HAR"))
 
         for code, label in opts:
             print(f"  {C.BOLD}{code}.{C.END}  {label}")
@@ -688,18 +731,20 @@ def _site_menu(dl) -> None:
             _flow_search(dl)
         elif op == "2" and dl.HAS_CATALOG:
             _flow_catalog(dl)
-        elif op == "4" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
-            _flow_bookwalker_cookies(dl)
-        elif op == "5" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
-            _flow_bookwalker_capture(dl)
-        elif op == "6" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
-            _flow_bookwalker_clear(dl)
         elif op == "4" and getattr(dl, "HAR_SESSION", False):
             _flow_bookwalkerhar_import(dl)
         elif op == "5" and getattr(dl, "HAR_SESSION", False):
             _flow_bookwalkerhar_list(dl)
         elif op == "6" and getattr(dl, "HAR_SESSION", False):
             _flow_bookwalkerhar_clear(dl)
+        elif op == "7" and getattr(dl, "HAR_SESSION", False):
+            _flow_bookwalkerhar_session(dl)
+        elif op == "4" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+            _flow_bookwalker_cookies(dl)
+        elif op == "5" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+            _flow_bookwalker_capture(dl)
+        elif op == "6" and getattr(dl, "NAME", "").startswith("BOOKWALKER"):
+            _flow_bookwalker_clear(dl)
         # Opción no reconocida → re-muestra menú directamente (sin enter extra)
 
 

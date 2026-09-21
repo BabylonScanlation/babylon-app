@@ -2076,6 +2076,99 @@ class DownloaderBookwalkerHar(BaseDownloader):
         self._sess = requests.Session()
         self._active: Optional[dict] = None
 
+    # ── sesión automática (navegador gestionado) ─────────────────────────────
+
+    def login_via_browser(self) -> bool:
+        """Abre Chromium visible para loguear en bookwalker.jp una sola vez.
+
+        La SESSION y las cookies del visor se persisten en el archivo de
+        sesión de la app (`bw_session.bookwalker_session.json`) y se reusan
+        después con `requests`. True si quedó una SESSION activa.
+        """
+        try:
+            import bw_session as _s
+        except Exception:
+            return False
+        if not _s.importable():
+            return False
+        try:
+            sess = _s.capture_login()
+        except Exception:
+            return False
+        finally:
+            try:
+                _s.close()
+            except Exception:
+                pass
+        return bool(sess and sess.get("sid"))
+
+    def capture_via_browser(self, cid: str) -> bool:
+        """Captura automática de un tomo member SIN pegar cURL.
+
+        Abre el visor del cid en el Chromium gestionado y, cuando dispara el
+        `/c` (one-shot), guarda la captura HAR como si viniera de un cURL
+        pegado: base + auth_info (firma ~1h) + cookies, y re-deriva los
+        tokens desde configuration_pack.json headless.
+        """
+        if not _UUID_RE.fullmatch(cid):
+            return False
+        try:
+            import bw_session as _s
+        except Exception:
+            return False
+        if not _s.importable():
+            return False
+        try:
+            data = _s.capture_c_for_cid(cid)
+        except Exception:
+            return False
+        finally:
+            try:
+                _s.close()
+            except Exception:
+                pass
+        if not data:
+            return False
+        base = str(data.get("url") or "").rstrip("/")
+        info = data.get("auth_info") or {}
+        if not base or not info:
+            return False
+        img_base = base + "/OEBPS/text/"
+        query = urlencode(
+            {k: str(info[k]) for k in _AUTH_KEYS if info.get(k) is not None and str(info[k]) != ""}
+        )
+        headers: Dict[str, str] = {
+            "User-Agent": str(data.get("ua") or "") or _DEFAULT_UA,
+            "Referer": str(data.get("referer") or "").strip() or _DEFAULT_REFERER,
+        }
+        if data.get("cookie"):
+            headers["Cookie"] = str(data["cookie"])
+
+        auto = self._derive_tokens_auto(base, query, headers)
+
+        caps = load_har_captures()
+        cap = caps.get(cid, {"cid": cid, "created_at": time.time()})
+        cap["session"] = {
+            "flow": "c",
+            "img_base": img_base,
+            "query": query,
+            "cookie": str(data.get("cookie") or ""),
+            "referer": headers.get("Referer") or _DEFAULT_REFERER,
+            "captured_at": time.time(),
+        }
+        cap["pages_base"] = img_base
+        if auto is not None:
+            cap["tokens"] = auto["tokens"]
+            cap["tokens_from"] = "config"
+            cap["config"] = auto["config"]
+            cap["keys"] = auto["keys"]
+        if not cap.get("title"):
+            cap["title"] = f"bookwalker {cid[:8]}"
+        caps[cid] = cap
+        save_har_captures(caps)
+        self._active = cap
+        return True
+
     # ── importación de HAR ────────────────────────────────────────────────────
 
     def _import_har_text(self, text: str) -> list:
@@ -2316,7 +2409,16 @@ class DownloaderBookwalkerHar(BaseDownloader):
         caps = load_har_captures()
         cap = caps.get(cid)
         if not cap:
-            return []
+            # Sin captura: se ofrece la captura automática por navegador.
+            if self.capture_via_browser(cid):
+                caps = load_har_captures()
+                cap = caps.get(cid)
+            if not cap:
+                raise RuntimeError(
+                    "Sin captura para este tomo. Se abrió Chromium pero el /c no "
+                    "dio imagen: iniciá sesión en la cuenta que compró el tomo y "
+                    "reintentá."
+                )
         tokens = cap.get("tokens") or {}
         session = cap.get("session")
         if not session:

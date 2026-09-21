@@ -962,6 +962,22 @@ class BabylonSearchWorker(QRunnable):
             self.signals.error.emit(str(e))
 
 
+class BabylonBookwalkerSessionWorker(QRunnable):
+    """Abre el Chromium gestionado para loguear/renovar la sesión member."""
+
+    def __init__(self, dl) -> None:
+        super().__init__()
+        self.dl = dl
+        self.signals = _SearchSignals()
+
+    def run(self) -> None:
+        try:
+            ok = bool(getattr(self.dl, "login_via_browser", lambda: False)())
+            self.signals.finished.emit([], False, "sesion_ok" if ok else "sesion_fail")
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+
 class BabylonSeriesWorker(QRunnable):
     """
     Carga la ficha + capítulos de una serie.
@@ -2885,9 +2901,50 @@ class BabylonSiteDetailPanel(QWidget):
     def _on_results(self, items: List[Dict], has_more: bool, total_hint: str) -> None:
         self._busy = False
         self._has_more = has_more
+        if total_hint == "sesion_ok":
+            self._lbl_status.setText("Sesión capturada. Recargando…")
+            self._load_page(self._cur_page)
+            return
+        if total_hint == "sesion_fail":
+            self._lbl_status.setText(
+                "No apareció la sesión (¿navegador cerrado o sin login?). Reintente."
+            )
+            self._clear()
+            return
         self._clear()
 
         if not items:
+            st = self.site.get("type", "")
+            if st == "bookwalkerhar":
+                try:
+                    import bw_session as _bws
+                except Exception:
+                    _bws = None
+                if _bws is not None and _bws.importable():
+                    r = QMessageBox.question(
+                        self,
+                        "BookWalker-HAR",
+                        "No hay capturas para mostrar.\n\n"
+                        "Los tomos member se descargan con la sesión del navegador "
+                        "del dueño de la cuenta (login SNS = OAuth, requiere navegador "
+                        "una sola vez).\n\n"
+                        "¿Abrir Chromium para iniciar sesión?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    )
+                    if r == QMessageBox.StandardButton.Yes:
+                        self._busy = True
+                        self._lbl_status.setText("Abriendo navegador…")
+                        try:
+                            dl = get_dl("bookwalkerhar")
+                        except Exception:
+                            dl = None
+                        if dl is not None:
+                            w = BabylonBookwalkerSessionWorker(dl)
+                            w.signals.finished.connect(self._on_results)
+                            w.signals.error.connect(self._on_error)
+                            self._pool.start(w)
+                        else:
+                            self._busy = False
             lbl = QLabel("Sin resultados.")
             lbl.setStyleSheet("color:#555;background:transparent;border:none;")
             if self.body_font:

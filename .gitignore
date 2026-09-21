@@ -11,6 +11,11 @@ dev_tools/
 # Archivos de log
 *.log
 
+# Perfil de Chromium gestionado de BookWalker (estado local del navegador)
+babylon_downloaders/bookwalker/bw_profile/
+babylon_downloaders/bookwalker/Crashpad/
+babylon_downloaders/bookwalker/bw_profile.txt
+
 # Archivos especÃ­ficos del proyecto que no deben subirse
 gemini.md
 .env

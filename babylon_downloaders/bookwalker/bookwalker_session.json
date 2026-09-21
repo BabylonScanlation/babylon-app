@@ -1,0 +1,199 @@
+{
+ "captured_at": 1790016248.589227,
+ "sid": "32084e15-0378-489a-9c1a-be70738fdfd9",
+ "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+ "cookies": [
+  {
+   "name": "SESSION",
+   "value": "32084e15-0378-489a-9c1a-be70738fdfd9",
+   "domain": "viewer.bookwalker.jp",
+   "path": "/browserWebApi/"
+  },
+  {
+   "name": "bweternity",
+   "value": "akdzhlzsftc84og004so8gocssoo4ocss8wg8kgs4s88so48",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "myService",
+   "value": "1",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "myStore",
+   "value": "0",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "CLID",
+   "value": "f32472227ab2430098d164846cb2b57d.20260921.20270921",
+   "domain": "www.clarity.ms",
+   "path": "/"
+  },
+  {
+   "name": "receive-cookie-deprecation",
+   "value": "1",
+   "domain": ".im-apps.net",
+   "path": "/"
+  },
+  {
+   "name": "_twpid",
+   "value": "tw.1790015874441.693383750464966178",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_gcl_au",
+   "value": "1.1.84091463.1790015875",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "guest_id_marketing",
+   "value": "v1%3A179001584290997314",
+   "domain": ".twitter.com",
+   "path": "/"
+  },
+  {
+   "name": "guest_id_ads",
+   "value": "v1%3A179001584290997314",
+   "domain": ".twitter.com",
+   "path": "/"
+  },
+  {
+   "name": "personalization_id",
+   "value": "\"v1_BAvuAXB0yeHdh4+0N4HF6A==\"",
+   "domain": ".twitter.com",
+   "path": "/"
+  },
+  {
+   "name": "guest_id",
+   "value": "v1%3A179001584290997314",
+   "domain": ".twitter.com",
+   "path": "/"
+  },
+  {
+   "name": "__cf_bm",
+   "value": "a6hdWJck9b2eyOpeVX5HuKhL47tHZRzOmLKwjWrHzyc-1790015842.8307295-1.0.1.1-OQbI3ls.wkf5.h4jS51m578eONJtuhn.V83ZQB8cvVnzuA6R5cJamZKpBTPtBTOABVvov9LvUgeTwbQ48FQt5r9jwFpW4bz33BxR2zyxISuattV6e6a3s8h7AMTI.uX7",
+   "domain": ".twitter.com",
+   "path": "/"
+  },
+  {
+   "name": "muc_ads",
+   "value": "aa05dd58-2975-4a50-a4c9-930b0aff01f7",
+   "domain": ".t.co",
+   "path": "/"
+  },
+  {
+   "name": "__cf_bm",
+   "value": "fwVWvjAs9UWIsmLbj7jLKyk8DKh8LnuKsiayRO3G3XU-1790015842.8186166-1.0.1.1-MpBxrSDm0G.RWeH8CzxbXcDDz1dRuLMSaS9IkAfZG52DwC_OAxclOZsnGc4hhkajCJTNm_mzKBz1IJ2o_IXB.7BZJJrVe3CXpnAcXX51AB5sEhnv.qJMWnAqLFnpfyH0",
+   "domain": ".t.co",
+   "path": "/"
+  },
+  {
+   "name": "_yjsu_yjad",
+   "value": "1790015877.4dfa5c70-77ad-4ad2-a9a4-3d8a28cb09a8",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_clck",
+   "value": "k5tpjd%5E2%5Eg9n%5E0%5E2455",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "IDE",
+   "value": "AHWqTUkIGsFUh25PVh4-lFT9TimuKMGiRBbBJNLRqu0iET7HUlBmqu2LZaNPGEuc",
+   "domain": ".doubleclick.net",
+   "path": "/"
+  },
+  {
+   "name": "SIT-5f6e29e1-85b4-46e7-a8c8-8aae00114b4b",
+   "value": "%7B%22data%22%3A%22H4sIAAAAAAAAA6tWKihNik8sUbIyNLcwMzMwMzcytTQx1FHKScxLV7JSykqM9wpQ0lEqSy0C8gz1jIDsxORkqA5LAwNDUwtz81oANc%2FWf0cAAAA%3D%22%2C%22cmd%22%3A%22bookwalker.jp%22%7D",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "cookie_consent_gcm_data",
+   "value": "%7B%22gGcType%22%3A%5B%22functionality_storage%22%2C%22analytics_storage%22%2C%22ad_storage%22%2C%22personalization_storage%22%2C%22ad_user_data%22%2C%22ad_personalization%22%5D%2C%22cmd%22%3A%22bookwalker.jp%22%7D",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "cookie_consent_data",
+   "value": "%7B%22consent_id%22%3A%22CST-a0a5ab7d-2e29-446e-b252-88039f38a0ec%22%2C%22data%22%3A%22H4sIAAAAAAAAA3WOSwvCMBCE%2F8ueG0ikj7S3ghc9Vm8iy6ZJJRrS0qSgiP%2Fd%2BLiJt51vhtm5Q7DRoNXQwG6zZ8VQmlVtBJOFyllemoqR7CWTRIZzIXKVK8jgvMxorhEpQiOqOjmFrMoPf3dt615wnpJ2Qk2RoDlAVwySl4m1HWR%2Bce6YQT96VBTSAj%2BM%2F0KksXcUQuptnWtPJsALJknOIX01%2Fj4f7BwiahsmvCifnHU6Hd2MhscT4T7WzvoAAAA%3D%22%2C%22cmd%22%3A%22bookwalker.jp%22%7D",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_im_id.1027243",
+   "value": "822a6f4b3f219909.1790015879.",
+   "domain": "bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_im_ses.1027243",
+   "value": "1",
+   "domain": "bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_gid",
+   "value": "GA1.2.244197890.1790015938",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_im_id.1027243",
+   "value": "4b1ba396dd5738a1.1790015940.",
+   "domain": "viewer.bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_im_ses.1027243",
+   "value": "1",
+   "domain": "viewer.bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "bwsess",
+   "value": "iqocud85bdchtv150emiqk46ap",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_gat",
+   "value": "1",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_ga",
+   "value": "GA1.1.211942790.1790015876",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_ga_EPKMR4CGNW",
+   "value": "GS2.1.s1790015874$o1$g1$t1790016246$j60$l0$h0",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_twsid",
+   "value": "1790015874441-475205601.1.1790016246563",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  },
+  {
+   "name": "_clsk",
+   "value": "1k7ca9z%5E1790016247530%5E3%5E1%5Ei.clarity.ms%2Fcollect",
+   "domain": ".bookwalker.jp",
+   "path": "/"
+  }
+ ]
+}
