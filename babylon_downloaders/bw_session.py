@@ -185,21 +185,47 @@ _pages = []
 
 
 def _launch():
-    """Abre (o reusa) un Chromium visible con el perfil persistente de la app."""
+    """Abre (o reusa) un Chromium visible con el perfil persistente de la app.
+
+    Intenta primero el Chromium de Playwright (playwright install chromium);
+    si no está (típico en un .exe compilado o en una máquina ajena), cae al
+    Edge/Chrome del sistema (`channel=msedge`/`chrome`), que Windows incluye.
+    En todos los casos el perfil es el propio de la app (bw_profile), nunca el
+    navegador personal del usuario.
+    """
     global _pw, _context
     if _context is not None:
         return _context
     from playwright.sync_api import sync_playwright
 
     _pw = sync_playwright().start()
-    _context = _pw.chromium.launch_persistent_context(
-        _profile_dir(),
-        headless=False,
-        viewport=None,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-        ],
-    )
+    last_err = None
+    for opts in (dict(), {"channel": "msedge"}, {"channel": "chrome"}):
+        try:
+            _context = _pw.chromium.launch_persistent_context(
+                _profile_dir(),
+                headless=False,
+                viewport=None,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                ],
+                **opts,
+            )
+            break
+        except Exception as e:
+            last_err = e
+            _context = None
+            log.info("Intento de navegador %s falló: %s", opts or "(bundled)", e)
+    if _context is None:
+        try:
+            _pw.stop()
+        except Exception:
+            pass
+        _pw = None
+        raise RuntimeError(
+            "No se pudo abrir ningún navegador (¿Playwright sin Chromium "
+            "instalado y sin Edge/Chrome en el sistema?). Último error: %s" % last_err
+        )
     _context.set_default_timeout(30000)
     return _context
 
