@@ -69,9 +69,35 @@ def _profile_dir() -> str:
 
 # ── perfil real del usuario (modo preferido) ──────────────────────────────────
 
+_PROGRAMFILES = os.environ.get("PROGRAMFILES", "")
+_PROGRAMFILES_X86 = os.environ.get("PROGRAMFILES(X86)", "")
+_LOCALAPPDATA = os.environ.get("LOCALAPPDATA", "")
+_APPDATA = os.environ.get("APPDATA", "")
+
 _REAL_PROFILES = (
-    ("Edge",   os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge",   "User Data"), "msedge"),
-    ("Chrome", os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google",   "Chrome", "User Data"), "chrome"),
+    ("Edge",   os.path.join(_LOCALAPPDATA, "Microsoft", "Edge",   "User Data"), "msedge", None),
+    ("Chrome", os.path.join(_LOCALAPPDATA, "Google",   "Chrome", "User Data"), "chrome", None),
+)
+
+_CHROMIUM_BY_BIN = (
+    (
+        "Brave",
+        os.path.join(_LOCALAPPDATA, "BraveSoftware", "Brave-Browser", "User Data"),
+        (
+            os.path.join(_PROGRAMFILES, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            os.path.join(_PROGRAMFILES_X86, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            os.path.join(_LOCALAPPDATA, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+        ),
+    ),
+    (
+        "Opera",
+        os.path.join(_LOCALAPPDATA, "Opera Software", "Opera Stable"),
+        (
+            os.path.join(_PROGRAMFILES, "Opera", "opera.exe"),
+            os.path.join(_PROGRAMFILES_X86, "Opera", "opera.exe"),
+            os.path.join(_LOCALAPPDATA, "Programs", "Opera", "opera.exe"),
+        ),
+    ),
 )
 
 
@@ -86,25 +112,72 @@ def _profile_locked(user_data: str) -> bool:
     return False
 
 
+def _chromium_profile(name: str, user_data: str, channel: str, exes: tuple = ()) -> Optional[dict]:
+    """Perfil Chromium con carpeta Default. Edge/Chrome se abren por `channel`;
+    Brave/Opera por `executable_path` (Playwright busca el binario)."""
+    if not user_data or not os.path.isdir(os.path.join(user_data, "Default")):
+        return None
+    exe = next((e for e in exes if e and os.path.exists(e)), None)
+    return {
+        "name": name,
+        "user_data": user_data,
+        "channel": channel,
+        "executable_path": exe,
+        "running": _profile_locked(user_data),
+    }
+
+
+def _firefox_profile() -> Optional[dict]:
+    """Perfil real de Firefox (APPDATA/Mozilla/Firefox/Profiles). Prefiere el
+    perfil .default-release; el lock es `parent.lock`, no SingletonLock."""
+    base = os.path.join(_APPDATA, "Mozilla", "Firefox", "Profiles")
+    try:
+        entries = sorted(
+            e for e in os.listdir(base) if os.path.isdir(os.path.join(base, e))
+        )
+    except OSError:
+        return None
+    if not entries:
+        return None
+
+    def score(n: str) -> int:
+        if ".default-release" in n:
+            return 3
+        if ".default" in n:
+            return 2
+        if "dev-edition" in n:
+            return 1
+        return 0
+
+    best = max(entries, key=score)
+    prof = os.path.join(base, best)
+    return {
+        "name": "Firefox",
+        "user_data": prof,
+        "channel": "firefox",
+        "executable_path": None,
+        "running": os.path.exists(os.path.join(prof, "parent.lock")),
+    }
+
+
 def _real_profile() -> Optional[dict]:
-    """Primer perfil REAL (Edge luego Chrome) que tenga carpeta Default."""
-    for name, user_data, channel in _REAL_PROFILES:
-        if not user_data or not os.path.isdir(os.path.join(user_data, "Default")):
-            continue
-        return {
-            "name": name,
-            "user_data": user_data,
-            "channel": channel,
-            "running": _profile_locked(user_data),
-        }
-    return None
+    """Primer perfil REAL disponible: Edge, Chrome, Brave, Opera y Firefox."""
+    for name, user_data, channel, exes in _REAL_PROFILES:
+        p = _chromium_profile(name, user_data, channel, exes or ())
+        if p:
+            return p
+    for name, user_data, exes in _CHROMIUM_BY_BIN:
+        p = _chromium_profile(name, user_data, "", exes)
+        if p:
+            return p
+    return _firefox_profile()
 
 
 def real_profile_status() -> tuple:
     """(nombre, en_uso) del navegador real que se abrirá, o ('gestionado', False)."""
     r = _real_profile()
     if not r:
-        return ("Chromium/Edge gestionado por la app", False)
+        return ("Navegador gestionado por la app", False)
     return (r["name"], r["running"])
 
 
@@ -230,13 +303,12 @@ _pages = []
 
 def _launch():
     """Abre el navegador del USUARIO (modo preferido) o, si no hay perfil real,
-    un Chromium/Edge/Chrome propio de la app.
+    un Chromium/Edge/Chrome/Firefox propio de la app.
 
-    Preferencia: se usa el perfil real de Chrome/Edge (`LOCALAPPDATA`, carpeta
-    Default). Es el navegador donde la cuenta ya está logueada → no se pide
-    login nunca. Requisito único: ese navegador debe estar CERRADO en el
-    momento de la captura (los perfiles no se abren dos veces); al terminar,
-    el usuario puede volver a abrirlo.
+    Preferencia: se usa el perfil real de Edge/Chrome/Brave/Opera/Firefox (la
+    cuenta ya está logueada ahí) → no se pide login nunca. Requisito único: ese
+    navegador debe estar CERRADO en el momento de la captura (los perfiles no se
+    abren dos veces); al terminar, el usuario puede volver a abrirlo.
     """
     global _pw, _context
     if _context is not None:
@@ -257,18 +329,23 @@ def _launch():
                 f"vez. Cerrá {real['name']} y reintentá. Esto toma la sesión de "
                 f"tu cuenta y no lo vuelve a pedir."
             )
+        launch = dict(
+            channel=real["channel"],
+            headless=False,
+            viewport=None,
+        ) if real["channel"] else dict(headless=False, viewport=None)
+        if real.get("executable_path"):
+            launch["executable_path"] = real["executable_path"]
+        # Los flags de abajo son de Chromium; Firefox no los acepta.
+        if real["channel"] in ("msedge", "chrome", ""):
+            launch["args"] = [
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-blink-features=AutomationControlled",
+            ]
         try:
-            _context = _pw.chromium.launch_persistent_context(
-                real["user_data"],
-                channel=real["channel"],
-                headless=False,
-                viewport=None,
-                args=[
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--disable-blink-features=AutomationControlled",
-                ],
-            )
+            bt = _pw.firefox if real["channel"] == "firefox" else _pw.chromium
+            _context = bt.launch_persistent_context(real["user_data"], **launch)
             _context.set_default_timeout(30000)
             return _context
         except Exception as e:
@@ -281,19 +358,20 @@ def _launch():
                 f"No se pudo abrir tu perfil real de {real['name']}: {e}"
             )
 
-    # Sin perfil real: navegador propio de la app (dev / máquina sin Chrome/Edge).
+    # Sin perfil real: navegador propio de la app (dev / máquina sin browser real).
     last_err = None
-    for opts in (dict(), {"channel": "msedge"}, {"channel": "chrome"}):
+    for opts in (
+        dict(),
+        {"channel": "msedge"},
+        {"channel": "chrome"},
+        {"channel": "firefox"},
+    ):
         try:
-            _context = _pw.chromium.launch_persistent_context(
-                _profile_dir(),
-                headless=False,
-                viewport=None,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                ],
-                **opts,
-            )
+            bt = _pw.firefox if opts.get("channel") == "firefox" else _pw.chromium
+            kwargs = dict(headless=False, viewport=None)
+            if opts.get("channel") != "firefox":
+                kwargs["args"] = ["--disable-blink-features=AutomationControlled"]
+            _context = bt.launch_persistent_context(_profile_dir(), **opts, **kwargs)
             break
         except Exception as e:
             last_err = e
