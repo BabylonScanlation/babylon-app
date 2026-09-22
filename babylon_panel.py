@@ -57,6 +57,9 @@ from config import Config, resource_path
 
 PAGE_SIZE = 20  # Items por página en la UI
 
+# uuid de BOOK☆WALKER (cid de tomo) para distinguir capturas de slug de tienda
+_UUID_STR = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  CONFIGURACIÓN DE FILTROS POR SITIO
 # ══════════════════════════════════════════════════════════════════════════════
@@ -432,6 +435,9 @@ def get_series_url(site_type: str, item: Dict) -> str:
         elif site_type == "toonkor":
             return f"{base}/{slug}"
         elif site_type == "bookwalker":
+            # slug de tienda = "de{uuid}" | "series/{id}"; captura = uuid pelado
+            if not slug.startswith(("de", "series/")) and _UUID_STR.match(slug):
+                slug = "de" + slug
             return f"https://bookwalker.jp/{slug}/"
 
         return f"{base}/{slug}"
@@ -2780,6 +2786,15 @@ class BabylonSiteDetailPanel(QWidget):
                 b.setFont(self.body_font)
             b.clicked.connect(slot)
             sr.addWidget(b)
+        # Botón único de conexión de cuenta (captura cookies/tokens del navegador)
+        if self.site.get("type") == "bookwalker":
+            b_login = QPushButton("Conectar cuenta")
+            b_login.setStyleSheet(_BTN_BASE)
+            b_login.setCursor(Qt.CursorShape.PointingHandCursor)
+            if self.body_font:
+                b_login.setFont(self.body_font)
+            b_login.clicked.connect(self._connect_account)
+            sr.addWidget(b_login)
         root.addLayout(sr)
 
         # ── Status + navegación ───────────────────────────────────────────────
@@ -2866,6 +2881,28 @@ class BabylonSiteDetailPanel(QWidget):
         self._cur_query = ""
         self._cur_filters = self._get_filters()
         self._load_page(1)
+
+    def _connect_account(self) -> None:
+        """Botón único: toma cookies/tokens de la cuenta desde el navegador real."""
+        if self._busy:
+            return
+        self._busy = True
+        self._btn_prev.setEnabled(False)
+        self._btn_next.setEnabled(False)
+        self._lbl_status.setText("Abriendo tu navegador para conectar la cuenta…")
+        self._clear()
+        try:
+            dl = get_dl(self.site.get("type", ""))
+        except Exception:
+            dl = None
+        if dl is None or not hasattr(dl, "login_via_browser"):
+            self._busy = False
+            self._lbl_status.setText("No se pudo cargar el downloader de BOOKWALKER.")
+            return
+        w = BabylonBookwalkerSessionWorker(dl)
+        w.signals.finished.connect(self._on_results)
+        w.signals.error.connect(self._on_error)
+        self._pool.start(w)
 
     def _next_page(self) -> None:
         if self._has_more and not self._busy:
