@@ -16,6 +16,17 @@ babylon_downloaders/bookwalker/bw_profile/
 babylon_downloaders/bookwalker/Crashpad/
 babylon_downloaders/bookwalker/bw_profile.txt
 
+# Datos runtime de BookWalker (cookies, HAR, sesión) — no se versionan
+babylon_downloaders/bookwalker_cookies.txt
+babylon_downloaders/bookwalker_har.json
+babylon_downloaders/bookwalker_member.json
+babylon_downloaders/bookwalker_storage.json
+babylon_downloaders/bookwalker/bookwalker_session.json
+
+# Tests
+tests/
+**/tests/
+
 # Archivos especÃ­ficos del proyecto que no deben subirse
 gemini.md
 .env
