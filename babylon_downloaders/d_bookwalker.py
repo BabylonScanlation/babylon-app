@@ -7,14 +7,11 @@ Unifica en un solo archivo los módulos legacy de BookWalker:
   - d_bookwalker_xtea.py       → descifrado configuration_pack.json + token de imagen
   - d_bookwalker_unscramble.py → de-scramble de imágenes member
 
-Expone DOS downloaders:
-  - DownloaderBookwalker     (site_type "bookwalker")    — tienda/búsqueda/serie,
-                                                           muestra gratuita (trial) sin
-                                                           login y tomos completos vía
-                                                           captura /c del visor.
-  - DownloaderBookwalkerHar  (site_type "bookwalkerhar") — tomos comprados vía HAR:
-                                                           pegar el cURL del /c, el de una
-                                                           imagen "pages" o un .har.
+Expone UN downloader unificado (trial + member/HAR):
+  - DownloaderBookwalkerHar (site_type "bookwalker") — tienda/búsqueda/ranking y
+      muestra gratuita (trial) sin login SIEMPRE; tomos comprados adicionalmente
+      vía cookies de cuenta, captura /c del visor o HAR (cURL del /c, de una
+      imagen "pages" o un .har pegado).
 
 ─────────────────────────── FLUJO TIENDA (HTML) ───────────────────────────
   En bookwalker cada VOLUMEN es un libro independiente con un cid UUID (los
@@ -236,7 +233,7 @@ def _clean_series_title(text: str) -> str:
 _HAR_STORAGE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "bookwalker_har.json"
 )
-# Alias visible en la configuración del sitio (bookwalkerhar)
+# Alias visible en la configuración del sitio (miembro)
 _STORAGE = _HAR_STORAGE
 
 _CID_PARAM_RE = re.compile(
