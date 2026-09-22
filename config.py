@@ -261,7 +261,7 @@ class Config:
     MISTRAL_API_KEY: str = str(
         user_settings.get("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", ""))
     )
-    MISTRAL_MODEL: str = str(user_settings.get("MISTRAL_MODEL", "mistral-large-latest"))
+    MISTRAL_MODEL: str = str(user_settings.get("MISTRAL_MODEL", "ministral-14b-latest"))
     MISTRAL_TEMPERATURE: float = float(user_settings.get("MISTRAL_TEMPERATURE", 0.7))
     DEEPL_API_KEY: str = str(
         user_settings.get("DEEPL_API_KEY", os.getenv("DEEPL_API_KEY", ""))
@@ -759,7 +759,7 @@ class Config:
                     "BBSL", "herramientas", "ch_downloaders", "babylon", "bookwalker.png"
                 )
             ),
-            "description": "BOOKWALKER: muestras gratuitas + tomos comprados (member) — sesión de tu navegador",
+            "description": "Muestras gratuitas + tomos comprados (member) — sesión de tu navegador",
             "url": "https://bookwalker.jp",
             "status": "Activo",
             "type": "bookwalker",

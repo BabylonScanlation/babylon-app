@@ -68,8 +68,8 @@ class MistralProcessor(BaseAIProcessor):
         for attempt in range(max_retries):
             try:
                 # Usamos un modelo de visión vigente si hay imagen, de lo contrario el de texto configurado.
-                # pixtral-12b-2409 fue retirado (12/31/2025); su reemplazo documentado es Ministral 3 14B.
-                model = "ministral-3-14b-25-12" if image_path else Config.MISTRAL_MODEL
+                # pixtral-12b-2409 fue retirado (12/31/2025); reemplazo: ministral-14b.
+                model = "ministral-14b-latest" if image_path else Config.MISTRAL_MODEL
                 
                 response = client.chat.complete(
                     model=model,
