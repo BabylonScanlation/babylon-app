@@ -2936,8 +2936,10 @@ class BabylonSiteDetailPanel(QWidget):
             return
         if total_hint == "sesion_fail":
             self._lbl_status.setText(
-                "No apareció la sesión (¿navegador cerrado o sin login?). Reintente."
+                "No apareció la sesión (¿ventana cerrada o sin login?). Reintentá."
             )
+            self._btn_prev.setEnabled(self._cur_page > 1)
+            self._btn_next.setEnabled(self._has_more)
             self._clear()
             return
         self._clear()

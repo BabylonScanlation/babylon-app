@@ -312,7 +312,19 @@ def _launch():
     """
     global _pw, _context
     if _context is not None:
-        return _context
+        try:
+            if not _context.is_closed():
+                return _context
+        except Exception:
+            pass
+        # Contexto viejo/cerrado: limpiar y relanzar desde cero.
+        _context = None
+        try:
+            if _pw is not None:
+                _pw.stop()
+        except Exception:
+            pass
+        _pw = None
     from playwright.sync_api import sync_playwright
 
     _pw = sync_playwright().start()
@@ -422,6 +434,12 @@ def capture_login(timeout: int = _SESSION_TIMEOUT) -> Optional[dict]:
         pass
     deadline = time.time() + timeout
     while time.time() < deadline:
+        # El usuario cerró la ventana → no seguir esperando 600s.
+        try:
+            if ctx.is_closed():
+                break
+        except Exception:
+            break
         sid = _find_session(context_cookies())
         if sid:
             sess = _persist_cookies(ctx)
@@ -429,7 +447,11 @@ def capture_login(timeout: int = _SESSION_TIMEOUT) -> Optional[dict]:
             save_session(sess)
             return sess
         time.sleep(1.5)
-    _persist_cookies(ctx)  # igualmente guarda lo que haya para depurar
+    try:
+        if not ctx.is_closed():
+            _persist_cookies(ctx)  # igualmente guarda lo que haya para depurar
+    except Exception:
+        pass
     return None
 
 
@@ -490,9 +512,19 @@ def capture_c_for_cid(cid: str, timeout: int = _SESSION_TIMEOUT) -> Optional[dic
 
     deadline = time.time() + timeout
     while time.time() < deadline and not hits:
+        # El usuario cerró la ventana → cortar antes del timeout.
+        try:
+            if ctx.is_closed():
+                break
+        except Exception:
+            break
         # Si el visor pidió login, el usuario entra aquí y /c se dispara solo.
         time.sleep(0.8)
-    _persist_cookies(ctx)
+    try:
+        if not ctx.is_closed():
+            _persist_cookies(ctx)
+    except Exception:
+        pass
 
     if not hits:
         return None
