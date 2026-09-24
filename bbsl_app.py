@@ -369,8 +369,8 @@ class App(QMainWindow):
             padding: 0;
         }
         """
-        version_label = QLabel("Versión: 2.8.1")
-        snapshot_label = QLabel("Snapshot: U21092026")
+        version_label = QLabel("Versión: 2.8.2")
+        snapshot_label = QLabel("Snapshot: U23092026")
         for label in (version_label, snapshot_label):
             label.setStyleSheet(label_style)
             label.setFont(self.roboto_black_font)
