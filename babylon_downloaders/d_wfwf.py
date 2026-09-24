@@ -480,6 +480,77 @@ class DownloaderWfwf(BaseDownloader):
     def get_catalog(self) -> list[dict]:
         return fetch_full_catalog(self._sess)
 
+    def get_catalog_page(
+        self, page: int = 1, page_size: int = 20, mode: str = "both", **kwargs
+    ) -> tuple[list[dict], bool]:
+        """Paginación perezosa: solo baja las páginas del servidor necesarias."""
+        mode = (mode or "both").lower()
+        if mode == "webtoon":
+            modes = [Mode(Mode.WEBTOON)]
+        elif mode == "manhwa":
+            modes = [Mode(Mode.MANHWA)]
+        else:
+            modes = [Mode(Mode.WEBTOON), Mode(Mode.MANHWA)]
+
+        key = (mode, BASE_URL)
+        if getattr(self, "_cat_buf_key", None) != key:
+            self._cat_buf: list[dict] = []
+            self._cat_buf_key = key
+            self._cat_modes = modes
+            self._cat_srv_pg = {m.kind: 0 for m in modes}
+            self._cat_exhausted = {m.kind: False for m in modes}
+            self._cat_stale = {m.kind: 0 for m in modes}
+            self._cat_seen: set = set()
+
+        modes = self._cat_modes
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        def _pending() -> list[Mode]:
+            return [m for m in modes if not self._cat_exhausted[m.kind]]
+
+        def _fetch_one(m: Mode) -> tuple[Mode, int, list[dict]]:
+            pg = self._cat_srv_pg[m.kind] + 1
+            items = _fetch_cat((self._sess, _catalog_page_url(m, pg), m))
+            return m, pg, items
+
+        while len(self._cat_buf) < end and _pending():
+            todo = _pending()
+            with ThreadPoolExecutor(max_workers=min(4, len(todo))) as pool:
+                results = list(pool.map(_fetch_one, todo))
+
+            any_new = False
+            for m, pg, items in results:
+                self._cat_srv_pg[m.kind] = pg
+                if pg >= 500:
+                    self._cat_exhausted[m.kind] = True
+                if not items:
+                    self._cat_stale[m.kind] += 1
+                    if self._cat_stale[m.kind] >= 3:
+                        self._cat_exhausted[m.kind] = True
+                    continue
+                self._cat_stale[m.kind] = 0
+                new = 0
+                for it in items:
+                    k = f"{it['mode']}_{it['toon_id']}"
+                    if k not in self._cat_seen:
+                        self._cat_seen.add(k)
+                        self._cat_buf.append(it)
+                        new += 1
+                        any_new = True
+                if new == 0 and pg > 1:
+                    self._cat_exhausted[m.kind] = True
+
+            if not any_new:
+                for m in modes:
+                    self._cat_exhausted[m.kind] = True
+
+        chunk = self._cat_buf[start:end]
+        has_more = (not all(self._cat_exhausted[m.kind] for m in modes)) or (
+            end < len(self._cat_buf)
+        )
+        return chunk, has_more
+
     def get_series(self, item: dict) -> tuple[dict, list[dict]]:
         toon_id = item.get("toon_id", item.get("id", ""))
         enc_title = item.get("encoded_title", "")

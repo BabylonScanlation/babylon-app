@@ -48,7 +48,7 @@ excluded_modules = [
     'tkinter', 'test', 'unittest', 'pydoc', 
     'matplotlib', 'pandas', 'scipy', 
     'notebook', 'share', 'curses',
-    'playwright', 'node', 'PIL.SpiderImagePlugin',
+    'PIL.SpiderImagePlugin',
     'encodings.cp037', 'encodings.cp424', 'execjs',
     'PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets',
     'PySide6.QtQuick', 'PySide6.QtQml', 'PySide6.Qt3DCore',
@@ -70,19 +70,50 @@ excluded_modules = [
     'shiboken6.Qt3DRender', 'shiboken6.QtCharts'
 ]
 
+# .env embebido en el EXE (el usuario lo pidió así; config.py también acepta
+# un .env junto al .exe como respaldo sin recompilar).
 env_datas = [('.env', '.')] if os.path.exists('.env') else []
+
+# Playwright no tiene hook oficial: hay que meter driver/node.exe + package/cli.js.
+# compute_driver_executable busca <playwright>/driver/{node.exe,package/cli.js}.
+# Los navegadores NO se empaquetan (channel=/executable_path del sistema).
+playwright_binaries = []
+playwright_datas = []
+try:
+    import playwright as _pw_mod
+    _pw_root = os.path.dirname(_pw_mod.__file__)
+    _pw_driver = os.path.join(_pw_root, 'driver')
+    _pw_node = os.path.join(_pw_driver, 'node.exe')
+    if os.path.isfile(_pw_node):
+        playwright_binaries.append((_pw_node, 'playwright/driver'))
+    _pw_pkg = os.path.join(_pw_driver, 'package')
+    if os.path.isdir(_pw_pkg):
+        playwright_datas.append((_pw_pkg, 'playwright/driver/package'))
+except Exception as _pw_err:
+    print(f'[spec] playwright driver no disponible: {_pw_err}')
 
 a = Analysis(
     ['bbsl_app.py'],
     pathex=[],
-    binaries=[],
+    binaries=playwright_binaries,
     datas=[
         ('BBSL', 'BBSL'),
         ('styles', 'styles'),
         ('app_media', 'app_media'),
-        ('babylon_downloaders', 'babylon_downloaders')
-    ] + env_datas + _walk_datas('app_tools', 'app_tools', skip_dirs=('python_ocr', 'models', '__pycache__')),
-    hiddenimports=['win32crypt'],
+    ] + env_datas
+      + playwright_datas
+      + _walk_datas('babylon_downloaders', 'babylon_downloaders',
+                    skip_dirs=('bookwalker', '__pycache__'))
+      + _walk_datas('app_tools', 'app_tools', skip_dirs=('python_ocr', 'models', '__pycache__')),
+    hiddenimports=[
+        'win32crypt',
+        'playwright',
+        'playwright.sync_api',
+        'playwright.async_api',
+        'playwright._impl',
+        'playwright._impl._driver',
+        'playwright._impl._transport',
+    ],
     hookspath=['hooks'],
     hooksconfig={},
     runtime_hooks=[],
@@ -99,7 +130,7 @@ binaries_to_remove = [
     'opengl32sw', 'Qt6Pdf', 'Qt6Svg', 'Qt6WebEngine', 
     'Qt6Quick', 'Qt6Qml', 'Qt63D', 'Qt6Designer', 'Qt6Sql',
     'libcrypto-3-x64', 'libssl-3-x64',
-    'playwright', 'node.exe', 'ffmpeg' # Eliminamos drivers pesados de Playwright y FFmpeg si se cuelan
+    'ffmpeg' # FFmpeg no hace falta (Qt multimedia desactivado en runtime)
 ]
 
 a.binaries = [
@@ -109,6 +140,28 @@ a.binaries = [
 
 # Filtrar traducciones de Qt (pueden ocupar varios MBs)
 a.datas = [x for x in a.datas if not 'translations' in x[0].lower()]
+
+# Excluir perfil Chromium, __pycache__ y runtime JSON/TXT (sesiones/cookies/HAR).
+# NO tocamos .env: va embebido a propósito.
+_RUNTIME_UNSAFE = (
+    'bw_profile',
+    'babylon_downloaders\\bookwalker',
+    'babylon_downloaders/bookwalker',
+    '__pycache__',
+    'bookwalker_cookies.txt',
+    'bookwalker_har.json',
+    'bookwalker_member.json',
+    'bookwalker_storage.json',
+    'bookwalker_session.json',
+    'cf_clearance.json',
+)
+def _is_unsafe_data(item):
+    src, dest = item[0], item[1]
+    low_src = src.replace('/', '\\').lower()
+    low_dest = str(dest).replace('/', '\\').lower()
+    return any(p in low_src or p in low_dest for p in _RUNTIME_UNSAFE)
+
+a.datas = [x for x in a.datas if not _is_unsafe_data(x)]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

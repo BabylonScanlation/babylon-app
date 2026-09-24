@@ -2084,23 +2084,37 @@ class DownloaderBookwalkerHar(DownloaderBookwalker):
         (si está abierto, pedirá cerrarlo). Persiste la SESSION y las cookies
         del visor en `bw_session.bookwalker_session.json`; después todo se
         reusa con `requests`. True si quedó una SESSION activa.
+
+        Lanza RuntimeError con mensaje claro si no se puede abrir el
+        navegador (Playwright ausente, perfil bloqueado, timeout, etc.).
         """
         try:
             import bw_session as _s
-        except Exception:
-            return False
+        except Exception as e:
+            raise RuntimeError(f"No se pudo cargar bw_session: {e}") from e
         if not _s.importable():
-            return False
+            raise RuntimeError(
+                "Playwright no está disponible en esta build.\n\n"
+                "No se puede abrir el navegador automáticamente.\n"
+                "Alternativa: pegá el cURL del /c en el buscador de "
+                "BOOKWALKER (F12 → Network → c?cid=… → Copy as cURL)."
+            )
         try:
             sess = _s.capture_login()
-        except Exception:
-            return False
+        except Exception as e:
+            raise RuntimeError(str(e) or "No se pudo abrir el navegador.") from e
         finally:
             try:
                 _s.close()
             except Exception:
                 pass
-        return bool(sess and sess.get("sid"))
+        if not (sess and sess.get("sid")):
+            raise RuntimeError(
+                "No apareció la sesión del visor en 600s.\n\n"
+                "¿Cerraste la ventana o la cuenta no está logueada?\n"
+                "Reintentá, o pegá el cURL del /c en el buscador."
+            )
+        return True
 
     def capture_via_browser(self, cid: str) -> bool:
         """Captura automática de un tomo member SIN pegar cURL.

@@ -12,7 +12,7 @@ PAGINACIÓN REAL:
 POR QUÉ ES RÁPIDO AHORA:
   - baozimh: _fetch_api_page(page) → 36 items en ~1s en vez de get_catalog() que tarda minutos
   - dumanwu: GET /sort/N (1 request) + _sortmore(page) en vez de _load_sort() que hace 500 requests
-  - wfwf:    caché en memoria → primera carga lenta, páginas 2+ instantáneas
+  - wfwf:    get_catalog_page perezoso → 1-2 requests por página
   - resto:   get_catalog_page(page=N) — siempre fue rápido
 """
 
@@ -323,7 +323,7 @@ _DOWNLOADER_MAP: Dict[str, Tuple[str, str]] = {
 
 _mod_cache: Dict[str, Any] = {}
 _dl_cache: Dict[str, Any] = {}
-# Caché para downloaders que no tienen paginación nativa (wfwf, dumanwu search)
+# Caché de búsquedas (fetch-all una vez); el catálogo ya pagina por sitio
 _catalog_cache: Dict[str, List[Dict]] = {}
 # Última carpeta de destino — persiste entre series durante la sesión
 _last_dest_dir: str = os.path.join(os.path.expanduser("~"), "Downloads")
@@ -482,7 +482,7 @@ def _search_site_impl(
       manhuagui → dl.get_catalog_page(page, region, genre, ...) — 1 request
       picacomic → dl.get_catalog_page(page) o get_comics_by_category — 1 request
       toonkor   → dl.get_catalog_page(page)                     — 1 request
-      wfwf      → caché en memoria, slice                       — instantáneo tras primera carga
+      wfwf      → dl.get_catalog_page(page, mode)               — 1-2 requests
     """
     if filters is None:
         filters = {}
@@ -839,33 +839,26 @@ def _search_site_impl(
                 raw_items = list(items)
 
         # ─────────────────────────────────────────────────────────────────────
-        # WFWF — caché en memoria. Total conocido tras primera carga.
+        # WFWF — get_catalog_page perezoso (1-2 requests por página).
         # ─────────────────────────────────────────────────────────────────────
         elif t == "wfwf":
-            Mode = mod.Mode
             mode_val = filters.get("mode", "both")
-            cache_key = f"wfwf_catalog_{mode_val}"
 
             if query:
                 search_key = f"wfwf_search_{query}"
                 if search_key not in _catalog_cache:
                     _catalog_cache[search_key] = dl.search(query)
                 all_r = _catalog_cache[search_key]
+                start = (page - 1) * PAGE_SIZE
+                raw_items = all_r[start : start + PAGE_SIZE]
+                has_more = start + PAGE_SIZE < len(all_r)
+                total_hint = f"{len(all_r)} resultados"
             else:
-                if cache_key not in _catalog_cache:
-                    # get_catalog() hace requests paralelas; más workers = más rápido
-                    if mode_val == "both":
-                        _catalog_cache[cache_key] = dl.get_catalog()
-                    else:
-                        _catalog_cache[cache_key] = mod.fetch_series_list(
-                            dl._sess, Mode(mode_val), workers=8
-                        )
-                all_r = _catalog_cache[cache_key]
-
-            start = (page - 1) * PAGE_SIZE
-            raw_items = all_r[start : start + PAGE_SIZE]
-            has_more = start + PAGE_SIZE < len(all_r)
-            total_hint = f"{len(all_r)} series en total"
+                items, has_more = dl.get_catalog_page(
+                    page=page, page_size=PAGE_SIZE, mode=mode_val
+                )
+                raw_items = list(items)
+                total_hint = f"{len(raw_items)} series en esta página"
 
         # ─────────────────────────────────────────────────────────────────────
         # PIGMH / YUMANHUA — get_catalog_page heredado de base: cachea el
@@ -965,7 +958,11 @@ class BabylonSearchWorker(QRunnable):
 
 
 class BabylonBookwalkerSessionWorker(QRunnable):
-    """Abre el Chromium gestionado para loguear/renovar la sesión member."""
+    """Abre el navegador real para loguear/renovar la sesión member.
+
+    Las excepciones de login_via_browser (Playwright ausente, navegador
+    abierto, timeout…) se reemiten por signals.error con el mensaje real.
+    """
 
     def __init__(self, dl) -> None:
         super().__init__()
@@ -977,7 +974,7 @@ class BabylonBookwalkerSessionWorker(QRunnable):
             ok = bool(getattr(self.dl, "login_via_browser", lambda: False)())
             self.signals.finished.emit([], False, "sesion_ok" if ok else "sesion_fail")
         except Exception as e:
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(str(e) or type(e).__name__)
 
 
 class BabylonSeriesWorker(QRunnable):
@@ -2901,7 +2898,7 @@ class BabylonSiteDetailPanel(QWidget):
             return
         w = BabylonBookwalkerSessionWorker(dl)
         w.signals.finished.connect(self._on_results)
-        w.signals.error.connect(self._on_error)
+        w.signals.error.connect(self._on_session_error)
         self._pool.start(w)
 
     def _next_page(self) -> None:
@@ -3051,6 +3048,19 @@ class BabylonSiteDetailPanel(QWidget):
         self._lbl_status.setText(f"Error: {msg[:80]}")
         self._btn_prev.setEnabled(self._cur_page > 1)
         self._btn_next.setEnabled(False)
+
+    def _on_session_error(self, msg: str) -> None:
+        """Error del botón Conectar cuenta: muestra el motivo real."""
+        self._busy = False
+        self._btn_prev.setEnabled(self._cur_page > 1)
+        self._btn_next.setEnabled(False)
+        self._lbl_status.setText("No se pudo conectar la cuenta.")
+        self._clear()
+        QMessageBox.warning(
+            self,
+            "BookWalker — Conectar cuenta",
+            msg or "Error desconocido al abrir el navegador.",
+        )
 
     def _clear(self) -> None:
         while self._res_layout.count() > 1:

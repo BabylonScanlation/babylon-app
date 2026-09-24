@@ -585,8 +585,10 @@ def _flow_bookwalkerhar_session(dl) -> bool:
         )
     try:
         ok = bool(dl.login_via_browser())
-    except Exception:
-        ok = False
+    except Exception as e:
+        print(f"  {C.RED}✗  {e}{C.END}")
+        _prompt("Enter…")
+        return False
     if ok:
         print(
             f"  {C.GREEN}✔  SESSION tomada de tu {nombre}.{C.END}"
